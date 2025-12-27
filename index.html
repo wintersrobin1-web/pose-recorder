@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Bewegungsanalyse Recorder | anonym (Silhouette + Skelett + Timer)</title>
+  <title>Bewegungsanalyse Recorder | anonym (Skelett + HWS-Achse + Timer)</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
@@ -28,7 +28,7 @@
 <body>
   <h1>Bewegungsanalyse Recorder (anonym)</h1>
   <p class="hint">
-    Output-Video enthält nur Hintergrund (hellblau) + Silhouette (anonym) + Skelett + Timer/Slots.
+    Output-Video enthält nur Hintergrund (hellblau) + Skelett + HWS-Achse + Timer/Slots.
     Links ist nur Input. Hochkant/Querformat wechseln automatisch.
   </p>
 
@@ -43,8 +43,9 @@
 
   <div class="row">
     <label><input type="checkbox" id="toggleSkeleton" checked /> Skelett</label>
-    <label><input type="checkbox" id="toggleSilhouette" checked /> Silhouette</label>
-<label><input type="checkbox" id="toggleTimer" checked /> Timer: Brust – Gleitphase</label>
+    <label><input type="checkbox" id="toggleAxis" checked /> Achse Kopf–Rumpf (HWS)</label>
+    <label><input type="checkbox" id="toggleAxisColor" checked /> HWS-Ampel (grün/rot)</label>
+    <label><input type="checkbox" id="toggleTimer" checked /> Timer: Brust – Gleitphase</label>
 
     <select id="filmingPreset" title="Aufnahmeposition">
       <option value="stand" selected>Stand-Test (Beckenrand)</option>
@@ -55,12 +56,6 @@
 
   <details>
     <summary>Erweiterte Einstellungen (optional)</summary>
-
-    <div class="rangeWrap">
-      <span>Silhouette-Deckkraft</span>
-      <input id="silOpacity" type="range" min="0" max="0.8" step="0.05" value="0.40">
-      <span id="silOpacityVal" class="small">0.40</span>
-    </div>
 
     <div class="rangeWrap">
       <span>Skelett-Linienstärke</span>
@@ -99,7 +94,7 @@
     </div>
 
     <p class="hint">
-      Hinweis iPhone: Segmentation Mask aus Tasks ist oft leer/instabil. Die Silhouette hier wird daher aus den Landmarks erzeugt (stabil + anonym).
+      HWS-Ampel: grün = Kopf/Hals in Linie mit Rumpf (neutral), rot = deutlich gebeugt/überstreckt.
     </p>
   </details>
 
@@ -127,20 +122,18 @@
     const btnReset = document.getElementById("btnReset");
 
     const toggleSkeleton = document.getElementById("toggleSkeleton");
-    const toggleSilhouette = document.getElementById("toggleSilhouette");
+    const toggleAxis = document.getElementById("toggleAxis");
+    const toggleAxisColor = document.getElementById("toggleAxisColor");
     const toggleTimer = document.getElementById("toggleTimer");
     const filmingPreset = document.getElementById("filmingPreset");
 
-    const silOpacity = document.getElementById("silOpacity");
     const skelLine  = document.getElementById("skelLine");
     const skelDot   = document.getElementById("skelDot");
-
     const detConf = document.getElementById("detConf");
     const presConf = document.getElementById("presConf");
     const trackConf = document.getElementById("trackConf");
     const smooth = document.getElementById("smooth");
 
-    const silOpacityVal = document.getElementById("silOpacityVal");
     const skelLineVal   = document.getElementById("skelLineVal");
     const skelDotVal    = document.getElementById("skelDotVal");
     const detVal = document.getElementById("detVal");
@@ -156,7 +149,6 @@
       el.addEventListener("input", update);
       update();
     }
-    bindSlider(silOpacity, silOpacityVal, v => Number(v).toFixed(2));
     bindSlider(skelLine,   skelLineVal,   v => String(Math.round(Number(v))));
     bindSlider(skelDot,    skelDotVal,    v => String(Math.round(Number(v))));
     bindSlider(detConf, detVal);
@@ -230,7 +222,6 @@
           ...p,
           _cx: offX + (nx * vw) * scale,
           _cy: offY + (p.y * vh) * scale,
-          _nx: nx
         };
       });
     }
@@ -249,71 +240,11 @@
         const p = cssPoints[i], s = smoothed[i];
         s._cx = a*s._cx + (1-a)*p._cx;
         s._cy = a*s._cy + (1-a)*p._cy;
-        s._nx = a*(s._nx ?? p._nx) + (1-a)*p._nx;
-        s.y   = a*(s.y ?? p.y) + (1-a)*p.y;
-        s.z   = a*(s.z ?? (p.z ?? 0)) + (1-a)*(p.z ?? 0);
+        s.z = a*(s.z ?? (p.z ?? 0)) + (1-a)*(p.z ?? 0);
         if (typeof p.visibility === "number") s.visibility = p.visibility;
         if (typeof p.presence === "number") s.presence = p.presence;
       }
       return smoothed;
-    }
-
-    // ---------- Silhouette from Landmarks (convex hull) ----------
-    function cross(o, a, b) {
-      return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-    }
-
-    function convexHull(points) {
-      if (points.length <= 2) return points;
-      const pts = points.slice().sort((p1,p2) => (p1.x - p2.x) || (p1.y - p2.y));
-
-      const lower = [];
-      for (const p of pts) {
-        while (lower.length >= 2 && cross(lower[lower.length-2], lower[lower.length-1], p) <= 0) lower.pop();
-        lower.push(p);
-      }
-      const upper = [];
-      for (let i = pts.length - 1; i >= 0; i--) {
-        const p = pts[i];
-        while (upper.length >= 2 && cross(upper[upper.length-2], upper[upper.length-1], p) <= 0) upper.pop();
-        upper.push(p);
-      }
-      upper.pop();
-      lower.pop();
-      return lower.concat(upper);
-    }
-
-    function drawSilhouetteFromLandmarks(cssPoints) {
-      if (!toggleSilhouette.checked || !cssPoints) return;
-
-      // relevante Landmark-Indices (Torso + Beine + Arme)
-      const idx = [11,12,13,14,15,16,23,24,25,26,27,28,31,32];
-      const pts = [];
-      for (const i of idx) {
-        const p = cssPoints[i];
-        if (!p) continue;
-        if (typeof p.visibility === "number" && p.visibility < 0.2) continue;
-        pts.push({ x: p._cx, y: p._cy });
-      }
-      if (pts.length < 3) return;
-
-      const hull = convexHull(pts);
-      if (hull.length < 3) return;
-
-      ctx.save();
-      ctx.globalAlpha = Number(silOpacity.value); // z.B. 0.40
-      ctx.fillStyle = "rgb(255, 230, 70)"; // gelb
-      ctx.beginPath();
-
-      // weicher wirken lassen: simple "rounded hull" durch quadratic segments
-      ctx.moveTo(hull[0].x, hull[0].y);
-      for (let i=1;i<hull.length;i++){
-        const p = hull[i];
-        ctx.lineTo(p.x, p.y);
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
     }
 
     // ---------- Skeleton drawing ----------
@@ -336,6 +267,7 @@
         if(!pa || !pb) continue;
         if (typeof pa.visibility === "number" && pa.visibility < 0.2) continue;
         if (typeof pb.visibility === "number" && pb.visibility < 0.2) continue;
+
         ctx.beginPath();
         ctx.moveTo(pa._cx, pa._cy);
         ctx.lineTo(pb._cx, pb._cy);
@@ -349,6 +281,89 @@
         ctx.arc(p._cx, p._cy, r, 0, Math.PI*2);
         ctx.fill();
       }
+
+      ctx.restore();
+    }
+
+    // ---------- HWS / Kopf-Rumpf-Achse ----------
+    function angleDegBetweenVectors(ax, ay, bx, by) {
+      const da = Math.hypot(ax, ay);
+      const db = Math.hypot(bx, by);
+      if (!da || !db) return null;
+      const dot = (ax*bx + ay*by) / (da*db);
+      const clamped = Math.max(-1, Math.min(1, dot));
+      return Math.acos(clamped) * (180 / Math.PI);
+    }
+
+    // neutral, wenn Kopf-Achse & Rumpf-Achse nahezu kollinear (Winkel nahe 180°)
+    const NECK_NEUTRAL_TOL_DEG = 18; // <- bei Bedarf 15..25 testen
+
+    function drawHeadTorsoAxis(cssPoints) {
+      if (!toggleAxis.checked || !cssPoints) return;
+
+      const nose = cssPoints[0];
+      const ls = cssPoints[11], rs = cssPoints[12];
+      const lh = cssPoints[23], rh = cssPoints[24];
+      if (!ls || !rs || !lh || !rh) return;
+
+      const sh = { x: (ls._cx + rs._cx)/2, y: (ls._cy + rs._cy)/2 };
+      const hp = { x: (lh._cx + rh._cx)/2, y: (lh._cy + rh._cy)/2 };
+
+      // Vektoren (Schultermitte als Ursprung):
+      // Kopf: Schulter -> Nose
+      // Rumpf: Schulter -> Hüfte
+      let headVec = null;
+      if (nose && !(typeof nose.visibility === "number" && nose.visibility < 0.2)) {
+        headVec = { x: (nose._cx - sh.x), y: (nose._cy - sh.y) };
+      }
+      const torsoVec = { x: (hp.x - sh.x), y: (hp.y - sh.y) };
+
+      // Standardfarbe (wenn Ampel aus oder Nose fehlt)
+      let colHead = "rgba(0,0,0,0.55)";
+      let colTorso = "rgba(0,0,0,0.85)";
+
+      if (toggleAxisColor.checked && headVec) {
+        const ang = angleDegBetweenVectors(headVec.x, headVec.y, torsoVec.x, torsoVec.y);
+        // neutral => Winkel nahe 180°
+        const dev = (ang == null) ? null : Math.abs(180 - ang);
+
+        const ok = (dev != null && dev <= NECK_NEUTRAL_TOL_DEG);
+        // grün/rot für beide Achsen, aber Kopf etwas transparenter
+        colTorso = ok ? "rgba(0,170,0,0.95)" : "rgba(220,0,0,0.95)";
+        colHead  = ok ? "rgba(0,170,0,0.65)" : "rgba(220,0,0,0.65)";
+      }
+
+      const lwBase = Math.max(2, Math.round(Number(skelLine.value) * 0.8));
+      const lwHead = Math.max(2, Math.round(Number(skelLine.value) * 0.6));
+      const rMid   = Math.max(2, Math.round(Number(skelDot.value) * 0.8));
+
+      ctx.save();
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      // Rumpfachse (Schultermitte -> Hüftmitte)
+      ctx.strokeStyle = colTorso;
+      ctx.lineWidth = lwBase;
+      ctx.beginPath();
+      ctx.moveTo(sh.x, sh.y);
+      ctx.lineTo(hp.x, hp.y);
+      ctx.stroke();
+
+      // Kopf/HWS-Achse (Nase -> Schultermitte)
+      if (headVec) {
+        ctx.strokeStyle = colHead;
+        ctx.lineWidth = lwHead;
+        ctx.beginPath();
+        ctx.moveTo(nose._cx, nose._cy);
+        ctx.lineTo(sh.x, sh.y);
+        ctx.stroke();
+      }
+
+      // Marker an Schulter-/Hüftmitte
+      ctx.fillStyle = colTorso;
+      ctx.beginPath(); ctx.arc(sh.x, sh.y, rMid, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(hp.x, hp.y, rMid, 0, Math.PI*2); ctx.fill();
+
       ctx.restore();
     }
 
@@ -463,7 +478,7 @@
       ctx.fillText(glideActive ? fmt(currentElapsed) : "0.000 s", x+12, y+36);
 
       ctx.font="600 12px system-ui";
-ctx.fillText("Brust – Gleitphase | Slots", x+12, y+56);
+      ctx.fillText("Brust – Gleitphase | Slots", x+12, y+56);
 
       ctx.font="13px system-ui";
       for(let i=0;i<4;i++){
@@ -497,7 +512,7 @@ ctx.fillText("Brust – Gleitphase | Slots", x+12, y+56);
         baseOptions: { modelAssetPath: POSE_TASK_URL },
         runningMode: "VIDEO",
         numPoses: 1,
-        outputSegmentationMasks: false, // iPhone-stabil: Silhouette aus Landmarks
+        outputSegmentationMasks: false,
         minPoseDetectionConfidence: Number(detConf.value),
         minPosePresenceConfidence: Number(presConf.value),
         minTrackingConfidence: Number(trackConf.value),
@@ -567,22 +582,19 @@ ctx.fillText("Brust – Gleitphase | Slots", x+12, y+56);
 
         const ts = performance.now();
         const result = landmarker.detectForVideo(video, ts);
-
         const hasLandmarks = !!(result?.landmarks?.length && result.landmarks[0]?.length);
 
         if (hasLandmarks){
           const raw = result.landmarks[0];
+
           const mirrorX = !isBackCamera;
           const mapped = mapLandmarksToCss(raw, video.videoWidth, video.videoHeight, CSS_W, CSS_H, mirrorX);
           const cssPoints = ema(mapped);
 
-          // Silhouette (Landmarks) zuerst
-          drawSilhouetteFromLandmarks(cssPoints);
-
-          // Skelett
+          // HWS-Achse (vor oder nach Skelett – je nach Optik; hier nach Skelett)
           drawSkeletonCssPoints(cssPoints);
+          drawHeadTorsoAxis(cssPoints);
 
-          // Timer uses raw normalized landmarks (stabil)
           updateTimer(raw, ts);
         } else {
           updateTimer(null, ts);
