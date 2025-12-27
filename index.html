@@ -33,6 +33,11 @@
   </div>
 
   <p class="hint" id="status">Status: bereit</p>
+<script>
+  document.getElementById("btnInit").addEventListener("click", () => {
+    document.getElementById("status").textContent = "Status: Klick erkannt";
+  });
+</script>
 
   <script type="module">
     import vision from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
