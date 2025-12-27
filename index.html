@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Swim Pose Recorder (Silhouette + Timer)</title>
+  <title>Swim Pose Recorder (Silhouette + Gleit-Timer + Kamerawechsel)</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
@@ -12,11 +12,13 @@
     button.primary { border-color: #111; }
     button:disabled { opacity: 0.5; }
     label { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #ddd; border-radius: 10px; }
+    select { padding: 9px 12px; border-radius: 10px; border: 1px solid #ccc; background: #fff; }
     .hint { color: #555; font-size: 14px; line-height: 1.4; max-width: 980px; }
     .small { font-size: 13px; color: #666; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
   </style>
 
-  <!-- MediaPipe (klassisch, ohne ES-Module) -->
+  <!-- MediaPipe (klassisch) -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
@@ -24,9 +26,14 @@
 
 <body>
   <h1>Swim Pose Recorder (Skelett + Silhouette + Timer)</h1>
+  <p class="hint">
+    Links: Live-Kamera (nur zur Erkennung). Rechts: Canvas (wird gespeichert) mit hellblauem Hintergrund, anonymem Umriss,
+    Skelett und Timer/Slots. Kamera kann Front/Rück umgeschaltet werden.
+  </p>
 
   <div class="row">
-    <button id="btnInit" class="primary">Kamera aktivieren (Rückkamera)</button>
+    <button id="btnInit" class="primary">Kamera aktivieren</button>
+    <button id="btnSwitch" disabled>Kamera wechseln (Rück)</button>
     <button id="btnRec" disabled>Aufnahme starten</button>
     <button id="btnStop" disabled>Stop</button>
     <button id="btnShare" disabled>Teilen/Speichern</button>
@@ -35,8 +42,15 @@
 
   <div class="row">
     <label><input type="checkbox" id="toggleSilhouette" checked /> Silhouette (anonym)</label>
-    <label><input type="checkbox" id="toggleSpine" checked /> Mittelachse („Wirbelsäule“)</label>
+    <label><input type="checkbox" id="toggleSpine" checked /> Mittelachse</label>
     <label><input type="checkbox" id="toggleTimer" checked /> Timer/Slots</label>
+
+    <span class="small">Timer-Trigger:</span>
+    <select id="triggerMode" title="Timer-Trigger">
+      <option value="auto" selected>Auto</option>
+      <option value="overhead">Hände über Kopf</option>
+      <option value="forward">Arme nach vorn (seitlich filmen)</option>
+    </select>
   </div>
 
   <div class="row">
@@ -44,7 +58,7 @@
     <canvas id="canvas"></canvas>
   </div>
 
-  <p class="hint" id="status">Status: bereit</p>
+  <p class="hint mono" id="status">Status: bereit</p>
 
   <script>
     const video = document.getElementById("video");
@@ -52,6 +66,7 @@
     const ctx = canvas.getContext("2d");
 
     const btnInit = document.getElementById("btnInit");
+    const btnSwitch = document.getElementById("btnSwitch");
     const btnRec = document.getElementById("btnRec");
     const btnStop = document.getElementById("btnStop");
     const btnShare = document.getElementById("btnShare");
@@ -61,14 +76,15 @@
     const toggleSilhouette = document.getElementById("toggleSilhouette");
     const toggleSpine = document.getElementById("toggleSpine");
     const toggleTimer = document.getElementById("toggleTimer");
+    const triggerMode = document.getElementById("triggerMode");
 
     function setStatus(s) { statusEl.textContent = "Status: " + s; }
 
     // -----------------------------
-    // Canvas Styling
+    // Canvas Look
     // -----------------------------
-    const BG = "#bfe7ff";                      // hellblau
-    const SIL = "rgba(20, 70, 120, 0.35)";     // Silhouette-Füllung
+    const BG = "#bfe7ff";                  // hellblau
+    const SIL = "rgba(20, 70, 120, 0.35)"; // Silhouette-Füllung
     const SIL_EDGE = "rgba(20, 70, 120, 0.65)";
 
     function drawBackground() {
@@ -84,26 +100,11 @@
     let recorder = null;
     let recordedChunks = [];
     let lastBlob = null;
-    let lastMime = "";
 
-    function pickMimeTypePreferred() {
-      // MP4 nur verwenden, wenn Safari es wirklich unterstützt.
-      // Achtung: Bei vielen iOS-Versionen ist MP4 in MediaRecorder NICHT verfügbar.
+    function pickMimeType() {
+      const candidates = ["video/webm;codecs=vp8", "video/webm", "video/mp4"];
       if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
-
-      const candidates = [
-        'video/mp4;codecs="avc1.42E01E"',   // H.264 baseline
-        'video/mp4;codecs="avc1.4D401E"',   // H.264 main
-        "video/mp4",
-        'video/webm;codecs="vp8"',
-        "video/webm"
-      ];
-
-      for (const t of candidates) {
-        try {
-          if (MediaRecorder.isTypeSupported(t)) return t;
-        } catch (_) {}
-      }
+      for (const t of candidates) if (MediaRecorder.isTypeSupported(t)) return t;
       return "";
     }
 
@@ -115,38 +116,20 @@
       const fps = 15;
       const stream = canvas.captureStream(fps);
 
-      const mimeType = pickMimeTypePreferred();
+      const mimeType = pickMimeType();
       const options = mimeType ? { mimeType } : undefined;
 
-      try {
-        recorder = new MediaRecorder(stream, options);
-      } catch (e) {
-        // Fallback ohne mimeType (Safari entscheidet)
-        recorder = new MediaRecorder(stream);
-      }
-
-      lastMime = recorder.mimeType || mimeType || "";
-      setStatus("Aufnahme läuft… (" + (lastMime || "Format unbekannt") + ")");
-
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) recordedChunks.push(e.data);
-      };
-
+      recorder = new MediaRecorder(stream, options);
+      recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
       recorder.onstop = () => {
-        const type = recorder.mimeType || lastMime || "";
-        lastBlob = new Blob(recordedChunks, { type: type || "video/webm" });
-
+        const type = (recorder && recorder.mimeType) ? recorder.mimeType : "video/webm";
+        lastBlob = new Blob(recordedChunks, { type });
         btnShare.disabled = !lastBlob;
-
-        const isMp4 = (lastBlob.type || "").includes("mp4");
-        if (isMp4) {
-          setStatus("Aufnahme fertig (MP4).");
-        } else {
-          setStatus("Aufnahme fertig (" + (lastBlob.type || "unbekannt") + "). Hinweis: iPhone kann WebM teils nicht direkt abspielen – bei Bedarf per Kurzbefehle nach MP4 konvertieren.");
-        }
+        setStatus("Aufnahme fertig. (MP4 via Kurzbefehl-Konvertierung)");
       };
 
       recorder.start(200);
+      setStatus("Aufnahme läuft…");
     }
 
     function stopRecording() {
@@ -156,14 +139,13 @@
     async function shareOrDownload() {
       if (!lastBlob) return;
 
-      const type = lastBlob.type || "";
-      const ext = type.includes("mp4") ? "mp4" : "webm"; // kein Fake-MP4 mehr
+      const ext = lastBlob.type.includes("mp4") ? "mp4" : "webm";
       const fileName = `pose_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`;
       const file = new File([lastBlob], fileName, { type: lastBlob.type });
 
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: "Pose-Aufnahme" });
-        setStatus("Geteilt/gespeichert (" + ext.toUpperCase() + ").");
+        setStatus("Geteilt/gespeichert.");
         return;
       }
 
@@ -175,20 +157,79 @@
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 2000);
-      setStatus("Download gestartet (" + ext.toUpperCase() + ").");
+      setStatus("Download gestartet.");
     }
 
     // -----------------------------
-    // Pose + Rendering
+    // Pose + Camera
     // -----------------------------
     let pose = null;
     let cam = null;
+    let isBackCamera = true; // default: Rückkamera
 
     function resizeCanvasToVideo() {
       canvas.width = video.videoWidth || 1280;
       canvas.height = video.videoHeight || 720;
     }
 
+    function stopCameraHard() {
+      // camera_utils Camera nutzt intern getUserMedia; stop() ist je nach Version vorhanden.
+      try { if (cam && cam.stop) cam.stop(); } catch (_) {}
+
+      // zusätzlich: falls ein Stream am Video hängt, Tracks beenden
+      try {
+        const s = video.srcObject;
+        if (s && s.getTracks) s.getTracks().forEach(t => t.stop());
+      } catch (_) {}
+      video.srcObject = null;
+    }
+
+    async function startCamera(facingMode) {
+      stopCameraHard();
+
+      cam = new Camera(video, {
+        onFrame: async () => { await pose.send({ image: video }); },
+        width: 1280,
+        height: 720,
+        facingMode // "environment" oder "user"
+      });
+
+      await cam.start();
+      resizeCanvasToVideo();
+    }
+
+    async function initAll() {
+      btnInit.disabled = true;
+      setStatus("initialisiere…");
+
+      pose = new Pose({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+      });
+
+      pose.setOptions({
+        modelComplexity: 1,
+        smoothLandmarks: true,
+        enableSegmentation: false,
+        selfieMode: false,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      });
+
+      pose.onResults(drawOutput);
+
+      await startCamera(isBackCamera ? "environment" : "user");
+
+      btnSwitch.disabled = false;
+      btnRec.disabled = false;
+      btnReset.disabled = false;
+
+      btnSwitch.textContent = "Kamera wechseln (" + (isBackCamera ? "Rück" : "Front") + ")";
+      setStatus("bereit.");
+    }
+
+    // -----------------------------
+    // Silhouette + Skelett
+    // -----------------------------
     function midPoint(a, b) { return { x: (a.x+b.x)/2, y: (a.y+b.y)/2 }; }
 
     function drawSilhouetteFromLandmarks(landmarks) {
@@ -259,7 +300,7 @@
     }
 
     // -----------------------------
-    // Timer / Slots
+    // Timer / 4 Slots
     // -----------------------------
     const glideTimes = [];
     let glideActive = false;
@@ -270,7 +311,8 @@
 
     function formatMs(ms) { return (ms / 1000).toFixed(3) + " s"; }
 
-    function isStreamline(landmarks) {
+    // Mode 1: Hände über Kopf (Beckenrand/Stand)
+    function isOverhead(landmarks) {
       const ls = landmarks[11], rs = landmarks[12];
       const le = landmarks[13], re = landmarks[14];
       const lw = landmarks[15], rw = landmarks[16];
@@ -279,10 +321,51 @@
       const shoulderY = (ls.y + rs.y) / 2;
       const wristsUp = (lw.y < shoulderY - 0.03) && (rw.y < shoulderY - 0.03);
       const elbowsUp = (le.y < shoulderY + 0.02) && (re.y < shoulderY + 0.02);
-      const wristDist = Math.abs(lw.x - rw.x);
-      const wristsClose = wristDist < 0.35;
+      const wristsClose = Math.abs(lw.x - rw.x) < 0.35;
 
       return wristsUp && elbowsUp && wristsClose;
+    }
+
+    // Mode 2: Arme nach vorn (seitliche Schwimmaufnahme)
+    // Idee: Handgelenke deutlich "weg" von den Schultern (großer Abstand),
+    // Handgelenke nahe beieinander (Streamline), Ellenbogen relativ auf der Linie Schulter->Hand.
+    function dist(a, b) {
+      const dx = a.x - b.x, dy = a.y - b.y;
+      return Math.sqrt(dx*dx + dy*dy);
+    }
+
+    function isForwardStreamline(landmarks) {
+      const ls = landmarks[11], rs = landmarks[12];
+      const le = landmarks[13], re = landmarks[14];
+      const lw = landmarks[15], rw = landmarks[16];
+      if (!ls || !rs || !le || !re || !lw || !rw) return false;
+
+      // "Arme lang": Handgelenk weit von Schulter
+      const leftArmLen = dist(ls, lw);
+      const rightArmLen = dist(rs, rw);
+      const armsExtended = (leftArmLen > 0.33) && (rightArmLen > 0.33);
+
+      // Handgelenke relativ nah zueinander (Streamline)
+      const wristsClose = dist(lw, rw) < 0.25;
+
+      // Ellenbogen nicht stark abgeknickt: Ellenbogen nahe der Verbindung Schulter->Hand (kollinear-ish)
+      // Wir nutzen: dist(shoulder,elbow)+dist(elbow,wrist) ~ dist(shoulder,wrist)
+      const leftStraight = (dist(ls, le) + dist(le, lw)) <= (dist(ls, lw) * 1.12);
+      const rightStraight = (dist(rs, re) + dist(re, rw)) <= (dist(rs, rw) * 1.12);
+
+      return armsExtended && wristsClose && leftStraight && rightStraight;
+    }
+
+    function isStreamline(landmarks) {
+      const mode = triggerMode.value;
+
+      if (mode === "overhead") return isOverhead(landmarks);
+      if (mode === "forward") return isForwardStreamline(landmarks);
+
+      // Auto:
+      // Wenn "overhead" erkennbar ist, nutze das. Sonst nutze "forward".
+      if (isOverhead(landmarks)) return true;
+      return isForwardStreamline(landmarks);
     }
 
     function updateTimer(landmarks, now) {
@@ -300,7 +383,7 @@
         currentElapsed = 0;
         if (inPose && glideTimes.length < 4) {
           if (poseStableSince === null) poseStableSince = now;
-          if (now - poseStableSince >= 200) {
+          if (now - poseStableSince >= 220) { // bewusst etwas stabiler
             glideActive = true;
             glideStart = now;
             poseLostSince = null;
@@ -315,7 +398,7 @@
 
       if (!inPose) {
         if (poseLostSince === null) poseLostSince = now;
-        if (now - poseLostSince >= 160) {
+        if (now - poseLostSince >= 180) {
           glideActive = false;
           poseStableSince = null;
           poseLostSince = null;
@@ -349,7 +432,7 @@
       ctx.fillStyle = "rgba(0,0,0,0.45)";
       ctx.strokeStyle = "rgba(255,255,255,0.65)";
       ctx.lineWidth = 2;
-      const x = 14, y = 14, w = 380, h = 170;
+      const x = 14, y = 14, w = 420, h = 175;
       roundRect(ctx, x, y, w, h, 14);
       ctx.fill();
       ctx.stroke();
@@ -361,20 +444,23 @@
       ctx.font = "700 40px system-ui";
       ctx.fillText(glideActive ? formatMs(currentElapsed) : "0.000 s", x + 14, y + 48);
 
-      ctx.font = "600 18px system-ui";
+      ctx.font = "600 16px system-ui";
+      const modeLabel = (triggerMode.value === "auto") ? "Auto" : (triggerMode.value === "overhead" ? "Hände über Kopf" : "Arme nach vorn");
       const st = glideActive ? "Gleitphase: läuft"
-               : (glideTimes.length >= 4 ? "Slots voll (4/4)" : (inPose ? "Streamline erkannt (Start in 0.2s)" : "Warte: Hände über Kopf"));
-      ctx.fillText(st, x + 14, y + 76);
+               : (glideTimes.length >= 4 ? "Slots voll (4/4)" : (inPose ? "Pose erkannt (Start in 0.22s)" : "Warte auf Pose"));
+      ctx.fillText(`Trigger: ${modeLabel}  |  ${st}`, x + 14, y + 76);
 
       ctx.font = "18px system-ui";
       for (let i = 0; i < 4; i++) {
         const t = glideTimes[i] != null ? formatMs(glideTimes[i]) : "—";
-        ctx.fillText(`Slot ${i+1}: ${t}`, x + 14, y + 104 + i * 18);
+        ctx.fillText(`Slot ${i+1}: ${t}`, x + 14, y + 105 + i * 18);
       }
-
       ctx.restore();
     }
 
+    // -----------------------------
+    // Main render callback
+    // -----------------------------
     function drawOutput(results) {
       drawBackground();
 
@@ -385,8 +471,10 @@
 
       const lms = results.poseLandmarks;
 
+      // Silhouette
       drawSilhouetteFromLandmarks(lms);
 
+      // Skelett
       const drawConnectorsFn = window.drawConnectors;
       const drawLandmarksFn = window.drawLandmarks;
       const connections = window.POSE_CONNECTIONS;
@@ -400,56 +488,40 @@
         ctx.restore();
       }
 
+      // Mittelachse
       drawMidSpine(lms);
 
+      // Timer update + overlay (im Video)
       const now = performance.now();
       updateTimer(lms, now);
       drawTimerOverlay(lms);
     }
 
-    async function initAll() {
-      btnInit.disabled = true;
-      setStatus("initialisiere…");
-
-      pose = new Pose({
-        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-      });
-
-      pose.setOptions({
-        modelComplexity: 1,
-        smoothLandmarks: true,
-        enableSegmentation: false,
-        selfieMode: false,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5
-      });
-
-      pose.onResults(drawOutput);
-
-      cam = new Camera(video, {
-        onFrame: async () => { await pose.send({ image: video }); },
-        width: 1280,
-        height: 720,
-        facingMode: "environment"
-      });
-
-      await cam.start();
-      resizeCanvasToVideo();
-
-      btnRec.disabled = false;
-      btnReset.disabled = false;
-
-      const mt = pickMimeTypePreferred() || "(Safari entscheidet)";
-      setStatus("bereit. Aufnahmeformat-Präferenz: " + mt);
-    }
-
+    // -----------------------------
     // UI wiring
+    // -----------------------------
     btnInit.addEventListener("click", async () => {
-      try { await initAll(); }
-      catch (err) {
+      try {
+        await initAll();
+      } catch (err) {
         console.error(err);
         setStatus("Fehler: " + (err && err.message ? err.message : String(err)));
         btnInit.disabled = false;
+      }
+    });
+
+    btnSwitch.addEventListener("click", async () => {
+      try {
+        btnSwitch.disabled = true;
+        isBackCamera = !isBackCamera;
+        await startCamera(isBackCamera ? "environment" : "user");
+        btnSwitch.textContent = "Kamera wechseln (" + (isBackCamera ? "Rück" : "Front") + ")";
+        btnSwitch.disabled = false;
+        setStatus("Kamera gewechselt.");
+      } catch (err) {
+        console.error(err);
+        setStatus("Kamerawechsel-Fehler: " + (err && err.message ? err.message : String(err)));
+        btnSwitch.disabled = false;
       }
     });
 
