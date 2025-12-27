@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Swim Pose Recorder (Silhouette + Gleit-Timer + Kamerawechsel)</title>
+  <title>Zeitmessung der Gleitphase im Brustschwimmen (automatisiert)</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
@@ -18,17 +18,17 @@
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
   </style>
 
-  <!-- MediaPipe (klassisch) -->
+  <!-- MediaPipe (klassisch, ohne ES-Module) -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
 </head>
 
 <body>
-  <h1>Swim Pose Recorder (Skelett + Silhouette + Timer)</h1>
+  <h1>Zeitmessung der Gleitphase im Brustschwimmen (automatisiert)</h1>
   <p class="hint">
     Links: Live-Kamera (nur zur Erkennung). Rechts: Canvas (wird gespeichert) mit hellblauem Hintergrund, anonymem Umriss,
-    Skelett und Timer/Slots. Kamera kann Front/Rück umgeschaltet werden.
+    Skelett und Timer/Slots. Die Zeitmessung ist für die Gleitphase im Brustschwimmen konzipiert.
   </p>
 
   <div class="row">
@@ -47,8 +47,8 @@
 
     <span class="small">Timer-Trigger:</span>
     <select id="triggerMode" title="Timer-Trigger">
-      <option value="auto" selected>Auto</option>
-      <option value="overhead">Hände über Kopf</option>
+      <option value="auto" selected>Auto (empfohlen)</option>
+      <option value="overhead">Hände über Kopf (Stand-Test)</option>
       <option value="forward">Arme nach vorn (seitlich filmen)</option>
     </select>
   </div>
@@ -61,6 +61,9 @@
   <p class="hint mono" id="status">Status: bereit</p>
 
   <script>
+    // -----------------------------
+    // DOM
+    // -----------------------------
     const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
@@ -102,9 +105,18 @@
     let lastBlob = null;
 
     function pickMimeType() {
-      const candidates = ["video/webm;codecs=vp8", "video/webm", "video/mp4"];
+      // MP4 zuerst, wenn vom Browser wirklich unterstützt, sonst WebM.
+      const candidates = [
+        'video/mp4;codecs="avc1.42E01E"',
+        'video/mp4;codecs="avc1.4D401E"',
+        "video/mp4",
+        'video/webm;codecs="vp8"',
+        "video/webm"
+      ];
       if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
-      for (const t of candidates) if (MediaRecorder.isTypeSupported(t)) return t;
+      for (const t of candidates) {
+        try { if (MediaRecorder.isTypeSupported(t)) return t; } catch (_) {}
+      }
       return "";
     }
 
@@ -119,17 +131,30 @@
       const mimeType = pickMimeType();
       const options = mimeType ? { mimeType } : undefined;
 
-      recorder = new MediaRecorder(stream, options);
+      try {
+        recorder = new MediaRecorder(stream, options);
+      } catch (e) {
+        // Fallback ohne mimeType, falls Safari zickt
+        recorder = new MediaRecorder(stream);
+      }
+
+      const labelStart = recorder.mimeType ? recorder.mimeType : (mimeType || "Browser-Default");
+      setStatus("Aufnahme läuft… (" + labelStart + ")");
+
       recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
+
       recorder.onstop = () => {
-        const type = (recorder && recorder.mimeType) ? recorder.mimeType : "video/webm";
+        const type = recorder.mimeType || mimeType || "video/webm";
         lastBlob = new Blob(recordedChunks, { type });
+
         btnShare.disabled = !lastBlob;
-        setStatus("Aufnahme fertig. (MP4 via Kurzbefehl-Konvertierung)");
+
+        const outType = lastBlob.type || type;
+        const pretty = outType.includes("mp4") ? "MPEG-4 (MP4)" : (outType.includes("webm") ? "WebM" : outType);
+        setStatus("Aufnahme fertig (" + pretty + ").");
       };
 
       recorder.start(200);
-      setStatus("Aufnahme läuft…");
     }
 
     function stopRecording() {
@@ -139,13 +164,16 @@
     async function shareOrDownload() {
       if (!lastBlob) return;
 
-      const ext = lastBlob.type.includes("mp4") ? "mp4" : "webm";
-      const fileName = `pose_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`;
+      // Endung strikt aus dem tatsächlichen Blob-Typ ableiten (verhindert Fake-MP4).
+      const type = lastBlob.type || "";
+      const ext = type.includes("mp4") ? "mp4" : (type.includes("webm") ? "webm" : "bin");
+
+      const fileName = `gleitphase_brust_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`;
       const file = new File([lastBlob], fileName, { type: lastBlob.type });
 
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: "Pose-Aufnahme" });
-        setStatus("Geteilt/gespeichert.");
+        await navigator.share({ files: [file], title: "Gleitphase Brust – Aufnahme" });
+        setStatus("Geteilt/gespeichert (" + ext.toUpperCase() + ").");
         return;
       }
 
@@ -157,7 +185,8 @@
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 2000);
-      setStatus("Download gestartet.");
+
+      setStatus("Download gestartet (" + ext.toUpperCase() + ").");
     }
 
     // -----------------------------
@@ -173,10 +202,7 @@
     }
 
     function stopCameraHard() {
-      // camera_utils Camera nutzt intern getUserMedia; stop() ist je nach Version vorhanden.
       try { if (cam && cam.stop) cam.stop(); } catch (_) {}
-
-      // zusätzlich: falls ein Stream am Video hängt, Tracks beenden
       try {
         const s = video.srcObject;
         if (s && s.getTracks) s.getTracks().forEach(t => t.stop());
@@ -311,7 +337,7 @@
 
     function formatMs(ms) { return (ms / 1000).toFixed(3) + " s"; }
 
-    // Mode 1: Hände über Kopf (Beckenrand/Stand)
+    // Trigger: Hände über Kopf (Stand-Test)
     function isOverhead(landmarks) {
       const ls = landmarks[11], rs = landmarks[12];
       const le = landmarks[13], re = landmarks[14];
@@ -322,13 +348,10 @@
       const wristsUp = (lw.y < shoulderY - 0.03) && (rw.y < shoulderY - 0.03);
       const elbowsUp = (le.y < shoulderY + 0.02) && (re.y < shoulderY + 0.02);
       const wristsClose = Math.abs(lw.x - rw.x) < 0.35;
-
       return wristsUp && elbowsUp && wristsClose;
     }
 
-    // Mode 2: Arme nach vorn (seitliche Schwimmaufnahme)
-    // Idee: Handgelenke deutlich "weg" von den Schultern (großer Abstand),
-    // Handgelenke nahe beieinander (Streamline), Ellenbogen relativ auf der Linie Schulter->Hand.
+    // Trigger: Arme nach vorn (seitlich filmen) – robust für Gleitphase/Streamline
     function dist(a, b) {
       const dx = a.x - b.x, dy = a.y - b.y;
       return Math.sqrt(dx*dx + dy*dy);
@@ -340,16 +363,16 @@
       const lw = landmarks[15], rw = landmarks[16];
       if (!ls || !rs || !le || !re || !lw || !rw) return false;
 
-      // "Arme lang": Handgelenk weit von Schulter
       const leftArmLen = dist(ls, lw);
       const rightArmLen = dist(rs, rw);
+
+      // Arms extended forward/long
       const armsExtended = (leftArmLen > 0.33) && (rightArmLen > 0.33);
 
-      // Handgelenke relativ nah zueinander (Streamline)
+      // Wrists close together (streamline)
       const wristsClose = dist(lw, rw) < 0.25;
 
-      // Ellenbogen nicht stark abgeknickt: Ellenbogen nahe der Verbindung Schulter->Hand (kollinear-ish)
-      // Wir nutzen: dist(shoulder,elbow)+dist(elbow,wrist) ~ dist(shoulder,wrist)
+      // Elbow not heavily bent: triangle inequality approx
       const leftStraight = (dist(ls, le) + dist(le, lw)) <= (dist(ls, lw) * 1.12);
       const rightStraight = (dist(rs, re) + dist(re, rw)) <= (dist(rs, rw) * 1.12);
 
@@ -358,12 +381,10 @@
 
     function isStreamline(landmarks) {
       const mode = triggerMode.value;
-
       if (mode === "overhead") return isOverhead(landmarks);
       if (mode === "forward") return isForwardStreamline(landmarks);
 
-      // Auto:
-      // Wenn "overhead" erkennbar ist, nutze das. Sonst nutze "forward".
+      // Auto: overhead bevorzugen, sonst forward
       if (isOverhead(landmarks)) return true;
       return isForwardStreamline(landmarks);
     }
@@ -383,7 +404,7 @@
         currentElapsed = 0;
         if (inPose && glideTimes.length < 4) {
           if (poseStableSince === null) poseStableSince = now;
-          if (now - poseStableSince >= 220) { // bewusst etwas stabiler
+          if (now - poseStableSince >= 220) {
             glideActive = true;
             glideStart = now;
             poseLostSince = null;
@@ -432,7 +453,7 @@
       ctx.fillStyle = "rgba(0,0,0,0.45)";
       ctx.strokeStyle = "rgba(255,255,255,0.65)";
       ctx.lineWidth = 2;
-      const x = 14, y = 14, w = 420, h = 175;
+      const x = 14, y = 14, w = 460, h = 175;
       roundRect(ctx, x, y, w, h, 14);
       ctx.fill();
       ctx.stroke();
