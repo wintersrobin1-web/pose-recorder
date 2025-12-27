@@ -122,7 +122,7 @@
     </div>
 
     <p class="hint">
-      Hinweis: Für 45° seitlich ist Occlusion normal. Der Timer nutzt deshalb einen Score + Hysterese (robuster Start/Stop).
+      Hinweis: Bei 45° seitlich ist Occlusion normal. Der Timer nutzt Score + Bewegungs-Stop (Knie beugen / Arme absenken) und eine Hysterese.
     </p>
   </details>
 
@@ -133,17 +133,18 @@
 
   <p class="hint mono" id="status">Status: bereit</p>
 
-  <!-- Optional: Technik-Infos (statisch, aufklappbar) -->
   <div class="foot tiplist">
     <details>
-      <summary>Optionale Technik-Checkliste (Brust: Gleitphase)</summary>
+      <summary>Technik-Checkliste (Brust: Gleitphase)</summary>
 
       <details>
-        <summary>Arme öffnen zu weit (zu viel Widerstand)</summary>
+        <summary>Arme öffnen zu weit (Widerstand steigt)</summary>
         <p class="hint">
-          <b>Woran erkennbar (im Skelett):</b> Handgelenke/Unterarme gehen seitlich deutlich auseinander, Ellenbogen „fallen raus“.<br>
-          <b>Korrektur:</b> Zug- und Rückholweg enger, Ellenbogen eher „hoch“ führen, Hände vor dem Kopf wieder zusammenführen
-          (Streamline: „Pfeilform“). Fokus: kleinerer Querschnitt, weniger Bremsfläche.
+          <b>Faustregel „zu weit“:</b> In der Zug-/Öffnungsphase sollten die Hände <b>nicht deutlich breiter als schulterbreit</b> werden.
+          Grober Richtwert: Abstand Hand–Hand <b>&gt; 1,3× Schulterbreite</b> ist meist „zu weit“. (Schulterbreite = Abstand Landmark 11–12.)<br><br>
+          <b>Ideale Sequenz (vereinfacht):</b> Hände öffnen bis etwa schulterbreit, <b>Ellenbogen beugen</b> (nicht „gerade nach außen drücken“),
+          dann Hände zügig <b>vor die Brust</b> zusammenführen und <b>sofort nach vorn in Streamline</b> strecken.<br><br>
+          <b>Typischer Fehler:</b> Hände gehen sehr weit nach außen, Ellenbogen „fallen raus“ → große Bremsfläche.
         </p>
       </details>
 
@@ -159,9 +160,10 @@
       <details>
         <summary>Gleitphase zu kurz (zu frühes Anziehen / zu viel „Wuseln“)</summary>
         <p class="hint">
-          <b>Woran erkennbar:</b> Körper wird nach dem Strecken sofort wieder klein, Beine/Arme bewegen direkt weiter.<br>
-          <b>Korrektur:</b> Nach dem Strecken 1–2 ruhige Momente halten („Druckphase – Strecken – Gleiten“).
-          Ziel: Geschwindigkeit in die Gleitlage „mitnehmen“, nicht sofort bremsen.
+          <b>Richtwerte (sehr grob):</b> häufig ca. <b>0,8–1,5 s</b> (Technikfokus/Anfänger) bis <b>1,5–2,5 s</b> (guter Abstoß/fortgeschritten).
+          Stärker hängt es von Abstoßgeschwindigkeit, Wasserlage und Distanz ab.<br><br>
+          <b>Korrektur:</b> Nach dem Strecken kurz stabil halten („Druckphase – Strecken – Gleiten“). Ziel: Geschwindigkeit in die Gleitlage „mitnehmen“,
+          nicht sofort wieder bremsen.
         </p>
       </details>
 
@@ -496,7 +498,7 @@
       return { neckDeg: deg, ok };
     }
 
-    // ---------- Timer / Slots (Score + Hysterese = früher + stabiler) ----------
+    // ---------- Timer / Slots ----------
     const glideTimes = [];
     let glideActive = false, glideStart = 0, currentElapsed = 0;
 
@@ -516,7 +518,6 @@
       const shoulderY = (ls.y + rs.y) / 2;
       const headY = (nose?.y ?? (shoulderY - 0.10));
 
-      // weich: Wrist über Kopf ist "1.0", nur hoher Ellbogen ist "0.7"
       const elbowMargin = 0.04;
       const wristMargin = 0.02;
 
@@ -537,7 +538,6 @@
       const aL = kneeAngle(lh, lk, la);
       const aR = kneeAngle(rh, rk, ra);
 
-      // Score 0..1: ab 150° gut, ab 170° sehr gut
       const toScore = (ang) => {
         if (ang == null) return 0;
         if (ang <= 145) return 0;
@@ -545,8 +545,8 @@
         return (ang - 145) / (170 - 145);
       };
 
-      if (aL != null && aR != null) return Math.min(toScore(aL), toScore(aR)); // beide zählen
-      return Math.max(toScore(aL), toScore(aR)); // Occlusion: eins reicht
+      if (aL != null && aR != null) return Math.min(toScore(aL), toScore(aR));
+      return Math.max(toScore(aL), toScore(aR));
     }
 
     function bodyLongScore(raw) {
@@ -572,51 +572,62 @@
       const p = filmingPreset.value;
       const tol = (p === "side45") ? 0.014 : 0.012;
 
-      if (!lastTorso) { lastTorso = torso; return 0.3; } // beim ersten Frame nicht blockieren
+      if (!lastTorso) { lastTorso = torso; return 0.3; }
       const move = Math.hypot(torso.x - lastTorso.x, torso.y - lastTorso.y);
       lastTorso = torso;
 
-      // 1.0 = sehr ruhig, 0.0 = sehr unruhig
       const s = 1 - Math.min(1, move / tol);
       return Math.max(0, s);
     }
 
     function computeGlideScore(raw) {
-      // Gewichtung: Arme + Beine am wichtigsten, dann Körperlänge, dann Ruhe
-      const arms = armOverHeadRobust(raw);      // 0..1
-      const legs = legsStraightScore(raw);      // 0..1
-      const longB = bodyLongScore(raw);         // 0..1
-      const still = stillnessScore(raw);        // 0..1
-
+      const arms = armOverHeadRobust(raw);
+      const legs = legsStraightScore(raw);
+      const longB = bodyLongScore(raw);
+      const still = stillnessScore(raw);
       return (0.38*arms + 0.32*legs + 0.18*longB + 0.12*still);
     }
 
+    // >>> UPDATED: robust stop by movement (knees bend / arms drop) + hard max safety stop
     function updateTimer(raw, now){
       if(!toggleTimer.checked){
         glideActive=false; currentElapsed=0;
         scoreEma=0; scoreStableSince=null; scoreLowSince=null;
+        lastTorso=null;
         return;
       }
 
       const p = filmingPreset.value;
 
-      // Schwellen (Hysterese):
-      // Start früher: Score>=startThr kurz stabil
-      // Stop später: Score<=stopThr länger niedrig
       const startThr = (p === "side45") ? 0.72 : 0.75;
       const stopThr  = (p === "side45") ? 0.55 : 0.58;
 
-      // Hold-Zeiten:
-      const startHoldMs = (p === "side45") ? 140 : 170; // deutlich früher als vorher
-      const stopHoldMs  = (p === "side45") ? 320 : 300;
+      const startHoldMs = (p === "side45") ? 140 : 170;
+      const stopHoldMs  = (p === "side45") ? 280 : 260;
 
-      // EMA für Score (glättet Occlusion-Spikes)
+      const hardMaxMs = (p === "stand") ? 5000 : 6500;
+
       const alpha = (p === "side45") ? 0.65 : 0.60;
       const sNow = computeGlideScore(raw);
       scoreEma = alpha*scoreEma + (1-alpha)*sNow;
 
+      // Bewegungstrigger für Stop:
+      const lh = raw[23], rh = raw[24], lk = raw[25], rk = raw[26], la = raw[27], ra = raw[28];
+      const aL = kneeAngle(lh, lk, la);
+      const aR = kneeAngle(rh, rk, ra);
+
+      // Knie deutlich beugen -> Ende Gleitphase
+      const kneesBend = ((aL != null && aL < 155) || (aR != null && aR < 155));
+
+      // Arme verlassen Überkopf-Position
+      const armScore = armOverHeadRobust(raw);
+      const armsDropped = armScore < 0.45;
+
+      const movementStop = kneesBend || armsDropped;
+
       if(!glideActive){
         currentElapsed = 0;
+
         if(scoreEma >= startThr && glideTimes.length < 4){
           if(scoreStableSince == null) scoreStableSince = now;
           if(now - scoreStableSince >= startHoldMs){
@@ -632,6 +643,34 @@
 
       currentElapsed = now - glideStart;
 
+      // Hard max safety stop
+      if(currentElapsed >= hardMaxMs){
+        glideActive = false;
+        scoreStableSince = null;
+        scoreLowSince = null;
+        glideTimes.push(currentElapsed);
+        if(glideTimes.length > 4) glideTimes.length = 4;
+        currentElapsed = 0;
+        return;
+      }
+
+      // Stop by movement (prioritized)
+      if(movementStop){
+        if(scoreLowSince == null) scoreLowSince = now;
+        if(now - scoreLowSince >= 120){
+          glideActive = false;
+          scoreStableSince = null;
+          scoreLowSince = null;
+          glideTimes.push(now - glideStart);
+          if(glideTimes.length > 4) glideTimes.length = 4;
+          currentElapsed = 0;
+          return;
+        }
+      } else {
+        scoreLowSince = null;
+      }
+
+      // Fallback: score low long enough
       if(scoreEma <= stopThr){
         if(scoreLowSince == null) scoreLowSince = now;
         if(now - scoreLowSince >= stopHoldMs){
@@ -643,7 +682,7 @@
           currentElapsed = 0;
         }
       } else {
-        scoreLowSince = null;
+        if(!movementStop) scoreLowSince = null;
       }
     }
 
@@ -918,7 +957,7 @@
         smoothedCss = null;
         emptyMaskFrames = 0;
 
-        // Timer state reset
+        // Timer reset
         glideActive=false; glideStart=0; currentElapsed=0;
         scoreEma=0; scoreStableSince=null; scoreLowSince=null;
         lastTorso=null;
