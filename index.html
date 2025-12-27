@@ -3,12 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Brust – Gleitphase | anonym (Mask + Skelett + Timer)</title>
+  <title>Brust – Gleitphase (anonym) | Silhouette + Skelett + Timer</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
-    video, canvas { max-width: 100%; width: 360px; height: auto; border: 1px solid #ddd; border-radius: 10px; }
-    video { background:#000; }
+    video, canvas { max-width: 100%; border: 1px solid #ddd; border-radius: 10px; }
+    video { width: 360px; height: auto; background:#000; }
+    canvas { width: 360px; height: auto; }
     button { padding: 10px 14px; border-radius: 10px; border: 1px solid #ccc; background: #fff; }
     button.primary { border-color: #111; }
     button:disabled { opacity: 0.5; }
@@ -27,8 +28,8 @@
 <body>
   <h1>Brust – Gleitphase (anonym)</h1>
   <p class="hint">
-    Output-Video enthält <b>nur</b> Hintergrund (hellblau) + <b>Silhouette</b> (Segmentation Mask) + <b>Skelett</b> + <b>Timer/Slots</b>.
-    Das Video links ist nur Input. Hochkant und Querformat funktionieren gleichermaßen.
+    Output-Video enthält nur Hintergrund (hellblau) + Silhouette (Segmentation Mask) + Skelett + Timer/Slots.
+    Das Video links ist nur Input (wird nicht in den Output gezeichnet). Hochkant und Querformat funktionieren gleichermaßen.
   </p>
 
   <div class="row">
@@ -57,29 +58,32 @@
 
     <div class="rangeWrap">
       <span>Silhouette-Deckkraft</span>
-      <input id="silOpacity" type="range" min="0" max="1" step="0.05" value="0.85">
-      <span id="silOpacityVal" class="small">0.85</span>
+      <!-- 40% default -->
+      <input id="silOpacity" type="range" min="0" max="1" step="0.05" value="0.40">
+      <span id="silOpacityVal" class="small">0.40</span>
     </div>
 
     <div class="rangeWrap">
       <span>Silhouette-Schwelle (Mask)</span>
-      <input id="silThresh" type="range" min="0" max="80" step="1" value="12">
-      <span id="silThreshVal" class="small">12</span>
+      <!-- 0..255 ist robuster, default niedrig, damit sofort sichtbar -->
+      <input id="silThresh" type="range" min="0" max="255" step="1" value="10">
+      <span id="silThreshVal" class="small">10</span>
     </div>
 
     <div class="rangeWrap">
       <span>Skelett-Linienstärke</span>
-      <input id="skelLine" type="range" min="2" max="14" step="1" value="6">
-      <span id="skelLineVal" class="small">6</span>
+      <!-- default 3 -->
+      <input id="skelLine" type="range" min="1" max="14" step="1" value="3">
+      <span id="skelLineVal" class="small">3</span>
     </div>
 
     <div class="rangeWrap">
       <span>Gelenkpunkte (Radius)</span>
-      <input id="skelDot" type="range" min="1" max="8" step="1" value="3">
-      <span id="skelDotVal" class="small">3</span>
+      <!-- default 4 -->
+      <input id="skelDot" type="range" min="1" max="10" step="1" value="4">
+      <span id="skelDotVal" class="small">4</span>
     </div>
 
-    <!-- WICHTIG: sinnvolle Defaults (≈50–55 %) -->
     <div class="rangeWrap">
       <span>Detection (min)</span>
       <input id="detConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
@@ -105,8 +109,7 @@
     </div>
 
     <p class="hint">
-      Empfehlung für Schwimmen: <b>0.50/0.50/0.55</b> ist stabiler als 0.99 (sonst flackert/verschwindet die Pose).
-      Silhouette sichtbar machen: Schwelle ca. <b>8–20</b> und Deckkraft 0.7–1.0.
+      Silhouette wie im Google-Demo: Gelb, ca. 40% Deckkraft. Falls zu schwach: Schwelle auf 0–8 senken oder Deckkraft erhöhen.
     </p>
   </details>
 
@@ -175,8 +178,10 @@
     bindSlider(trackConf, trackVal);
     bindSlider(smooth, smoothVal, v => Number(v).toFixed(2));
 
-    // ---------- Orientation + HiDPI (konsistent, ohne DrawingUtils-Mismatch) ----------
+    // ---------- Orientation + HiDPI ----------
     function isPortraitUI() {
+      const wo = window.orientation;
+      if (typeof wo === "number") return (wo === 0 || wo === 180);
       const so = screen.orientation && screen.orientation.type;
       if (typeof so === "string") return so.includes("portrait");
       if (window.matchMedia) return window.matchMedia("(orientation: portrait)").matches;
@@ -184,6 +189,8 @@
     }
 
     let CSS_W = 360, CSS_H = 640;
+
+    // internal maskCanvas (HiDPI)
     const maskCanvas = document.createElement("canvas");
     const maskCtx = maskCanvas.getContext("2d", { willReadFrequently: true });
 
@@ -197,10 +204,11 @@
       canvas.width = Math.round(cssW * dpr);
       canvas.height = Math.round(cssH * dpr);
 
-      // Wir zeichnen in CSS-Pixeln (transformiert), aber Skelett rendern wir manuell in CSS-Raum.
+      // draw in CSS pixels
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false;
 
+      // maskCanvas internal size = output internal size
       maskCanvas.width = canvas.width;
       maskCanvas.height = canvas.height;
     }
@@ -210,13 +218,14 @@
       else setupHiDPICanvas(640, 360);
       setStatus("Ausrichtung: " + (isPortraitUI() ? "Hochformat" : "Querformat"));
     }
+
     window.addEventListener("resize", applyLayoutFromOrientation);
     window.addEventListener("orientationchange", applyLayoutFromOrientation);
 
     // ---------- Background ----------
     const BG = "#bfe7ff";
 
-    // ---------- Pose connections (fallback, 33 Landmarks) ----------
+    // ---------- Pose connections (33 landmarks) ----------
     const POSE_CONNECTIONS = [
       [0,1],[1,2],[2,3],[3,7],
       [0,4],[4,5],[5,6],[6,8],
@@ -230,7 +239,7 @@
       [27,28]
     ];
 
-    // ---------- Video-to-canvas "contain" mapping (CSS space) ----------
+    // ---------- Video-to-canvas "contain" mapping ----------
     function mapLandmarksContain(rawLandmarks, vw, vh, cw, ch) {
       const scale = Math.min(cw / vw, ch / vh);
       const dispW = vw * scale;
@@ -238,7 +247,6 @@
       const offX = (cw - dispW) / 2;
       const offY = (ch - dispH) / 2;
 
-      // Wir liefern Punkte in CSS-Pixel-Koordinaten (nicht normiert)
       return rawLandmarks.map(p => {
         const px = p.x * vw;
         const py = p.y * vh;
@@ -248,14 +256,7 @@
       });
     }
 
-    // ---------- Segmentation mask helpers ----------
-    function segMaskToCanvas(segMask) {
-      if (!segMask) return null;
-      if (typeof segMask.getAsCanvas === "function") return segMask.getAsCanvas();
-      if (segMask.canvas) return segMask.canvas;
-      return null;
-    }
-
+    // Same contain mapping but for drawing the mask into maskCanvas (internal pixels)
     function drawMaskContainIntoMaskCanvas(sc, vw, vh) {
       const dpr = Math.max(1, window.devicePixelRatio || 1);
       const cw = CSS_W, ch = CSS_H;
@@ -275,6 +276,15 @@
       );
     }
 
+    // ---------- Segmentation mask helpers ----------
+    function segMaskToCanvas(segMask) {
+      if (!segMask) return null;
+      if (typeof segMask.getAsCanvas === "function") return segMask.getAsCanvas();
+      if (segMask.canvas) return segMask.canvas;
+      return null;
+    }
+
+    // --- Silhouette: gelb, ~40% Deckkraft, robust über Alpha/RGBA ---
     function drawMaskSilhouette(segMask) {
       if (!toggleSilhouette.checked || !segMask) return;
 
@@ -285,45 +295,52 @@
       const vh = video.videoHeight || 0;
       if (!vw || !vh) return;
 
+      // Maske in internal maskCanvas zeichnen (same contain mapping wie Skelett)
       drawMaskContainIntoMaskCanvas(sc, vw, vh);
 
       const img = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
       const d = img.data;
 
-      const opacity = Number(silOpacity.value);
-      const alphaBase = Math.round(255 * opacity);
-      const thresh = Math.round(Number(silThresh.value)); // 0..80
+      const opacity = Number(silOpacity.value);         // 0..1 (default 0.40)
+      const thresh  = Math.round(Number(silThresh.value)); // 0..255 (default 10)
 
-      // Safari-robust: max(R,G,B,A) als Intensität
+      // Ziel-Farbe: gelb
+      const R = 255, G = 212, B = 0;
+
       for (let i = 0; i < d.length; i += 4) {
-        const m = Math.max(d[i], d[i+1], d[i+2], d[i+3]); // 0..255
+        // Viele Backends packen die Maskenintensität primär in Alpha.
+        const a = d[i+3];
+        const m = Math.max(a, d[i], d[i+1], d[i+2]); // robust
+
         if (m > thresh) {
-          d[i]   = 20;
-          d[i+1] = 70;
-          d[i+2] = 120;
-          d[i+3] = Math.min(255, Math.round((m / 255) * alphaBase) + 140);
+          d[i]   = R;
+          d[i+1] = G;
+          d[i+2] = B;
+
+          // Alpha proportional zur Maskenstärke, mit Ziel-Deckkraft
+          d[i+3] = Math.min(255, Math.round((m / 255) * (opacity * 255)));
         } else {
           d[i+3] = 0;
         }
       }
+
       maskCtx.putImageData(img, 0, 0);
 
-      // in CSS-Pixeln auf Output
+      // Silhouette auf Output (CSS-Pixel-Koordinaten)
       ctx.drawImage(maskCanvas, 0, 0, CSS_W, CSS_H);
     }
 
-    // ---------- EMA smoothing (auf normierten Koordinaten, aber wir zeichnen in CSS mit _cx/_cy) ----------
+    // ---------- EMA smoothing (CSS space) ----------
     let smoothed = null;
-    function ema(mappedCssPoints) {
+    function ema(cssPoints) {
       const a = Number(smooth.value);
-      if (!mappedCssPoints) return null;
-
-      if (!smoothed || smoothed.length !== mappedCssPoints.length) {
-        smoothed = mappedCssPoints.map(p => ({ ...p }));
+      if (!cssPoints) return null;
+      if (!smoothed || smoothed.length !== cssPoints.length) {
+        smoothed = cssPoints.map(p => ({ ...p }));
         return smoothed;
       }
-      for (let i = 0; i < mappedCssPoints.length; i++) {
-        const p = mappedCssPoints[i], s = smoothed[i];
+      for (let i = 0; i < cssPoints.length; i++) {
+        const p = cssPoints[i], s = smoothed[i];
         s._cx = a * s._cx + (1 - a) * p._cx;
         s._cy = a * s._cy + (1 - a) * p._cy;
         s.z = a * (s.z ?? 0) + (1 - a) * (p.z ?? 0);
@@ -333,9 +350,7 @@
       return smoothed;
     }
 
-    // ---------- Timer / Slots (arbeitet weiter mit normierten x/y aus raw) ----------
-    // Wir nutzen weiterhin raw landmarks für Logik (0..1), weil die Regeln darauf basieren.
-    // Dafür nehmen wir result.landmarks[0] direkt.
+    // ---------- Timer / Slots ----------
     const glideTimes = [];
     let glideActive = false, glideStart = 0, currentElapsed = 0;
     let poseStableSince = null, poseLostSince = null;
@@ -454,7 +469,7 @@
       ctx.restore();
     }
 
-    // ---------- SKELETT: manuell (robust, konsistent im CSS-Koordinatensystem) ----------
+    // ---------- Skelett: manuell in CSS space ----------
     function drawSkeletonCssPoints(cssPoints){
       if(!toggleSkeleton.checked || !cssPoints) return;
 
@@ -469,11 +484,9 @@
       ctx.fillStyle = "#000";
       ctx.lineWidth = lw;
 
-      // lines
       for(const [a,b] of POSE_CONNECTIONS){
         const pa = cssPoints[a], pb = cssPoints[b];
         if(!pa || !pb) continue;
-        // optional: skip low confidence
         if (typeof pa.visibility === "number" && pa.visibility < 0.2) continue;
         if (typeof pb.visibility === "number" && pb.visibility < 0.2) continue;
 
@@ -483,7 +496,6 @@
         ctx.stroke();
       }
 
-      // dots
       for(const p of cssPoints){
         if(!p) continue;
         if (typeof p.visibility === "number" && p.visibility < 0.2) continue;
@@ -588,18 +600,12 @@
         const hasMask = !!(result?.segmentationMasks?.length);
         const hasLandmarks = !!(result?.landmarks?.length && result.landmarks[0]?.length);
 
-        // silhouette
         if(hasMask) drawMaskSilhouette(result.segmentationMasks[0]);
 
-        // map landmarks into CSS space for drawing
-        let cssPoints = null;
         if(hasLandmarks){
           const raw = result.landmarks[0];
-          const vw = video.videoWidth, vh = video.videoHeight;
-          cssPoints = ema(mapLandmarksContain(raw, vw, vh, CSS_W, CSS_H));
-          drawSkeletonCssPoints(cssPoints);
-
-          // timer logic uses raw normalized landmarks (stabil)
+          const cssPts = ema(mapLandmarksContain(raw, video.videoWidth, video.videoHeight, CSS_W, CSS_H));
+          drawSkeletonCssPoints(cssPts);
           updateTimer(raw, ts);
         }
 
@@ -672,14 +678,12 @@
       setStatus("Download gestartet ("+ext.toUpperCase()+").");
     }
 
-    // ---------- Buttons / Controls ----------
+    // ---------- Buttons ----------
     btnInit.addEventListener("click", async ()=>{
       try{
         btnInit.disabled=true;
-
         applyLayoutFromOrientation();
         setStatus("Initialisiere …");
-
         await createLandmarker();
         await startCamera();
 
@@ -701,14 +705,12 @@
       try{
         btnSwitch.disabled=true;
 
-        // sauberes Pausieren verhindert Loop-Fehler/White Canvas
         running=false;
         if(rafId) cancelAnimationFrame(rafId);
 
         isBackCamera=!isBackCamera;
         await startCamera();
 
-        // Zustände resetten, damit nichts "hängt"
         smoothed = null;
         poseStableSince = null;
         poseLostSince = null;
