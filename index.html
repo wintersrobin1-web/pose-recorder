@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Bewegungsanalyse Recorder | Video + Pose + Maske + Timer</title>
+  <title>Bewegungsanalyse Recorder | Timer: Brust – Gleitphase</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
@@ -28,8 +28,8 @@
 <body>
   <h1>Bewegungsanalyse Recorder</h1>
   <p class="hint">
-    Output-Video enthält das Kamerabild + optional Maske + Skelett + HWS-Achse + Timer.
-    Links ist der Kamera-Input (zur Kontrolle), rechts ist der Output-Canvas (wird aufgenommen).
+    Output (Canvas/Videoaufnahme) enthält Hintergrund + optional Silhouette (Segmentierung) + Skelett + optional Timer (Brust – Gleitphase).
+    Das Video links ist nur Input. Hochkant/Querformat werden automatisch im Canvas übernommen.
   </p>
 
   <div class="row">
@@ -42,17 +42,15 @@
   </div>
 
   <div class="row">
-    <label><input type="checkbox" id="toggleVideo" checked /> Video im Output</label>
-    <label><input type="checkbox" id="toggleMask" checked /> Segmentationsmaske</label>
     <label><input type="checkbox" id="toggleSkeleton" checked /> Skelett</label>
-    <label><input type="checkbox" id="toggleAxis" checked /> Achse Kopf–Rumpf (HWS)</label>
-    <label><input type="checkbox" id="toggleAxisColor" checked /> HWS-Ampel (grün/rot)</label>
-    <label><input type="checkbox" id="toggleTimer" checked /> Timer: Brust – Gleitphase</label>
+    <label><input type="checkbox" id="toggleSilhouette" checked /> Segmentierung (Silhouette)</label>
+    <label><input type="checkbox" id="toggleNeck" checked /> HWS-Achse</label>
+    <label><input type="checkbox" id="toggleTimer" checked /> Timer Brust – Gleitphase</label>
 
     <select id="filmingPreset" title="Aufnahmeposition">
-      <option value="stand" selected>Stand-Test (Beckenrand)</option>
-      <option value="side45">45° seitlich</option>
-      <option value="back45">45° von hinten</option>
+      <option value="stand" selected>Test am Beckenrand (im Stand)</option>
+      <option value="side45">45° schräg seitlich</option>
+      <option value="back45">45° von hinten (Startblock)</option>
     </select>
   </div>
 
@@ -60,15 +58,15 @@
     <summary>Erweiterte Einstellungen (optional)</summary>
 
     <div class="rangeWrap">
-      <span>Maske Deckkraft</span>
-      <input id="maskOpacity" type="range" min="0" max="1" step="0.05" value="0.40">
-      <span id="maskOpacityVal" class="small">0.40</span>
+      <span>Silhouette-Deckkraft</span>
+      <input id="silOpacity" type="range" min="0" max="1" step="0.05" value="0.40">
+      <span id="silOpacityVal" class="small">0.40</span>
     </div>
 
     <div class="rangeWrap">
-      <span>Maske Schwelle</span>
-      <input id="maskThresh" type="range" min="0" max="80" step="1" value="8">
-      <span id="maskThreshVal" class="small">8</span>
+      <span>Silhouette-Schwelle</span>
+      <input id="silThresh" type="range" min="0" max="100" step="1" value="12">
+      <span id="silThreshVal" class="small">12</span>
     </div>
 
     <div class="rangeWrap">
@@ -107,8 +105,14 @@
       <span id="smoothVal" class="small">0.60</span>
     </div>
 
+    <div class="rangeWrap">
+      <span>HWS-Toleranz (°)</span>
+      <input id="neckTol" type="range" min="10" max="60" step="1" value="25">
+      <span id="neckTolVal" class="small">25</span>
+    </div>
+
     <p class="hint">
-      Tipp iPhone: Maske Schwelle klein (5–15) und Deckkraft 0.30–0.60. Wenn „maskmax=0“, liefert das Backend aktuell keine brauchbaren Maskenwerte.
+      Silhouette: Gelb mit 40% Deckkraft. Falls die Maske auf iOS leer wirkt, wird sie hier aus dem Mask-Array gerendert (robuster als getAsCanvas()).
     </p>
   </details>
 
@@ -135,31 +139,32 @@
     const btnShare = document.getElementById("btnShare");
     const btnReset = document.getElementById("btnReset");
 
-    const toggleVideo = document.getElementById("toggleVideo");
-    const toggleMask = document.getElementById("toggleMask");
     const toggleSkeleton = document.getElementById("toggleSkeleton");
-    const toggleAxis = document.getElementById("toggleAxis");
-    const toggleAxisColor = document.getElementById("toggleAxisColor");
+    const toggleSilhouette = document.getElementById("toggleSilhouette");
+    const toggleNeck = document.getElementById("toggleNeck");
     const toggleTimer = document.getElementById("toggleTimer");
     const filmingPreset = document.getElementById("filmingPreset");
 
-    const maskOpacity = document.getElementById("maskOpacity");
-    const maskThresh = document.getElementById("maskThresh");
+    const silOpacity = document.getElementById("silOpacity");
+    const silThresh = document.getElementById("silThresh");
     const skelLine  = document.getElementById("skelLine");
     const skelDot   = document.getElementById("skelDot");
+
     const detConf = document.getElementById("detConf");
     const presConf = document.getElementById("presConf");
     const trackConf = document.getElementById("trackConf");
     const smooth = document.getElementById("smooth");
+    const neckTol = document.getElementById("neckTol");
 
-    const maskOpacityVal = document.getElementById("maskOpacityVal");
-    const maskThreshVal = document.getElementById("maskThreshVal");
+    const silOpacityVal = document.getElementById("silOpacityVal");
+    const silThreshVal  = document.getElementById("silThreshVal");
     const skelLineVal   = document.getElementById("skelLineVal");
     const skelDotVal    = document.getElementById("skelDotVal");
     const detVal = document.getElementById("detVal");
     const presVal = document.getElementById("presVal");
     const trackVal = document.getElementById("trackVal");
     const smoothVal = document.getElementById("smoothVal");
+    const neckTolVal = document.getElementById("neckTolVal");
 
     const statusEl = document.getElementById("status");
     const setStatus = (s) => statusEl.textContent = "Status: " + s;
@@ -169,14 +174,15 @@
       el.addEventListener("input", update);
       update();
     }
-    bindSlider(maskOpacity, maskOpacityVal, v => Number(v).toFixed(2));
-    bindSlider(maskThresh, maskThreshVal, v => String(Math.round(Number(v))));
+    bindSlider(silOpacity, silOpacityVal, v => Number(v).toFixed(2));
+    bindSlider(silThresh,  silThreshVal,  v => String(Math.round(Number(v))));
     bindSlider(skelLine,   skelLineVal,   v => String(Math.round(Number(v))));
     bindSlider(skelDot,    skelDotVal,    v => String(Math.round(Number(v))));
     bindSlider(detConf, detVal);
     bindSlider(presConf, presVal);
     bindSlider(trackConf, trackVal);
     bindSlider(smooth, smoothVal, v => Number(v).toFixed(2));
+    bindSlider(neckTol, neckTolVal, v => String(Math.round(Number(v))));
 
     // ---------- Orientation + HiDPI ----------
     function isPortraitUI() {
@@ -193,17 +199,12 @@
 
       canvas.style.width = cssW + "px";
       canvas.style.height = cssH + "px";
-
       canvas.width = Math.round(cssW * dpr);
       canvas.height = Math.round(cssH * dpr);
 
       // draw in CSS pixels
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false;
-
-      // keep mask buffers aligned to output internal resolution
-      maskCanvas.width = canvas.width;
-      maskCanvas.height = canvas.height;
     }
 
     function applyLayoutFromOrientation() {
@@ -213,8 +214,12 @@
     }
     window.addEventListener("resize", applyLayoutFromOrientation);
     window.addEventListener("orientationchange", applyLayoutFromOrientation);
+    applyLayoutFromOrientation();
 
-    // ---------- Pose connections ----------
+    // ---------- Background ----------
+    const BG = "#bfe7ff";
+
+    // ---------- Pose connections (OHNE ankle-ankle Linie) ----------
     const POSE_CONNECTIONS = [
       [0,1],[1,2],[2,3],[3,7],
       [0,4],[4,5],[5,6],[6,8],
@@ -225,79 +230,50 @@
       [11,23],[12,24],[23,24],
       [23,25],[25,27],[27,29],[29,31],
       [24,26],[26,28],[28,30],[30,32]
+      // bewusst KEIN [27,28]
     ];
 
-    // ---------- Contain mapping ----------
-    function containRect(vw, vh, cw, ch) {
+    // ---------- Video-to-canvas "contain" mapping (CSS space) ----------
+    function mapLandmarksContain(rawLandmarks, vw, vh, cw, ch) {
       const scale = Math.min(cw / vw, ch / vh);
       const dispW = vw * scale;
       const dispH = vh * scale;
       const offX = (cw - dispW) / 2;
       const offY = (ch - dispH) / 2;
-      return { offX, offY, dispW, dispH, scale };
-    }
 
-    function mapLandmarksToCss(rawLandmarks, vw, vh, cw, ch, mirrorX) {
-      const { offX, offY, scale } = containRect(vw, vh, cw, ch);
       return rawLandmarks.map(p => {
-        const nx = mirrorX ? (1 - p.x) : p.x;
-        return {
-          ...p,
-          _cx: offX + (nx * vw) * scale,
-          _cy: offY + (p.y * vh) * scale,
-        };
+        const px = p.x * vw;
+        const py = p.y * vh;
+        const cx = offX + px * scale;
+        const cy = offY + py * scale;
+        return { ...p, _cx: cx, _cy: cy };
       });
     }
 
-    // ---------- EMA smoothing ----------
-    let smoothed = null;
-    function ema(cssPoints) {
+    // ---------- EMA smoothing in CSS-space ----------
+    let smoothedCss = null;
+    function emaCss(cssPoints) {
       const a = Number(smooth.value);
       if (!cssPoints) return null;
 
-      if (!smoothed || smoothed.length !== cssPoints.length) {
-        smoothed = cssPoints.map(p => ({...p}));
-        return smoothed;
+      if (!smoothedCss || smoothedCss.length !== cssPoints.length) {
+        smoothedCss = cssPoints.map(p => ({ ...p }));
+        return smoothedCss;
       }
-      for (let i=0;i<cssPoints.length;i++){
-        const p = cssPoints[i], s = smoothed[i];
-        s._cx = a*s._cx + (1-a)*p._cx;
-        s._cy = a*s._cy + (1-a)*p._cy;
-        s.z = a*(s.z ?? (p.z ?? 0)) + (1-a)*(p.z ?? 0);
+      for (let i = 0; i < cssPoints.length; i++) {
+        const p = cssPoints[i], s = smoothedCss[i];
+        s._cx = a * s._cx + (1 - a) * p._cx;
+        s._cy = a * s._cy + (1 - a) * p._cy;
+        s.z = a * (s.z ?? 0) + (1 - a) * (p.z ?? 0);
         if (typeof p.visibility === "number") s.visibility = p.visibility;
         if (typeof p.presence === "number") s.presence = p.presence;
       }
-      return smoothed;
+      return smoothedCss;
     }
 
-    // ---------- Draw video into output (contain + optional mirror) ----------
-    function drawVideoContain() {
-      if (!toggleVideo.checked) return;
-
-      const vw = video.videoWidth || 0;
-      const vh = video.videoHeight || 0;
-      if (!vw || !vh) return;
-
-      const { offX, offY, dispW, dispH } = containRect(vw, vh, CSS_W, CSS_H);
-
-      ctx.save();
-      const mirrorX = !isBackCamera;
-      if (mirrorX) {
-        // mirror around canvas center
-        ctx.translate(CSS_W, 0);
-        ctx.scale(-1, 1);
-        // after mirror, offX becomes: CSS_W - offX - dispW
-        const mx = (CSS_W - offX - dispW);
-        ctx.drawImage(video, mx, offY, dispW, dispH);
-      } else {
-        ctx.drawImage(video, offX, offY, dispW, dispH);
-      }
-      ctx.restore();
-    }
-
-    // ---------- Skeleton drawing ----------
-    function drawSkeletonCssPoints(cssPoints){
-      if(!toggleSkeleton.checked || !cssPoints) return;
+    // ---------- Skeleton drawing (CSS points) ----------
+    function drawSkeletonCssPoints(cssPoints) {
+      if (!toggleSkeleton.checked || !cssPoints) return;
 
       const lw = Math.round(Number(skelLine.value));
       const r  = Math.round(Number(skelDot.value));
@@ -310,309 +286,351 @@
       ctx.fillStyle = "#000";
       ctx.lineWidth = lw;
 
-      for(const [a,b] of POSE_CONNECTIONS){
+      for (const [a,b] of POSE_CONNECTIONS) {
         const pa = cssPoints[a], pb = cssPoints[b];
-        if(!pa || !pb) continue;
-        if (typeof pa.visibility === "number" && pa.visibility < 0.2) continue;
-        if (typeof pb.visibility === "number" && pb.visibility < 0.2) continue;
-
+        if (!pa || !pb) continue;
+        if (typeof pa.visibility === "number" && pa.visibility < 0.15) continue;
+        if (typeof pb.visibility === "number" && pb.visibility < 0.15) continue;
         ctx.beginPath();
         ctx.moveTo(pa._cx, pa._cy);
         ctx.lineTo(pb._cx, pb._cy);
         ctx.stroke();
       }
 
-      for(const p of cssPoints){
-        if(!p) continue;
-        if (typeof p.visibility === "number" && p.visibility < 0.2) continue;
+      for (const p of cssPoints) {
+        if (!p) continue;
+        if (typeof p.visibility === "number" && p.visibility < 0.15) continue;
         ctx.beginPath();
         ctx.arc(p._cx, p._cy, r, 0, Math.PI*2);
         ctx.fill();
       }
-
       ctx.restore();
     }
 
-    // ---------- HWS axis ----------
-    function angleDegBetweenVectors(ax, ay, bx, by) {
-      const da = Math.hypot(ax, ay);
-      const db = Math.hypot(bx, by);
-      if (!da || !db) return null;
-      const dot = (ax*bx + ay*by) / (da*db);
-      const clamped = Math.max(-1, Math.min(1, dot));
-      return Math.acos(clamped) * (180 / Math.PI);
+    // ---------- Segmentierung (ROBUST: Mask as Float32/Uint8 Array -> RGBA) ----------
+    const maskSrcCanvas = document.createElement("canvas"); // mask native resolution
+    const maskSrcCtx = maskSrcCanvas.getContext("2d", { willReadFrequently: false });
+
+    // helper: draw maskSrcCanvas into output with contain mapping (wie Video)
+    function drawMaskContainFromSource(srcCanvas, vw, vh) {
+      const cw = CSS_W, ch = CSS_H;
+      const scale = Math.min(cw / vw, ch / vh);
+      const dispW = vw * scale;
+      const dispH = vh * scale;
+      const offX = (cw - dispW) / 2;
+      const offY = (ch - dispH) / 2;
+
+      ctx.drawImage(srcCanvas, offX, offY, dispW, dispH);
     }
-    const NECK_NEUTRAL_TOL_DEG = 18;
 
-    function drawHeadTorsoAxis(cssPoints) {
-      if (!toggleAxis.checked || !cssPoints) return;
+    // build RGBA mask image in native mask resolution
+    function renderMaskToCanvas(segMask) {
+      if (!segMask) return { max: 0, w: 0, h: 0 };
 
-      const nose = cssPoints[0];
-      const ls = cssPoints[11], rs = cssPoints[12];
-      const lh = cssPoints[23], rh = cssPoints[24];
-      if (!ls || !rs || !lh || !rh) return;
+      const mw = segMask.width ?? 0;
+      const mh = segMask.height ?? 0;
+      if (!mw || !mh) return { max: 0, w: 0, h: 0 };
 
-      const sh = { x: (ls._cx + rs._cx)/2, y: (ls._cy + rs._cy)/2 };
-      const hp = { x: (lh._cx + rh._cx)/2, y: (lh._cy + rh._cy)/2 };
-
-      let headVec = null;
-      if (nose && !(typeof nose.visibility === "number" && nose.visibility < 0.2)) {
-        headVec = { x: (nose._cx - sh.x), y: (nose._cy - sh.y) };
-      }
-      const torsoVec = { x: (hp.x - sh.x), y: (hp.y - sh.y) };
-
-      let colHead = "rgba(0,0,0,0.55)";
-      let colTorso = "rgba(0,0,0,0.85)";
-
-      if (toggleAxisColor.checked && headVec) {
-        const ang = angleDegBetweenVectors(headVec.x, headVec.y, torsoVec.x, torsoVec.y);
-        const dev = (ang == null) ? null : Math.abs(180 - ang);
-        const ok = (dev != null && dev <= NECK_NEUTRAL_TOL_DEG);
-        colTorso = ok ? "rgba(0,170,0,0.95)" : "rgba(220,0,0,0.95)";
-        colHead  = ok ? "rgba(0,170,0,0.65)" : "rgba(220,0,0,0.65)";
+      if (maskSrcCanvas.width !== mw || maskSrcCanvas.height !== mh) {
+        maskSrcCanvas.width = mw;
+        maskSrcCanvas.height = mh;
       }
 
-      const lwBase = Math.max(2, Math.round(Number(skelLine.value) * 0.8));
-      const lwHead = Math.max(2, Math.round(Number(skelLine.value) * 0.6));
-      const rMid   = Math.max(2, Math.round(Number(skelDot.value) * 0.8));
+      const threshold = Number(silThresh.value) / 100; // 0..1
+      const alpha = Number(silOpacity.value); // 0..1
 
-      ctx.save();
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
+      // Prefer Float32 (0..1), fallback Uint8 (0..255).
+      let dataF = null, dataU = null;
+      try {
+        if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array();
+      } catch(_) {}
+      if (!dataF) {
+        try {
+          if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array();
+        } catch(_) {}
+      }
 
-      ctx.strokeStyle = colTorso;
-      ctx.lineWidth = lwBase;
-      ctx.beginPath();
-      ctx.moveTo(sh.x, sh.y);
-      ctx.lineTo(hp.x, hp.y);
-      ctx.stroke();
+      const img = maskSrcCtx.createImageData(mw, mh);
+      const d = img.data;
 
-      if (headVec) {
-        ctx.strokeStyle = colHead;
-        ctx.lineWidth = lwHead;
+      let maxv = 0;
+
+      if (dataF && dataF.length >= mw*mh) {
+        for (let i = 0; i < mw*mh; i++) {
+          const v = dataF[i]; // 0..1
+          if (v > maxv) maxv = v;
+          const a = (v >= threshold) ? Math.round(255 * alpha) : 0;
+          const o = i*4;
+          // gelb (unkenntlich, aber Form)
+          d[o]   = 255;
+          d[o+1] = 215;
+          d[o+2] = 0;
+          d[o+3] = a;
+        }
+      } else if (dataU && dataU.length >= mw*mh) {
+        for (let i = 0; i < mw*mh; i++) {
+          const v = dataU[i] / 255;
+          if (v > maxv) maxv = v;
+          const a = (v >= threshold) ? Math.round(255 * alpha) : 0;
+          const o = i*4;
+          d[o]   = 255;
+          d[o+1] = 215;
+          d[o+2] = 0;
+          d[o+3] = a;
+        }
+      } else {
+        // nothing usable
+        maxv = 0;
+      }
+
+      maskSrcCtx.putImageData(img, 0, 0);
+      return { max: maxv, w: mw, h: mh };
+    }
+
+    function drawSilhouette(segMask) {
+      if (!toggleSilhouette.checked || !segMask) return { max: 0 };
+
+      const vw = video.videoWidth || 0;
+      const vh = video.videoHeight || 0;
+      if (!vw || !vh) return { max: 0 };
+
+      const info = renderMaskToCanvas(segMask);
+      if (info.max > 0) {
+        ctx.save();
+        ctx.globalCompositeOperation = "source-over";
+        drawMaskContainFromSource(maskSrcCanvas, vw, vh);
+        ctx.restore();
+      }
+      return info;
+    }
+
+    // ---------- HWS-Achse (Neck) ----------
+    function mid2(a, b) { return { x:(a.x+b.x)/2, y:(a.y+b.y)/2 }; }
+    function angleBetween(u, v) {
+      const dot = u.x*v.x + u.y*v.y;
+      const nu = Math.hypot(u.x,u.y), nv = Math.hypot(v.x,v.y);
+      if (!nu || !nv) return 0;
+      const c = Math.max(-1, Math.min(1, dot/(nu*nv)));
+      return Math.acos(c) * 180/Math.PI;
+    }
+
+    function drawNeckAxis(rawNorm, cssPoints) {
+      if (!toggleNeck.checked || !rawNorm || !cssPoints) return { neckDeg: null, ok: null };
+
+      const ls = rawNorm[11], rs = rawNorm[12];
+      const lh = rawNorm[23], rh = rawNorm[24];
+      const le = rawNorm[7],  re = rawNorm[8];
+      const nose = rawNorm[0];
+
+      if (!ls || !rs || !lh || !rh) return { neckDeg: null, ok: null };
+
+      const shoulder = mid2(ls, rs);
+      const hip = mid2(lh, rh);
+
+      // head reference: midpoint ears if present, else nose
+      let head = null;
+      if (le && re) head = mid2(le, re);
+      else if (nose) head = nose;
+      else return { neckDeg: null, ok: null };
+
+      // vectors in normalized space
+      const torso = { x: shoulder.x - hip.x, y: shoulder.y - hip.y };
+      const neck  = { x: head.x - shoulder.x, y: head.y - shoulder.y };
+
+      // compare direction: make both point "upwards" by flipping if needed
+      const torsoUp = (torso.y < 0) ? torso : { x:-torso.x, y:-torso.y };
+      const neckUp  = (neck.y  < 0) ? neck  : { x:-neck.x,  y:-neck.y  };
+
+      const deg = angleBetween(torsoUp, neckUp);
+      const tol = Number(neckTol.value);
+      const ok = deg <= tol;
+
+      // draw in CSS space: from mid-shoulder to head
+      const cssLs = cssPoints[11], cssRs = cssPoints[12];
+      const cssLe = cssPoints[7],  cssRe = cssPoints[8];
+      const cssN  = cssPoints[0];
+
+      const cssShoulder = (cssLs && cssRs) ? { _cx:(cssLs._cx+cssRs._cx)/2, _cy:(cssLs._cy+cssRs._cy)/2 } : null;
+      let cssHead = null;
+      if (cssLe && cssRe) cssHead = { _cx:(cssLe._cx+cssRe._cx)/2, _cy:(cssLe._cy+cssRe._cy)/2 };
+      else if (cssN) cssHead = { _cx:cssN._cx, _cy:cssN._cy };
+
+      if (cssShoulder && cssHead) {
+        ctx.save();
+        ctx.lineCap = "round";
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = ok ? "rgba(0,180,0,0.95)" : "rgba(220,0,0,0.95)";
         ctx.beginPath();
-        ctx.moveTo(nose._cx, nose._cy);
-        ctx.lineTo(sh.x, sh.y);
+        ctx.moveTo(cssShoulder._cx, cssShoulder._cy);
+        ctx.lineTo(cssHead._cx, cssHead._cy);
         ctx.stroke();
+        ctx.restore();
       }
 
-      ctx.fillStyle = colTorso;
-      ctx.beginPath(); ctx.arc(sh.x, sh.y, rMid, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(hp.x, hp.y, rMid, 0, Math.PI*2); ctx.fill();
-
-      ctx.restore();
+      return { neckDeg: deg, ok };
     }
 
-    // ---------- Timer / Slots ----------
+    // ---------- Timer / Slots (Brust – Gleitphase) ----------
     const glideTimes = [];
-    let glideActive=false, glideStart=0, currentElapsed=0;
-    let poseStableSince=null, poseLostSince=null;
+    let glideActive = false, glideStart = 0, currentElapsed = 0;
+    let poseStableSince = null, poseLostSince = null;
 
-    const distN = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
+    const dist = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
     const fmt = (ms)=> (ms/1000).toFixed(3) + " s";
 
-    function isStandOverhead(lms){
-      const ls=lms[11], rs=lms[12], lw=lms[15], rw=lms[16], le=lms[13], re=lms[14];
-      if(!ls||!rs||!lw||!rw||!le||!re) return false;
-      const shoulderY=(ls.y+rs.y)/2;
-      const wristsUp=(lw.y<shoulderY-0.03)&&(rw.y<shoulderY-0.03);
-      const elbowsUp=(le.y<shoulderY+0.02)&&(re.y<shoulderY+0.02);
-      const wristsClose=Math.abs(lw.x-rw.x)<0.45;
-      return wristsUp && elbowsUp && wristsClose;
+    function kneeAngle(hip, knee, ankle) {
+      if (!hip || !knee || !ankle) return null;
+      const u = { x: hip.x - knee.x, y: hip.y - knee.y };
+      const v = { x: ankle.x - knee.x, y: ankle.y - knee.y };
+      return angleBetween(u, v); // degrees, 180 ~ straight
     }
 
-    function isGlideStreamlineRobust(lms, preset){
-      const ls=lms[11], rs=lms[12], lw=lms[15], rw=lms[16], lh=lms[23], rh=lms[24];
-      if(!ls||!rs||!lh||!rh) return false;
+    function oneArmStreamline(raw) {
+      const ls = raw[11], rs = raw[12], le = raw[13], re = raw[14], lw = raw[15], rw = raw[16], nose = raw[0];
+      if (!ls || !rs) return false;
 
-      const sh={x:(ls.x+rs.x)/2,y:(ls.y+rs.y)/2};
-      const hp={x:(lh.x+rh.x)/2,y:(lh.y+rh.y)/2};
-      if(distN(sh,hp)<0.10) return false;
+      const headY = (nose?.y ?? Math.min(ls.y, rs.y) - 0.02);
 
-      let leftExt=false, rightExt=false;
-      if(ls&&lw) leftExt=distN(ls,lw)>(preset==="back45"?0.23:0.26);
-      if(rs&&rw) rightExt=distN(rs,rw)>(preset==="back45"?0.23:0.26);
-      if(!leftExt && !rightExt) return false;
-
-      if(lw&&rw){
-        const maxD=preset==="back45"?0.60:0.45;
-        if(distN(lw,rw)>maxD) return false;
+      // left arm ok?
+      let leftOk = false;
+      if (ls && (lw || le)) {
+        const elbowUp = le ? (le.y < ls.y + 0.03) : true;
+        const wristUp = lw ? (lw.y < headY + 0.01) : false;
+        // allow occluded wrist: accept elbow-only if clearly up
+        leftOk = elbowUp && (wristUp || (le && le.y < headY + 0.06));
       }
-      return true;
-    }
 
-    function inGlidePose(lms){
-      const p=filmingPreset.value;
-      if(p==="stand") return isStandOverhead(lms);
-      if(p==="side45") return isGlideStreamlineRobust(lms,"side45");
-      return isGlideStreamlineRobust(lms,"back45");
-    }
-
-    function updateTimer(lms, now){
-      if(!toggleTimer.checked || !lms){
-        glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0;
-        return;
+      // right arm ok?
+      let rightOk = false;
+      if (rs && (rw || re)) {
+        const elbowUp = re ? (re.y < rs.y + 0.03) : true;
+        const wristUp = rw ? (rw.y < headY + 0.01) : false;
+        rightOk = elbowUp && (wristUp || (re && re.y < headY + 0.06));
       }
-      const p=filmingPreset.value;
-      const startHold=(p==="stand")?220:420;
-      const stopHold =(p==="stand")?180:360;
 
-      const ok=inGlidePose(lms);
+      return leftOk || rightOk;
+    }
 
-      if(!glideActive){
-        currentElapsed=0;
-        if(ok && glideTimes.length<4){
-          if(poseStableSince===null) poseStableSince=now;
-          if(now - poseStableSince >= startHold){
-            glideActive=true; glideStart=now; poseLostSince=null;
+    function legsStraight(raw) {
+      const lh = raw[23], rh = raw[24], lk = raw[25], rk = raw[26], la = raw[27], ra = raw[28];
+      const aL = kneeAngle(lh, lk, la);
+      const aR = kneeAngle(rh, rk, ra);
+
+      // allow one leg missing: require at least one valid and "straight enough",
+      // better if both valid.
+      const thr = 160; // deg
+      const okL = (aL != null) ? (aL >= thr) : false;
+      const okR = (aR != null) ? (aR >= thr) : false;
+
+      return okL || okR;
+    }
+
+    function bodyLong(raw) {
+      const ls = raw[11], rs = raw[12], lh = raw[23], rh = raw[24];
+      if (!ls || !rs || !lh || !rh) return false;
+      const sh = { x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2 };
+      const hp = { x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2 };
+      // in streamline, shoulder-hip distance should be meaningful (not collapsed)
+      return dist(sh, hp) > 0.10;
+    }
+
+    function inGlidePose(raw) {
+      // general rule: long body + (one arm overhead) + (legs straight)
+      // preset can tweak hold times only; posture itself remains robust.
+      return bodyLong(raw) && oneArmStreamline(raw) && legsStraight(raw);
+    }
+
+    function updateTimer(raw, now) {
+      if (!toggleTimer.checked) {
+        glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0; return;
+      }
+
+      const p = filmingPreset.value;
+      const startHold = (p==="stand") ? 220 : 420; // etwas schneller starten
+      const stopHold  = (p==="stand") ? 180 : 380;
+
+      const ok = inGlidePose(raw);
+
+      if (!glideActive) {
+        currentElapsed = 0;
+        if (ok && glideTimes.length < 4) {
+          if (poseStableSince === null) poseStableSince = now;
+          if (now - poseStableSince >= startHold) {
+            glideActive = true;
+            glideStart = now;
+            poseLostSince = null;
           }
-        } else poseStableSince=null;
+        } else {
+          poseStableSince = null;
+        }
         return;
       }
 
       currentElapsed = now - glideStart;
 
-      if(!ok){
-        if(poseLostSince===null) poseLostSince=now;
-        if(now - poseLostSince >= stopHold){
-          glideActive=false; poseStableSince=null; poseLostSince=null;
+      if (!ok) {
+        if (poseLostSince === null) poseLostSince = now;
+        if (now - poseLostSince >= stopHold) {
+          glideActive = false;
+          poseStableSince = null;
+          poseLostSince = null;
           glideTimes.push(now - glideStart);
-          if(glideTimes.length>4) glideTimes.length=4;
-          currentElapsed=0;
+          if (glideTimes.length > 4) glideTimes.length = 4;
+          currentElapsed = 0;
         }
-      } else poseLostSince=null;
+      } else {
+        poseLostSince = null;
+      }
     }
 
-    function drawOverlaySmall(debugText=""){
-      if(!toggleTimer.checked) return;
+    function drawOverlay(debugText="") {
+      if (!toggleTimer.checked) return;
 
       ctx.save();
-      ctx.fillStyle="rgba(0,0,0,0.42)";
+      ctx.fillStyle="rgba(0,0,0,0.40)";
       ctx.strokeStyle="rgba(255,255,255,0.55)";
-      ctx.lineWidth=1.5;
+      ctx.lineWidth=2;
 
-      const pad=10;
-      const w=Math.min(320, CSS_W-2*pad);
-      const h=130;
-      const x=CSS_W - w - pad;
-      const y=pad;
-      const r=12;
+      // kleiner als vorher:
+      const x=12, y=12, w=Math.min(420, CSS_W-24), h=140, r=14;
+      const rr=Math.min(r,w/2,h/2);
 
       ctx.beginPath();
-      ctx.moveTo(x+r,y);
-      ctx.arcTo(x+w,y,x+w,y+h,r);
-      ctx.arcTo(x+w,y+h,x,y+h,r);
-      ctx.arcTo(x,y+h,x,y,r);
-      ctx.arcTo(x,y,x+w,y,r);
+      ctx.moveTo(x+rr,y);
+      ctx.arcTo(x+w,y,x+w,y+h,rr);
+      ctx.arcTo(x+w,y+h,x,y+h,rr);
+      ctx.arcTo(x,y+h,x,y,rr);
+      ctx.arcTo(x,y,x+w,y,rr);
       ctx.closePath();
       ctx.fill(); ctx.stroke();
 
       ctx.fillStyle="white";
+      ctx.shadowBlur=0;
+
       ctx.font="700 28px system-ui";
       ctx.fillText(glideActive ? fmt(currentElapsed) : "0.000 s", x+12, y+36);
 
       ctx.font="600 12px system-ui";
-      ctx.fillText("Brust – Gleitphase | Slots", x+12, y+56);
+      const presetLabel = filmingPreset.value==="stand" ? "Stand" : (filmingPreset.value==="side45" ? "45° seitlich" : "45° hinten");
+      ctx.fillText(`Timer Brust – Gleitphase | Aufnahme: ${presetLabel}`, x+12, y+56);
 
-      ctx.font="13px system-ui";
-      for(let i=0;i<4;i++){
-        const t=glideTimes[i]!=null?fmt(glideTimes[i]):"—";
-        ctx.fillText(`S${i+1}: ${t}`, x+12 + (i%2)*150, y+78 + Math.floor(i/2)*18);
+      ctx.font="14px system-ui";
+      for (let i=0;i<4;i++){
+        const t = glideTimes[i]!=null ? fmt(glideTimes[i]) : "—";
+        ctx.fillText(`Slot ${i+1}: ${t}`, x+12, y+80+i*16);
       }
 
-      if(debugText){
+      if (debugText) {
         ctx.font="11px system-ui";
         ctx.fillText(debugText, x+12, y+h-10);
       }
       ctx.restore();
     }
 
-    // ---------- Segmentation mask overlay (from PoseLandmarker) ----------
-    const maskCanvas = document.createElement("canvas");
-    const maskCtx = maskCanvas.getContext("2d", { willReadFrequently: true });
-
-    function segMaskToCanvas(segMask) {
-      if (!segMask) return null;
-      if (typeof segMask.getAsCanvas === "function") return segMask.getAsCanvas();
-      if (segMask.canvas) return segMask.canvas;
-      return null;
-    }
-
-    function drawMaskOverlay(segMask) {
-      if (!toggleMask.checked || !segMask) return;
-
-      const sc = segMaskToCanvas(segMask);
-      if (!sc) return;
-
-      const vw = video.videoWidth || 0;
-      const vh = video.videoHeight || 0;
-      if (!vw || !vh) return;
-
-      // draw mask into internal maskCanvas with same contain mapping as video
-      const dpr = Math.max(1, window.devicePixelRatio || 1);
-      const { offX, offY, dispW, dispH } = containRect(vw, vh, CSS_W, CSS_H);
-
-      maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-
-      // mirror consistent with output video if front camera
-      const mirrorX = !isBackCamera;
-      if (mirrorX) {
-        maskCtx.save();
-        maskCtx.translate(maskCanvas.width, 0);
-        maskCtx.scale(-1, 1);
-        const mx = (CSS_W - offX - dispW);
-        maskCtx.drawImage(
-          sc,
-          0, 0, sc.width, sc.height,
-          Math.round(mx * dpr), Math.round(offY * dpr),
-          Math.round(dispW * dpr), Math.round(dispH * dpr)
-        );
-        maskCtx.restore();
-      } else {
-        maskCtx.drawImage(
-          sc,
-          0, 0, sc.width, sc.height,
-          Math.round(offX * dpr), Math.round(offY * dpr),
-          Math.round(dispW * dpr), Math.round(dispH * dpr)
-        );
-      }
-
-      // turn mask into colored overlay (pixel-based; robust across browsers)
-      const img = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
-      const d = img.data;
-
-      const opacity = Number(maskOpacity.value);
-      const alphaBase = Math.round(255 * opacity);
-      const thresh = Math.round(Number(maskThresh.value)); // 0..80
-
-      let maskMax = 0;
-      for (let i = 0; i < d.length; i += 4) {
-        const m = Math.max(d[i], d[i+1], d[i+2], d[i+3]); // 0..255
-        if (m > maskMax) maskMax = m;
-
-        if (m > thresh) {
-          // yellow overlay (like you wanted earlier)
-          d[i]   = 255;
-          d[i+1] = 220;
-          d[i+2] = 0;
-          d[i+3] = Math.min(255, Math.round((m / 255) * alphaBase) + 40);
-        } else {
-          d[i+3] = 0;
-        }
-      }
-
-      maskCtx.putImageData(img, 0, 0);
-
-      // draw overlay in CSS pixel space
-      ctx.drawImage(maskCanvas, 0, 0, CSS_W, CSS_H);
-
-      return maskMax; // for debug
-    }
-
     // ---------- MediaPipe Tasks ----------
-    let landmarker=null;
-    let running=false;
-    let rafId=null;
+    let landmarker = null;
+    let running = false;
+    let rafId = null;
 
     const POSE_TASK_URL =
       "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task";
@@ -628,7 +646,7 @@
         baseOptions: { modelAssetPath: POSE_TASK_URL },
         runningMode: "VIDEO",
         numPoses: 1,
-        outputSegmentationMasks: true, // <- wichtig
+        outputSegmentationMasks: true,
         minPoseDetectionConfidence: Number(detConf.value),
         minPosePresenceConfidence: Number(presConf.value),
         minTrackingConfidence: Number(trackConf.value),
@@ -649,8 +667,8 @@
     trackConf.addEventListener("change", updateLandmarkerThresholds);
 
     // ---------- Camera ----------
-    let isBackCamera=true;
-    let stream=null;
+    let isBackCamera = true;
+    let stream = null;
 
     async function startCamera(){
       stopCamera();
@@ -683,21 +701,20 @@
     }
 
     // ---------- Loop ----------
+    let emptyMaskFrames = 0;
+
     function loop(){
       if(!running || !landmarker) return;
 
       try{
-        // clear
-        ctx.clearRect(0,0,CSS_W,CSS_H);
+        ctx.fillStyle = BG;
+        ctx.fillRect(0, 0, CSS_W, CSS_H);
 
         if(video.videoWidth===0 || video.videoHeight===0){
-          drawOverlaySmall("DEBUG: video not ready");
+          drawOverlay("DEBUG: video not ready");
           rafId = requestAnimationFrame(loop);
           return;
         }
-
-        // draw background video first (or nothing)
-        drawVideoContain();
 
         const ts = performance.now();
         const result = landmarker.detectForVideo(video, ts);
@@ -705,33 +722,48 @@
         const hasMask = !!(result?.segmentationMasks?.length);
         const hasLandmarks = !!(result?.landmarks?.length && result.landmarks[0]?.length);
 
-        let maskMax = 0;
+        // silhouette
+        let maskInfo = { max: 0 };
         if (hasMask) {
-          maskMax = drawMaskOverlay(result.segmentationMasks[0]) || 0;
+          maskInfo = drawSilhouette(result.segmentationMasks[0]);
+          if (maskInfo.max <= 0.001) emptyMaskFrames++;
+          else emptyMaskFrames = 0;
+
+          // if mask stays empty for long on iOS, auto-disable to avoid user confusion
+          if (emptyMaskFrames > 45) {
+            toggleSilhouette.checked = false;
+            setStatus("Hinweis: Segmentierung liefert auf diesem Gerät leere Werte → deaktiviert.");
+          }
         }
 
-        if (hasLandmarks){
+        // skeleton + neck + timer
+        if(hasLandmarks){
           const raw = result.landmarks[0];
-          const mirrorX = !isBackCamera;
-          const mapped = mapLandmarksToCss(raw, video.videoWidth, video.videoHeight, CSS_W, CSS_H, mirrorX);
-          const cssPoints = ema(mapped);
+          const vw = video.videoWidth, vh = video.videoHeight;
 
+          const cssPoints = emaCss(mapLandmarksContain(raw, vw, vh, CSS_W, CSS_H));
           drawSkeletonCssPoints(cssPoints);
-          drawHeadTorsoAxis(cssPoints);
 
+          // HWS axis: uses both raw + cssPoints
+          const neck = drawNeckAxis(raw, cssPoints);
+
+          // timer
           updateTimer(raw, ts);
+
+          drawOverlay(
+            `DEBUG: lm=${raw.length} mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} neck=${neck.neckDeg==null?"-":neck.neckDeg.toFixed(1)}° ui=${isPortraitUI()?"P":"L"}`
+          );
         } else {
-          updateTimer(null, ts);
+          drawOverlay(`DEBUG: lm=0 mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} ui=${isPortraitUI()?"P":"L"}`);
         }
 
-        drawOverlaySmall(`lm=${hasLandmarks?33:0} mask=${hasMask?1:0} maskmax=${maskMax} ui=${isPortraitUI()?"P":"L"}`);
         rafId = requestAnimationFrame(loop);
       } catch(e){
         console.error(e);
         setStatus("Loop-Fehler: " + (e?.message || String(e)));
+        ctx.fillStyle = BG;
+        ctx.fillRect(0, 0, CSS_W, CSS_H);
         ctx.fillStyle = "rgba(0,0,0,0.85)";
-        ctx.fillRect(0,0,CSS_W,CSS_H);
-        ctx.fillStyle = "white";
         ctx.font = "16px system-ui";
         ctx.fillText("Loop-Fehler: " + (e?.message || String(e)), 20, 40);
       }
@@ -799,7 +831,6 @@
         btnInit.disabled=true;
         applyLayoutFromOrientation();
         setStatus("Initialisiere …");
-
         await createLandmarker();
         await startCamera();
 
@@ -821,15 +852,18 @@
       try{
         btnSwitch.disabled=true;
 
+        // sauber pausieren
         running=false;
         if(rafId) cancelAnimationFrame(rafId);
 
         isBackCamera=!isBackCamera;
         await startCamera();
 
-        smoothed=null;
-        poseStableSince=null;
-        poseLostSince=null;
+        // resets
+        smoothedCss = null;
+        poseStableSince = null;
+        poseLostSince = null;
+        emptyMaskFrames = 0;
 
         running=true;
         rafId = requestAnimationFrame(loop);
@@ -864,9 +898,6 @@
       glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0;
       setStatus("Slots zurückgesetzt.");
     });
-
-    // Initial layout
-    applyLayoutFromOrientation();
   </script>
 </body>
 </html>
