@@ -97,10 +97,6 @@
       <input id="smooth" type="range" min="0" max="0.9" step="0.05" value="0.65">
       <span id="smoothVal" class="small">0.65</span>
     </div>
-
-    <p class="hint">
-      Empfehlung: 0.50/0.50/0.50 ist ein guter Start. Silhouette: gelb ~40% ist anonym und “Google-Style”.
-    </p>
   </details>
 
   <div class="row">
@@ -177,6 +173,9 @@
 
     let CSS_W = 360, CSS_H = 640;
 
+    const maskCanvas = document.createElement("canvas");
+    const maskCtx = maskCanvas.getContext("2d");
+
     function setupHiDPICanvas(cssW, cssH) {
       CSS_W = cssW; CSS_H = cssH;
       const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -187,11 +186,9 @@
       canvas.width = Math.round(cssW * dpr);
       canvas.height = Math.round(cssH * dpr);
 
-      // draw in CSS pixels
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false;
 
-      // update internal mask canvas to match output internal size
       maskCanvas.width = canvas.width;
       maskCanvas.height = canvas.height;
     }
@@ -207,7 +204,7 @@
     // ---------- Background ----------
     const BG = "#bfe7ff";
 
-    // ---------- Pose connections (ohne Fußgelenk-Fußgelenk) ----------
+    // ---------- Connections: robust normalize ----------
     const FALLBACK_POSE_CONNECTIONS = [
       [0,1],[1,2],[2,3],[3,7],
       [0,4],[4,5],[5,6],[6,8],
@@ -218,12 +215,29 @@
       [11,23],[12,24],[23,24],
       [23,25],[25,27],[27,29],[29,31],
       [24,26],[26,28],[28,30],[30,32]
-      // [27,28] bewusst entfernt
+      // [27,28] nicht
     ];
+
+    function normalizeConnections(maybe) {
+      const out = [];
+      if (!maybe) return out;
+      // Accept only real pairs [a,b]
+      for (const item of maybe) {
+        if (Array.isArray(item) && item.length === 2) {
+          const a = Number(item[0]), b = Number(item[1]);
+          if (Number.isFinite(a) && Number.isFinite(b)) {
+            // remove ankle-ankle
+            if (!((a === 27 && b === 28) || (a === 28 && b === 27))) out.push([a,b]);
+          }
+        }
+      }
+      return out;
+    }
+
     function getPoseConnectionsSafe() {
-      const c = PoseLandmarker?.POSE_CONNECTIONS;
-      const arr = (Array.isArray(c) && c.length) ? c : FALLBACK_POSE_CONNECTIONS;
-      return arr.filter(([a,b]) => !((a===27 && b===28) || (a===28 && b===27)));
+      const c = PoseLandmarker && PoseLandmarker.POSE_CONNECTIONS;
+      const normalized = normalizeConnections(c);
+      return normalized.length ? normalized : FALLBACK_POSE_CONNECTIONS;
     }
 
     // ---------- contain mapping ----------
@@ -246,10 +260,7 @@
       });
     }
 
-    // ---------- Silhouette (CPU-safe, no getImageData) ----------
-    const maskCanvas = document.createElement("canvas");
-    const maskCtx = maskCanvas.getContext("2d");
-
+    // ---------- Silhouette (no getImageData) ----------
     function segMaskToCanvas(segMask) {
       if (!segMask) return null;
       if (typeof segMask.getAsCanvas === "function") return segMask.getAsCanvas();
@@ -269,14 +280,12 @@
 
       const dpr = Math.max(1, window.devicePixelRatio || 1);
 
-      // 1) Maske in internes maskCanvas zeichnen (in Output-Pixeln)
       maskCtx.setTransform(1,0,0,1,0,0);
       maskCtx.clearRect(0,0,maskCanvas.width,maskCanvas.height);
 
-      const cw = CSS_W, ch = CSS_H;
-      const { offX, offY, dispW, dispH } = containRect(vw, vh, cw, ch);
+      const { offX, offY, dispW, dispH } = containRect(vw, vh, CSS_W, CSS_H);
 
-      // draw mask grayscale into internal resolution
+      // draw mask into internal pixel space
       maskCtx.drawImage(
         sc,
         0, 0, sc.width, sc.height,
@@ -284,13 +293,12 @@
         Math.round(dispW * dpr), Math.round(dispH * dpr)
       );
 
-      // 2) Gelb "in" der Maske füllen (source-in) – KEIN getImageData
+      // fill within mask (source-in) => yellow shape, no pixel reads
       maskCtx.globalCompositeOperation = "source-in";
       maskCtx.fillStyle = "rgb(255,235,70)";
       maskCtx.fillRect(0,0,maskCanvas.width,maskCanvas.height);
       maskCtx.globalCompositeOperation = "source-over";
 
-      // 3) Auf Output mit gewünschter Deckkraft
       ctx.save();
       ctx.globalAlpha = Number(silOpacity.value);
       ctx.drawImage(maskCanvas, 0, 0, CSS_W, CSS_H);
@@ -361,7 +369,6 @@
         const a = angleDeg(hip, knee, ank);
         return a >= 155;
       }
-      // fallback
       return (knee.y > hip.y + 0.04) && (Math.abs(knee.x - hip.x) < 0.15);
     }
 
@@ -381,11 +388,7 @@
     }
 
     function updateTimer(lms, now){
-      if(!toggleTimer.checked){
-        glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0;
-        return;
-      }
-      if(!lms){
+      if(!toggleTimer.checked || !lms){
         glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0;
         return;
       }
@@ -482,11 +485,7 @@
 
       setStatus("Lade Pose Landmarker heavy …");
       landmarker = await PoseLandmarker.createFromOptions(fileset, {
-        baseOptions: {
-          modelAssetPath: POSE_TASK_URL,
-          // entscheidend: stabiler Mask-Pfad auf iOS => CPU erzwingen
-          delegate: "CPU"
-        },
+        baseOptions: { modelAssetPath: POSE_TASK_URL, delegate: "CPU" },
         runningMode: "VIDEO",
         numPoses: 1,
         outputSegmentationMasks: true,
@@ -548,6 +547,7 @@
     // ---------- Skeleton drawing ----------
     function drawSkeleton(landmarksNorm){
       if(!toggleSkeleton.checked || !landmarksNorm || !drawingUtils) return;
+
       const connections = getPoseConnectionsSafe();
 
       ctx.save();
@@ -561,6 +561,7 @@
         drawingUtils.drawConnectors(landmarksNorm, connections, { lineWidth: lw, color: "#000000" });
       }
       drawingUtils.drawLandmarks(landmarksNorm, { radius: r, color: "#000000" });
+
       ctx.restore();
     }
 
@@ -584,10 +585,7 @@
         const hasMask = !!(result?.segmentationMasks?.length);
         const hasLandmarks = !!(result?.landmarks?.length && result.landmarks[0]?.length);
 
-        let silOk = false;
-        if (hasMask) {
-          silOk = drawSilhouette(result.segmentationMasks[0]);
-        }
+        const silOk = hasMask ? drawSilhouette(result.segmentationMasks[0]) : false;
 
         let lms = null;
         if(hasLandmarks){
@@ -614,7 +612,6 @@
         ctx.fillStyle = "rgba(0,0,0,0.85)";
         ctx.font = "16px system-ui";
         ctx.fillText("Loop-Fehler: " + (e?.message || String(e)), 20, 40);
-        // wichtig: weiterlaufen lassen (erholt sich nach Kamerawechsel)
         requestAnimationFrame(loop);
       }
     }
