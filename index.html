@@ -1,211 +1,754 @@
 <!doctype html>
 <html lang="de">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Brust – Gleitphase | anonym (Mask + Skelett)</title>
-
-<style>
-body { font-family: system-ui, sans-serif; margin:16px; }
-.row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin:12px 0; }
-video, canvas {
-  width:360px;
-  max-width:100%;
-  border:1px solid #ddd;
-  border-radius:10px;
-}
-button, select, input[type="range"] {
-  padding:9px 12px;
-  border-radius:10px;
-  border:1px solid #ccc;
-  background:#fff;
-}
-label {
-  display:inline-flex;
-  align-items:center;
-  gap:8px;
-  padding:8px 10px;
-  border:1px solid #ddd;
-  border-radius:10px;
-}
-details {
-  border:1px solid #ddd;
-  border-radius:10px;
-  padding:10px 12px;
-}
-summary { font-weight:600; cursor:pointer; }
-.hint { color:#555; font-size:14px; }
-.mono { font-family: ui-monospace, monospace; }
-.rangeWrap {
-  display:flex;
-  align-items:center;
-  gap:10px;
-  margin-top:8px;
-}
-.rangeWrap span { min-width:90px; font-size:13px; color:#666; }
-.small { font-size:13px; color:#666; }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Brust – Gleitphase | anonym (Mask + Skelett + Timer)</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
+    video, canvas { max-width: 100%; width: 360px; height: auto; border: 1px solid #ddd; border-radius: 10px; }
+    video { background:#000; }
+    button { padding: 10px 14px; border-radius: 10px; border: 1px solid #ccc; background: #fff; }
+    button.primary { border-color: #111; }
+    button:disabled { opacity: 0.5; }
+    label { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #ddd; border-radius: 10px; }
+    select { padding: 9px 12px; border-radius: 10px; border: 1px solid #ccc; background: #fff; }
+    details { border: 1px solid #ddd; border-radius: 10px; padding: 10px 12px; max-width: 1100px; }
+    summary { cursor: pointer; font-weight: 600; }
+    .hint { color: #555; font-size: 14px; line-height: 1.4; max-width: 1100px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .rangeWrap { display:flex; align-items:center; gap:10px; padding: 8px 10px; border:1px solid #ddd; border-radius: 10px; margin-top: 10px; flex-wrap: wrap; }
+    .rangeWrap span { min-width: 170px; font-size: 13px; color:#666; }
+    .small { font-size: 13px; color:#666; min-width: 64px; text-align:right; }
+  </style>
 </head>
 
 <body>
+  <h1>Brust – Gleitphase (anonym)</h1>
+  <p class="hint">
+    Output-Video enthält <b>nur</b> Hintergrund (hellblau) + <b>Silhouette</b> (Segmentation Mask) + <b>Skelett</b> + <b>Timer/Slots</b>.
+    Das Video links ist nur Input. Hochkant und Querformat funktionieren gleichermaßen.
+  </p>
 
-<h2>Brust – Gleitphase (anonym)</h2>
+  <div class="row">
+    <button id="btnInit" class="primary">Kamera aktivieren</button>
+    <button id="btnSwitch" disabled>Kamera wechseln (Rück)</button>
+    <button id="btnRec" disabled>Aufnahme starten</button>
+    <button id="btnStop" disabled>Stop</button>
+    <button id="btnShare" disabled>Teilen/Speichern</button>
+    <button id="btnReset" disabled>Slots zurücksetzen</button>
+  </div>
 
-<div class="row">
-  <button id="btnInit">Kamera aktivieren</button>
-  <button id="btnSwitch" disabled>Kamera wechseln</button>
-  <button id="btnRec" disabled>Aufnahme</button>
-  <button id="btnStop" disabled>Stop</button>
-  <button id="btnShare" disabled>Teilen</button>
-  <button id="btnReset" disabled>Reset</button>
-</div>
+  <div class="row">
+    <label><input type="checkbox" id="toggleSkeleton" checked /> Skelett</label>
+    <label><input type="checkbox" id="toggleSilhouette" checked /> Silhouette</label>
+    <label><input type="checkbox" id="toggleTimer" checked /> Timer/Slots</label>
 
-<div class="row">
-  <label><input type="checkbox" id="toggleSkeleton" checked>Skelett</label>
-  <label><input type="checkbox" id="toggleSilhouette" checked>Silhouette</label>
-  <label><input type="checkbox" id="toggleTimer" checked>Timer</label>
-</div>
+    <select id="filmingPreset" title="Aufnahmeposition">
+      <option value="stand" selected>Test am Beckenrand (im Stand)</option>
+      <option value="side45">45° schräg seitlich</option>
+      <option value="back45">45° von hinten (Startblock)</option>
+    </select>
+  </div>
 
-<details>
-<summary>Erweiterte Einstellungen</summary>
+  <details>
+    <summary>Erweiterte Einstellungen (optional)</summary>
 
-<div class="rangeWrap">
-  <span>Detection</span>
-  <input id="detConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
-  <span id="detVal" class="small">0.50</span>
-</div>
+    <div class="rangeWrap">
+      <span>Silhouette-Deckkraft</span>
+      <input id="silOpacity" type="range" min="0" max="1" step="0.05" value="0.85">
+      <span id="silOpacityVal" class="small">0.85</span>
+    </div>
 
-<div class="rangeWrap">
-  <span>Presence</span>
-  <input id="presConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
-  <span id="presVal" class="small">0.50</span>
-</div>
+    <div class="rangeWrap">
+      <span>Silhouette-Schwelle (Mask)</span>
+      <input id="silThresh" type="range" min="0" max="80" step="1" value="12">
+      <span id="silThreshVal" class="small">12</span>
+    </div>
 
-<div class="rangeWrap">
-  <span>Tracking</span>
-  <input id="trackConf" type="range" min="0.3" max="0.95" step="0.01" value="0.55">
-  <span id="trackVal" class="small">0.55</span>
-</div>
+    <div class="rangeWrap">
+      <span>Skelett-Linienstärke</span>
+      <input id="skelLine" type="range" min="2" max="14" step="1" value="6">
+      <span id="skelLineVal" class="small">6</span>
+    </div>
 
-<div class="rangeWrap">
-  <span>Glättung</span>
-  <input id="smooth" type="range" min="0" max="0.9" step="0.05" value="0.60">
-  <span id="smoothVal" class="small">0.60</span>
-</div>
+    <div class="rangeWrap">
+      <span>Gelenkpunkte (Radius)</span>
+      <input id="skelDot" type="range" min="1" max="8" step="1" value="3">
+      <span id="skelDotVal" class="small">3</span>
+    </div>
 
-<p class="hint">
-Empfohlen für Schwimmen: <b>0.5–0.6</b>.  
-99 % ist zu streng → Pose verschwindet.
-</p>
-</details>
+    <!-- WICHTIG: sinnvolle Defaults (≈50–55 %) -->
+    <div class="rangeWrap">
+      <span>Detection (min)</span>
+      <input id="detConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
+      <span id="detVal" class="small">0.50</span>
+    </div>
 
-<div class="row">
-  <video id="video" playsinline autoplay muted style="background:#000"></video>
-  <canvas id="canvas"></canvas>
-</div>
+    <div class="rangeWrap">
+      <span>Presence (min)</span>
+      <input id="presConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
+      <span id="presVal" class="small">0.50</span>
+    </div>
 
-<p class="mono" id="status">Status: bereit</p>
+    <div class="rangeWrap">
+      <span>Tracking (min)</span>
+      <input id="trackConf" type="range" min="0.3" max="0.95" step="0.01" value="0.55">
+      <span id="trackVal" class="small">0.55</span>
+    </div>
 
-<script type="module">
-import { FilesetResolver, PoseLandmarker, DrawingUtils }
-from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+    <div class="rangeWrap">
+      <span>Glättung (EMA)</span>
+      <input id="smooth" type="range" min="0" max="0.9" step="0.05" value="0.60">
+      <span id="smoothVal" class="small">0.60</span>
+    </div>
 
-const video = document.getElementById("video");
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
+    <p class="hint">
+      Empfehlung für Schwimmen: <b>0.50/0.50/0.55</b> ist stabiler als 0.99 (sonst flackert/verschwindet die Pose).
+      Silhouette sichtbar machen: Schwelle ca. <b>8–20</b> und Deckkraft 0.7–1.0.
+    </p>
+  </details>
 
-const detConf = document.getElementById("detConf");
-const presConf = document.getElementById("presConf");
-const trackConf = document.getElementById("trackConf");
-const smooth = document.getElementById("smooth");
+  <div class="row">
+    <video id="video" playsinline autoplay muted></video>
+    <canvas id="canvas"></canvas>
+  </div>
 
-const detVal = document.getElementById("detVal");
-const presVal = document.getElementById("presVal");
-const trackVal = document.getElementById("trackVal");
-const smoothVal = document.getElementById("smoothVal");
+  <p class="hint mono" id="status">Status: bereit</p>
 
-const statusEl = document.getElementById("status");
-const setStatus = t => statusEl.textContent = "Status: " + t;
+  <script type="module">
+    import { FilesetResolver, PoseLandmarker }
+      from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
-// ---------- Slider Anzeige ----------
-function initSliderDisplays(){
-  detVal.textContent = Number(detConf.value).toFixed(2);
-  presVal.textContent = Number(presConf.value).toFixed(2);
-  trackVal.textContent = Number(trackConf.value).toFixed(2);
-  smoothVal.textContent = Number(smooth.value).toFixed(2);
-}
-initSliderDisplays();
-[detConf,presConf,trackConf,smooth].forEach(el=>{
-  el.addEventListener("input", initSliderDisplays);
-});
+    // ---------- DOM ----------
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
 
-// ---------- Canvas Orientierung ----------
-function applyCanvasOrientation(){
-  const portrait = window.innerHeight >= window.innerWidth;
-  canvas.width  = portrait ? 720 : 1280;
-  canvas.height = portrait ? 1280 : 720;
-}
-window.addEventListener("resize", applyCanvasOrientation);
-window.addEventListener("orientationchange", applyCanvasOrientation);
-applyCanvasOrientation();
+    const btnInit = document.getElementById("btnInit");
+    const btnSwitch = document.getElementById("btnSwitch");
+    const btnRec = document.getElementById("btnRec");
+    const btnStop = document.getElementById("btnStop");
+    const btnShare = document.getElementById("btnShare");
+    const btnReset = document.getElementById("btnReset");
 
-// ---------- MediaPipe ----------
-let landmarker=null, drawingUtils=null;
+    const toggleSkeleton = document.getElementById("toggleSkeleton");
+    const toggleSilhouette = document.getElementById("toggleSilhouette");
+    const toggleTimer = document.getElementById("toggleTimer");
+    const filmingPreset = document.getElementById("filmingPreset");
 
-async function createLandmarker(){
-  const fs = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
-  );
-  landmarker = await PoseLandmarker.createFromOptions(fs,{
-    baseOptions:{
-      modelAssetPath:
-      "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task"
-    },
-    runningMode:"VIDEO",
-    numPoses:1,
-    outputSegmentationMasks:true,
-    minPoseDetectionConfidence:Number(detConf.value),
-    minPosePresenceConfidence:Number(presConf.value),
-    minTrackingConfidence:Number(trackConf.value)
-  });
-  drawingUtils = new DrawingUtils(ctx);
-}
+    const silOpacity = document.getElementById("silOpacity");
+    const silThresh = document.getElementById("silThresh");
+    const skelLine  = document.getElementById("skelLine");
+    const skelDot   = document.getElementById("skelDot");
 
-// ---------- Kamera ----------
-let stream=null, isBack=true, running=false;
+    const detConf = document.getElementById("detConf");
+    const presConf = document.getElementById("presConf");
+    const trackConf = document.getElementById("trackConf");
+    const smooth = document.getElementById("smooth");
 
-async function startCamera(){
-  if(stream) stream.getTracks().forEach(t=>t.stop());
-  stream = await navigator.mediaDevices.getUserMedia({
-    video:{facingMode:isBack?"environment":"user"},
-    audio:false
-  });
-  video.srcObject=stream;
-  await video.play();
-}
+    const silOpacityVal = document.getElementById("silOpacityVal");
+    const silThreshVal  = document.getElementById("silThreshVal");
+    const skelLineVal   = document.getElementById("skelLineVal");
+    const skelDotVal    = document.getElementById("skelDotVal");
 
-function loop(){
-  if(!running || !landmarker) return;
-  ctx.fillStyle="#bfe7ff";
-  ctx.fillRect(0,0,canvas.width,canvas.height);
+    const detVal = document.getElementById("detVal");
+    const presVal = document.getElementById("presVal");
+    const trackVal = document.getElementById("trackVal");
+    const smoothVal = document.getElementById("smoothVal");
 
-  const res = landmarker.detectForVideo(video, performance.now());
-  if(res.landmarks?.length){
-    drawingUtils.drawLandmarks(res.landmarks[0],{radius:4,color:"#000"});
-  }
-  requestAnimationFrame(loop);
-}
+    const statusEl = document.getElementById("status");
+    const setStatus = (s) => statusEl.textContent = "Status: " + s;
 
-// ---------- Start ----------
-document.getElementById("btnInit").onclick=async()=>{
-  setStatus("initialisiere…");
-  await createLandmarker();
-  await startCamera();
-  running=true;
-  loop();
-  setStatus("läuft");
-};
-</script>
+    function bindSlider(el, out, fmt=(v)=>Number(v).toFixed(2)) {
+      const update = () => out.textContent = fmt(el.value);
+      el.addEventListener("input", update);
+      update();
+    }
+    bindSlider(silOpacity, silOpacityVal, v => Number(v).toFixed(2));
+    bindSlider(silThresh,  silThreshVal,  v => String(Math.round(Number(v))));
+    bindSlider(skelLine,   skelLineVal,   v => String(Math.round(Number(v))));
+    bindSlider(skelDot,    skelDotVal,    v => String(Math.round(Number(v))));
+    bindSlider(detConf, detVal);
+    bindSlider(presConf, presVal);
+    bindSlider(trackConf, trackVal);
+    bindSlider(smooth, smoothVal, v => Number(v).toFixed(2));
 
+    // ---------- Orientation + HiDPI (konsistent, ohne DrawingUtils-Mismatch) ----------
+    function isPortraitUI() {
+      const so = screen.orientation && screen.orientation.type;
+      if (typeof so === "string") return so.includes("portrait");
+      if (window.matchMedia) return window.matchMedia("(orientation: portrait)").matches;
+      return window.innerHeight >= window.innerWidth;
+    }
+
+    let CSS_W = 360, CSS_H = 640;
+    const maskCanvas = document.createElement("canvas");
+    const maskCtx = maskCanvas.getContext("2d", { willReadFrequently: true });
+
+    function setupHiDPICanvas(cssW, cssH) {
+      CSS_W = cssW; CSS_H = cssH;
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
+
+      canvas.style.width = cssW + "px";
+      canvas.style.height = cssH + "px";
+
+      canvas.width = Math.round(cssW * dpr);
+      canvas.height = Math.round(cssH * dpr);
+
+      // Wir zeichnen in CSS-Pixeln (transformiert), aber Skelett rendern wir manuell in CSS-Raum.
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.imageSmoothingEnabled = false;
+
+      maskCanvas.width = canvas.width;
+      maskCanvas.height = canvas.height;
+    }
+
+    function applyLayoutFromOrientation() {
+      if (isPortraitUI()) setupHiDPICanvas(360, 640);
+      else setupHiDPICanvas(640, 360);
+      setStatus("Ausrichtung: " + (isPortraitUI() ? "Hochformat" : "Querformat"));
+    }
+    window.addEventListener("resize", applyLayoutFromOrientation);
+    window.addEventListener("orientationchange", applyLayoutFromOrientation);
+
+    // ---------- Background ----------
+    const BG = "#bfe7ff";
+
+    // ---------- Pose connections (fallback, 33 Landmarks) ----------
+    const POSE_CONNECTIONS = [
+      [0,1],[1,2],[2,3],[3,7],
+      [0,4],[4,5],[5,6],[6,8],
+      [9,10],
+      [11,12],
+      [11,13],[13,15],[15,17],[15,19],[15,21],[17,19],
+      [12,14],[14,16],[16,18],[16,20],[16,22],[18,20],
+      [11,23],[12,24],[23,24],
+      [23,25],[25,27],[27,29],[29,31],
+      [24,26],[26,28],[28,30],[30,32],
+      [27,28]
+    ];
+
+    // ---------- Video-to-canvas "contain" mapping (CSS space) ----------
+    function mapLandmarksContain(rawLandmarks, vw, vh, cw, ch) {
+      const scale = Math.min(cw / vw, ch / vh);
+      const dispW = vw * scale;
+      const dispH = vh * scale;
+      const offX = (cw - dispW) / 2;
+      const offY = (ch - dispH) / 2;
+
+      // Wir liefern Punkte in CSS-Pixel-Koordinaten (nicht normiert)
+      return rawLandmarks.map(p => {
+        const px = p.x * vw;
+        const py = p.y * vh;
+        const cx = offX + px * scale;
+        const cy = offY + py * scale;
+        return { ...p, _cx: cx, _cy: cy };
+      });
+    }
+
+    // ---------- Segmentation mask helpers ----------
+    function segMaskToCanvas(segMask) {
+      if (!segMask) return null;
+      if (typeof segMask.getAsCanvas === "function") return segMask.getAsCanvas();
+      if (segMask.canvas) return segMask.canvas;
+      return null;
+    }
+
+    function drawMaskContainIntoMaskCanvas(sc, vw, vh) {
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
+      const cw = CSS_W, ch = CSS_H;
+
+      const scale = Math.min(cw / vw, ch / vh);
+      const dispW = vw * scale;
+      const dispH = vh * scale;
+      const offX = (cw - dispW) / 2;
+      const offY = (ch - dispH) / 2;
+
+      maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+      maskCtx.drawImage(
+        sc,
+        0, 0, sc.width, sc.height,
+        Math.round(offX * dpr), Math.round(offY * dpr),
+        Math.round(dispW * dpr), Math.round(dispH * dpr)
+      );
+    }
+
+    function drawMaskSilhouette(segMask) {
+      if (!toggleSilhouette.checked || !segMask) return;
+
+      const sc = segMaskToCanvas(segMask);
+      if (!sc) return;
+
+      const vw = video.videoWidth || 0;
+      const vh = video.videoHeight || 0;
+      if (!vw || !vh) return;
+
+      drawMaskContainIntoMaskCanvas(sc, vw, vh);
+
+      const img = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+      const d = img.data;
+
+      const opacity = Number(silOpacity.value);
+      const alphaBase = Math.round(255 * opacity);
+      const thresh = Math.round(Number(silThresh.value)); // 0..80
+
+      // Safari-robust: max(R,G,B,A) als Intensität
+      for (let i = 0; i < d.length; i += 4) {
+        const m = Math.max(d[i], d[i+1], d[i+2], d[i+3]); // 0..255
+        if (m > thresh) {
+          d[i]   = 20;
+          d[i+1] = 70;
+          d[i+2] = 120;
+          d[i+3] = Math.min(255, Math.round((m / 255) * alphaBase) + 140);
+        } else {
+          d[i+3] = 0;
+        }
+      }
+      maskCtx.putImageData(img, 0, 0);
+
+      // in CSS-Pixeln auf Output
+      ctx.drawImage(maskCanvas, 0, 0, CSS_W, CSS_H);
+    }
+
+    // ---------- EMA smoothing (auf normierten Koordinaten, aber wir zeichnen in CSS mit _cx/_cy) ----------
+    let smoothed = null;
+    function ema(mappedCssPoints) {
+      const a = Number(smooth.value);
+      if (!mappedCssPoints) return null;
+
+      if (!smoothed || smoothed.length !== mappedCssPoints.length) {
+        smoothed = mappedCssPoints.map(p => ({ ...p }));
+        return smoothed;
+      }
+      for (let i = 0; i < mappedCssPoints.length; i++) {
+        const p = mappedCssPoints[i], s = smoothed[i];
+        s._cx = a * s._cx + (1 - a) * p._cx;
+        s._cy = a * s._cy + (1 - a) * p._cy;
+        s.z = a * (s.z ?? 0) + (1 - a) * (p.z ?? 0);
+        if (typeof p.visibility === "number") s.visibility = p.visibility;
+        if (typeof p.presence === "number") s.presence = p.presence;
+      }
+      return smoothed;
+    }
+
+    // ---------- Timer / Slots (arbeitet weiter mit normierten x/y aus raw) ----------
+    // Wir nutzen weiterhin raw landmarks für Logik (0..1), weil die Regeln darauf basieren.
+    // Dafür nehmen wir result.landmarks[0] direkt.
+    const glideTimes = [];
+    let glideActive = false, glideStart = 0, currentElapsed = 0;
+    let poseStableSince = null, poseLostSince = null;
+
+    const dist = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
+    const fmt = (ms)=> (ms/1000).toFixed(3) + " s";
+
+    function isStandOverhead(lms){
+      const ls=lms[11], rs=lms[12], lw=lms[15], rw=lms[16], le=lms[13], re=lms[14];
+      if(!ls||!rs||!lw||!rw||!le||!re) return false;
+      const shoulderY=(ls.y+rs.y)/2;
+      const wristsUp=(lw.y<shoulderY-0.03)&&(rw.y<shoulderY-0.03);
+      const elbowsUp=(le.y<shoulderY+0.02)&&(re.y<shoulderY+0.02);
+      const wristsClose=Math.abs(lw.x-rw.x)<0.45;
+      return wristsUp && elbowsUp && wristsClose;
+    }
+
+    function isGlideStreamlineRobust(lms, preset){
+      const ls=lms[11], rs=lms[12], lw=lms[15], rw=lms[16], lh=lms[23], rh=lms[24];
+      if(!ls||!rs||!lh||!rh) return false;
+
+      const sh={x:(ls.x+rs.x)/2,y:(ls.y+rs.y)/2};
+      const hp={x:(lh.x+rh.x)/2,y:(lh.y+rh.y)/2};
+      if(dist(sh,hp)<0.10) return false;
+
+      let leftExt=false, rightExt=false;
+      if(ls&&lw) leftExt=dist(ls,lw)>(preset==="back45"?0.23:0.26);
+      if(rs&&rw) rightExt=dist(rs,rw)>(preset==="back45"?0.23:0.26);
+      if(!leftExt && !rightExt) return false;
+
+      if(lw&&rw){
+        const maxD=preset==="back45"?0.60:0.45;
+        if(dist(lw,rw)>maxD) return false;
+      }
+      return true;
+    }
+
+    function inGlidePose(lms){
+      const p=filmingPreset.value;
+      if(p==="stand") return isStandOverhead(lms);
+      if(p==="side45") return isGlideStreamlineRobust(lms,"side45");
+      return isGlideStreamlineRobust(lms,"back45");
+    }
+
+    function updateTimer(lms, now){
+      if(!toggleTimer.checked){ glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0; return; }
+      const p=filmingPreset.value;
+      const startHold=(p==="stand")?220:500;
+      const stopHold=(p==="stand")?180:450;
+
+      const ok=inGlidePose(lms);
+
+      if(!glideActive){
+        currentElapsed=0;
+        if(ok && glideTimes.length<4){
+          if(poseStableSince===null) poseStableSince=now;
+          if(now - poseStableSince >= startHold){
+            glideActive=true; glideStart=now; poseLostSince=null;
+          }
+        } else poseStableSince=null;
+        return;
+      }
+
+      currentElapsed = now - glideStart;
+
+      if(!ok){
+        if(poseLostSince===null) poseLostSince=now;
+        if(now - poseLostSince >= stopHold){
+          glideActive=false; poseStableSince=null; poseLostSince=null;
+          glideTimes.push(now - glideStart);
+          if(glideTimes.length>4) glideTimes.length=4;
+          currentElapsed=0;
+        }
+      } else poseLostSince=null;
+    }
+
+    function drawOverlay(debugText=""){
+      if(!toggleTimer.checked) return;
+
+      ctx.save();
+      ctx.fillStyle="rgba(0,0,0,0.45)";
+      ctx.strokeStyle="rgba(255,255,255,0.65)";
+      ctx.lineWidth=2;
+
+      const x=14,y=14,w=Math.min(640, CSS_W-28),h=200,r=14;
+      const rr=Math.min(r,w/2,h/2);
+      ctx.beginPath();
+      ctx.moveTo(x+rr,y);
+      ctx.arcTo(x+w,y,x+w,y+h,rr);
+      ctx.arcTo(x+w,y+h,x,y+h,rr);
+      ctx.arcTo(x,y+h,x,y,rr);
+      ctx.arcTo(x,y,x+w,y,rr);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+
+      ctx.fillStyle="white";
+      ctx.shadowBlur=0;
+
+      ctx.font="700 34px system-ui";
+      ctx.fillText(glideActive ? fmt(currentElapsed) : "0.000 s", x+14, y+48);
+
+      ctx.font="600 14px system-ui";
+      const presetLabel=filmingPreset.value==="stand"?"Stand-Test":(filmingPreset.value==="side45"?"45° seitlich":"45° von hinten");
+      ctx.fillText(`Brust – Gleitphase | Aufnahme: ${presetLabel}`, x+14, y+74);
+
+      ctx.font="16px system-ui";
+      for(let i=0;i<4;i++){
+        const t=glideTimes[i]!=null?fmt(glideTimes[i]):"—";
+        ctx.fillText(`Slot ${i+1}: ${t}`, x+14, y+102+i*18);
+      }
+
+      if(debugText){
+        ctx.font="12px system-ui";
+        ctx.fillText(debugText, x+14, y+h-12);
+      }
+      ctx.restore();
+    }
+
+    // ---------- SKELETT: manuell (robust, konsistent im CSS-Koordinatensystem) ----------
+    function drawSkeletonCssPoints(cssPoints){
+      if(!toggleSkeleton.checked || !cssPoints) return;
+
+      const lw = Math.round(Number(skelLine.value));
+      const r  = Math.round(Number(skelDot.value));
+
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = "#000";
+      ctx.fillStyle = "#000";
+      ctx.lineWidth = lw;
+
+      // lines
+      for(const [a,b] of POSE_CONNECTIONS){
+        const pa = cssPoints[a], pb = cssPoints[b];
+        if(!pa || !pb) continue;
+        // optional: skip low confidence
+        if (typeof pa.visibility === "number" && pa.visibility < 0.2) continue;
+        if (typeof pb.visibility === "number" && pb.visibility < 0.2) continue;
+
+        ctx.beginPath();
+        ctx.moveTo(pa._cx, pa._cy);
+        ctx.lineTo(pb._cx, pb._cy);
+        ctx.stroke();
+      }
+
+      // dots
+      for(const p of cssPoints){
+        if(!p) continue;
+        if (typeof p.visibility === "number" && p.visibility < 0.2) continue;
+        ctx.beginPath();
+        ctx.arc(p._cx, p._cy, r, 0, Math.PI*2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+
+    // ---------- MediaPipe Tasks ----------
+    let landmarker = null;
+    let running = false;
+    let rafId = null;
+
+    const POSE_TASK_URL =
+      "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task";
+
+    async function createLandmarker(){
+      setStatus("Lade Tasks-WASM …");
+      const fileset = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+      );
+
+      setStatus("Lade Pose Landmarker heavy …");
+      landmarker = await PoseLandmarker.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: POSE_TASK_URL },
+        runningMode: "VIDEO",
+        numPoses: 1,
+        outputSegmentationMasks: true,
+        minPoseDetectionConfidence: Number(detConf.value),
+        minPosePresenceConfidence: Number(presConf.value),
+        minTrackingConfidence: Number(trackConf.value),
+      });
+    }
+
+    function updateLandmarkerThresholds(){
+      if(!landmarker) return;
+      landmarker.setOptions({
+        minPoseDetectionConfidence: Number(detConf.value),
+        minPosePresenceConfidence: Number(presConf.value),
+        minTrackingConfidence: Number(trackConf.value),
+      });
+      setStatus("Schwellwerte aktualisiert.");
+    }
+    detConf.addEventListener("change", updateLandmarkerThresholds);
+    presConf.addEventListener("change", updateLandmarkerThresholds);
+    trackConf.addEventListener("change", updateLandmarkerThresholds);
+
+    // ---------- Camera ----------
+    let isBackCamera = true;
+    let stream = null;
+
+    async function startCamera(){
+      stopCamera();
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio:false,
+        video:{
+          facingMode: isBackCamera ? "environment" : "user",
+          width:{ideal:1280},
+          height:{ideal:720}
+        }
+      });
+      video.srcObject = stream;
+
+      await new Promise((resolve)=>{
+        const done=()=>resolve();
+        if(video.readyState>=1) return done();
+        video.onloadedmetadata = done;
+      });
+      await video.play();
+
+      await new Promise((resolve)=>{
+        const check=()=> (video.videoWidth>0 && video.videoHeight>0) ? resolve() : requestAnimationFrame(check);
+        check();
+      });
+    }
+
+    function stopCamera(){
+      if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+      video.srcObject=null;
+    }
+
+    // ---------- Loop ----------
+    function loop(){
+      if(!running || !landmarker) return;
+
+      try{
+        ctx.fillStyle = BG;
+        ctx.fillRect(0, 0, CSS_W, CSS_H);
+
+        if(video.videoWidth===0 || video.videoHeight===0){
+          drawOverlay("DEBUG: video not ready");
+          rafId = requestAnimationFrame(loop);
+          return;
+        }
+
+        const ts = performance.now();
+        const result = landmarker.detectForVideo(video, ts);
+
+        const hasMask = !!(result?.segmentationMasks?.length);
+        const hasLandmarks = !!(result?.landmarks?.length && result.landmarks[0]?.length);
+
+        // silhouette
+        if(hasMask) drawMaskSilhouette(result.segmentationMasks[0]);
+
+        // map landmarks into CSS space for drawing
+        let cssPoints = null;
+        if(hasLandmarks){
+          const raw = result.landmarks[0];
+          const vw = video.videoWidth, vh = video.videoHeight;
+          cssPoints = ema(mapLandmarksContain(raw, vw, vh, CSS_W, CSS_H));
+          drawSkeletonCssPoints(cssPoints);
+
+          // timer logic uses raw normalized landmarks (stabil)
+          updateTimer(raw, ts);
+        }
+
+        drawOverlay(`DEBUG: lm=${hasLandmarks?result.landmarks[0].length:0} mask=${hasMask?1:0} ui=${isPortraitUI()?"P":"L"} v=${video.videoWidth}x${video.videoHeight} c=${CSS_W}x${CSS_H}`);
+        rafId = requestAnimationFrame(loop);
+      } catch(e){
+        console.error(e);
+        setStatus("Loop-Fehler: " + (e?.message || String(e)));
+        ctx.fillStyle = BG;
+        ctx.fillRect(0, 0, CSS_W, CSS_H);
+        ctx.fillStyle = "rgba(0,0,0,0.85)";
+        ctx.font = "16px system-ui";
+        ctx.fillText("Loop-Fehler: " + (e?.message || String(e)), 20, 40);
+      }
+    }
+
+    // ---------- Recording ----------
+    let recorder=null, recordedChunks=[], lastBlob=null;
+
+    function pickMimeType(){
+      const candidates=[
+        'video/mp4;codecs="avc1.42E01E"',
+        'video/mp4;codecs="avc1.4D401E"',
+        "video/mp4",
+        'video/webm;codecs="vp8"',
+        "video/webm"
+      ];
+      if(!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
+      for(const t of candidates){ try{ if(MediaRecorder.isTypeSupported(t)) return t; } catch(_){} }
+      return "";
+    }
+
+    function startRecordingCanvas(){
+      recordedChunks=[]; lastBlob=null; btnShare.disabled=true;
+      const s = canvas.captureStream(15);
+      const mt = pickMimeType();
+      try{ recorder=new MediaRecorder(s, mt?{mimeType:mt}:undefined); }
+      catch(_){ recorder=new MediaRecorder(s); }
+
+      setStatus("Aufnahme läuft… (" + (recorder.mimeType || mt || "default") + ")");
+      recorder.ondataavailable=(e)=>{ if(e.data && e.data.size>0) recordedChunks.push(e.data); };
+      recorder.onstop=()=>{
+        const type = recorder.mimeType || mt || "video/webm";
+        lastBlob = new Blob(recordedChunks,{type});
+        btnShare.disabled = !lastBlob;
+        setStatus("Aufnahme fertig (" + (lastBlob.type.includes("mp4") ? "MP4" : "WebM") + ").");
+      };
+      recorder.start(200);
+    }
+
+    function stopRecordingCanvas(){ if(recorder && recorder.state!=="inactive") recorder.stop(); }
+
+    async function shareOrDownload(){
+      if(!lastBlob) return;
+      const type=lastBlob.type||"";
+      const ext=type.includes("mp4")?"mp4":(type.includes("webm")?"webm":"bin");
+      const fileName=`gleitphase_brust_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`;
+      const file=new File([lastBlob],fileName,{type:lastBlob.type});
+
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        await navigator.share({files:[file], title:"Brust – Gleitphase (anonym)"});
+        setStatus("Geteilt/gespeichert ("+ext.toUpperCase()+").");
+        return;
+      }
+      const url=URL.createObjectURL(lastBlob);
+      const a=document.createElement("a");
+      a.href=url; a.download=fileName;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),2000);
+      setStatus("Download gestartet ("+ext.toUpperCase()+").");
+    }
+
+    // ---------- Buttons / Controls ----------
+    btnInit.addEventListener("click", async ()=>{
+      try{
+        btnInit.disabled=true;
+
+        applyLayoutFromOrientation();
+        setStatus("Initialisiere …");
+
+        await createLandmarker();
+        await startCamera();
+
+        running=true;
+        btnSwitch.disabled=false;
+        btnRec.disabled=false;
+        btnReset.disabled=false;
+
+        setStatus("bereit.");
+        rafId = requestAnimationFrame(loop);
+      } catch(e){
+        console.error(e);
+        setStatus("Fehler: " + (e?.message || String(e)));
+        btnInit.disabled=false;
+      }
+    });
+
+    btnSwitch.addEventListener("click", async ()=>{
+      try{
+        btnSwitch.disabled=true;
+
+        // sauberes Pausieren verhindert Loop-Fehler/White Canvas
+        running=false;
+        if(rafId) cancelAnimationFrame(rafId);
+
+        isBackCamera=!isBackCamera;
+        await startCamera();
+
+        // Zustände resetten, damit nichts "hängt"
+        smoothed = null;
+        poseStableSince = null;
+        poseLostSince = null;
+
+        running=true;
+        rafId = requestAnimationFrame(loop);
+
+        btnSwitch.disabled=false;
+        setStatus("Kamera gewechselt.");
+      } catch(e){
+        console.error(e);
+        setStatus("Kamerawechsel-Fehler: " + (e?.message || String(e)));
+        running=true;
+        rafId = requestAnimationFrame(loop);
+        btnSwitch.disabled=false;
+      }
+    });
+
+    btnRec.addEventListener("click", ()=>{
+      btnRec.disabled=true;
+      btnStop.disabled=false;
+      startRecordingCanvas();
+    });
+
+    btnStop.addEventListener("click", ()=>{
+      btnStop.disabled=true;
+      stopRecordingCanvas();
+      btnRec.disabled=false;
+    });
+
+    btnShare.addEventListener("click", ()=>shareOrDownload());
+
+    btnReset.addEventListener("click", ()=>{
+      glideTimes.length=0;
+      glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0;
+      setStatus("Slots zurückgesetzt.");
+    });
+
+    // Initial layout
+    applyLayoutFromOrientation();
+  </script>
 </body>
 </html>
