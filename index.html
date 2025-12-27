@@ -3,14 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Pose Recorder (Skelett)</title>
+  <title>Pose Recorder (Skelett + Silhouette)</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
-    video, canvas { max-width: 100%; width: 480px; height: auto; border: 1px solid #ddd; border-radius: 8px; }
-    button { padding: 10px 14px; border-radius: 8px; border: 1px solid #ccc; background: #fff; }
+    video, canvas { max-width: 100%; width: 480px; height: auto; border: 1px solid #ddd; border-radius: 10px; }
+    button { padding: 10px 14px; border-radius: 10px; border: 1px solid #ccc; background: #fff; }
     button.primary { border-color: #111; }
-    .hint { color: #555; font-size: 14px; line-height: 1.4; }
+    button:disabled { opacity: 0.5; }
+    label { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #ddd; border-radius: 10px; }
+    .hint { color: #555; font-size: 14px; line-height: 1.4; max-width: 920px; }
+    .small { font-size: 13px; color: #666; }
   </style>
 
   <!-- MediaPipe (klassisch, ohne ES-Module) -->
@@ -20,17 +23,25 @@
 </head>
 
 <body>
-  <h1>Pose Recorder (nur Skelett-Video)</h1>
+  <h1>Pose Recorder (nur Canvas-Video)</h1>
   <p class="hint">
-    Speichert nur die abstrakte Skelettdarstellung (Canvas), nicht das Kamerabild.
-    Bitte per HTTPS (GitHub Pages) nutzen.
+    Links: Live-Kamera (nur zur Erkennung). Rechts: Canvas (wird gespeichert) mit Skelett und optional anonymer Silhouette.
+    Gespeichert wird nur das Canvas-Video, nicht das Kamerabild.
   </p>
 
   <div class="row">
-    <button id="btnInit" class="primary">Kamera aktivieren</button>
+    <button id="btnInit" class="primary">Kamera aktivieren (Rückkamera)</button>
     <button id="btnRec" disabled>Aufnahme starten</button>
     <button id="btnStop" disabled>Stop</button>
     <button id="btnShare" disabled>Teilen/Speichern</button>
+  </div>
+
+  <div class="row">
+    <label>
+      <input type="checkbox" id="toggleSilhouette" checked />
+      Silhouette (anonym) einblenden
+    </label>
+    <span class="small">Tipp: Bei flackernder Silhouette im Schwimmbad deaktivieren.</span>
   </div>
 
   <div class="row">
@@ -50,25 +61,25 @@
     const btnStop = document.getElementById("btnStop");
     const btnShare = document.getElementById("btnShare");
     const statusEl = document.getElementById("status");
+    const toggleSilhouette = document.getElementById("toggleSilhouette");
 
     function setStatus(s) { statusEl.textContent = "Status: " + s; }
 
-    // Aufnahme (Canvas -> Video)
+    // -----------------------------
+    // Recording (Canvas -> Video)
+    // -----------------------------
     let recorder = null;
     let recordedChunks = [];
     let lastBlob = null;
 
     function pickMimeType() {
-      // iOS/Safari ist wählerisch; wir nehmen, was unterstützt wird.
       const candidates = [
         "video/webm;codecs=vp8",
         "video/webm",
-        "video/mp4" // oft NICHT unterstützt; nur als Fallback
+        "video/mp4" // iOS oft nicht, aber als letzter Versuch
       ];
       if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
-      for (const t of candidates) {
-        if (MediaRecorder.isTypeSupported(t)) return t;
-      }
+      for (const t of candidates) if (MediaRecorder.isTypeSupported(t)) return t;
       return "";
     }
 
@@ -84,9 +95,7 @@
       const options = mimeType ? { mimeType } : undefined;
 
       recorder = new MediaRecorder(stream, options);
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) recordedChunks.push(e.data);
-      };
+      recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
       recorder.onstop = () => {
         const type = (recorder && recorder.mimeType) ? recorder.mimeType : "video/webm";
         lastBlob = new Blob(recordedChunks, { type });
@@ -109,7 +118,7 @@
       const fileName = `pose_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`;
       const file = new File([lastBlob], fileName, { type: lastBlob.type });
 
-      // iOS: Share Sheet ist meist der beste Weg
+      // iOS Share Sheet
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: "Pose-Aufnahme" });
         setStatus("Geteilt/gespeichert.");
@@ -128,7 +137,9 @@
       setStatus("Download gestartet.");
     }
 
-    // MediaPipe Pose Setup
+    // -----------------------------
+    // MediaPipe Pose
+    // -----------------------------
     let pose = null;
     let cam = null;
 
@@ -139,56 +150,99 @@
       canvas.height = h;
     }
 
-    function drawSkeleton(results) {
-      // KEIN Kamerabild rendern -> neutraler Hintergrund
+    function drawOutput(results) {
+      // Neutraler Hintergrund (kein Kamerabild)
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      if (!results.poseLandmarks) return;
+      if (!results) return;
 
-      // Skelett zeichnen
-      // (Zeichnet Verbindungen + Punkte; keine Person erkennbar)
-      drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { lineWidth: 4 });
-      drawLandmarks(ctx, results.poseLandmarks, { radius: 3 });
+      // 1) Silhouette (anonym) – optional
+      // Hinweis: drawMask existiert, wenn drawing_utils geladen ist.
+      if (toggleSilhouette.checked && results.segmentationMask && window.drawMask) {
+        ctx.save();
+        ctx.globalAlpha = 0.35;
+        // Wir nutzen die Maske als "Bild" + "Maske" (MediaPipe-Utility)
+        // Person: weiß, Hintergrund: transparent
+        window.drawMask(
+          ctx,
+          results.segmentationMask,
+          results.segmentationMask,
+          { fillColor: "white" },
+          { fillColor: "transparent" }
+        );
+        ctx.restore();
+      }
+
+      // 2) Skelett zeichnen
+      if (!results.poseLandmarks) return;
+      const drawConnectorsFn = window.drawConnectors;
+      const drawLandmarksFn = window.drawLandmarks;
+      const connections = window.POSE_CONNECTIONS;
+
+      if (!drawConnectorsFn || !drawLandmarksFn || !connections) return;
+
+      ctx.save();
+      // Kontrast/Lesbarkeit im Schwimmbad verbessern
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = "black";
+
+      drawConnectorsFn(ctx, results.poseLandmarks, connections, { lineWidth: 10 });
+      drawLandmarksFn(ctx, results.poseLandmarks, { radius: 6 });
+
+      ctx.restore();
     }
 
     async function initAll() {
       btnInit.disabled = true;
       setStatus("initialisiere…");
 
-      // iPhone: Kamera via getUserMedia; MediaPipe Camera steuert Frames an Pose
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: "environment",
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        },
-        audio: false
-      });
+      // iPhone: Rückkamera erzwingen (exact -> fallback ideal)
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { exact: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        });
+      } catch (e) {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        });
+      }
 
       video.srcObject = stream;
       await new Promise((res) => { video.onloadedmetadata = () => res(); });
+
       resizeCanvasToVideo();
 
+      // Pose initialisieren (wichtig: new Pose(...), nicht Pose.Pose)
       pose = new Pose({
-  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-});
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+      });
 
-      // Modell-Komplexität reduzieren -> stabiler auf iPhone
+      // Segmentation aktiv, damit Silhouette möglich ist
       pose.setOptions({
         modelComplexity: 1,
         smoothLandmarks: true,
-        enableSegmentation: false,
+        enableSegmentation: true,
+        smoothSegmentation: true,
         selfieMode: false,
         minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5
       });
 
-      pose.onResults(drawSkeleton);
+      pose.onResults(drawOutput);
 
       cam = new Camera(video, {
-        onFrame: async () => {
-          await pose.send({ image: video });
-        },
+        onFrame: async () => { await pose.send({ image: video }); },
         width: video.videoWidth,
         height: video.videoHeight
       });
@@ -199,6 +253,9 @@
       setStatus("bereit (Skelett läuft).");
     }
 
+    // -----------------------------
+    // UI wiring
+    // -----------------------------
     btnInit.addEventListener("click", async () => {
       try {
         await initAll();
