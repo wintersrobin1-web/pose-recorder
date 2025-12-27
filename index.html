@@ -44,7 +44,7 @@
   <div class="row">
     <label><input type="checkbox" id="toggleSkeleton" checked /> Skelett</label>
     <label><input type="checkbox" id="toggleSilhouette" checked /> Silhouette</label>
-    <label><input type="checkbox" id="toggleTimer" checked /> Timer/Slots</label>
+<label><input type="checkbox" id="toggleTimer" checked /> Timer: Brust – Gleitphase</label>
 
     <select id="filmingPreset" title="Aufnahmeposition">
       <option value="stand" selected>Stand-Test (Beckenrand)</option>
@@ -463,7 +463,7 @@
       ctx.fillText(glideActive ? fmt(currentElapsed) : "0.000 s", x+12, y+36);
 
       ctx.font="600 12px system-ui";
-      ctx.fillText("Gleitphase Brust | Slots", x+12, y+56);
+ctx.fillText("Brust – Gleitphase | Slots", x+12, y+56);
 
       ctx.font="13px system-ui";
       for(let i=0;i<4;i++){
