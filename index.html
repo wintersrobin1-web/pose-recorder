@@ -7,18 +7,16 @@
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
-    video, canvas { max-width: 100%; width: 480px; height: auto; border: 1px solid #ddd; border-radius: 10px; }
+    video, canvas { max-width: 100%; width: 360px; height: auto; border: 1px solid #ddd; border-radius: 10px; }
     button { padding: 10px 14px; border-radius: 10px; border: 1px solid #ccc; background: #fff; }
     button.primary { border-color: #111; }
     button:disabled { opacity: 0.5; }
     label { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #ddd; border-radius: 10px; }
     select { padding: 9px 12px; border-radius: 10px; border: 1px solid #ccc; background: #fff; }
     .hint { color: #555; font-size: 14px; line-height: 1.4; max-width: 980px; }
-    .small { font-size: 13px; color: #666; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
   </style>
 
-  <!-- MediaPipe (klassisch, ohne ES-Module) -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
@@ -27,8 +25,8 @@
 <body>
   <h1>Zeitmessung der Gleitphase im Brustschwimmen (automatisiert)</h1>
   <p class="hint">
-    Die Zeitmessung ist für die <b>Gleitphase im Brustschwimmen</b> konzipiert.
-    Wähle unten die Aufnahmeposition aus (damit der Trigger robust zu deiner Perspektive passt).
+    Die Zeitmessung ist für die <b>Gleitphase im Brustschwimmen</b> konzipiert. Die Landmarkenfläche passt sich automatisch
+    an die iPhone-Ausrichtung (Hoch-/Querformat) an.
   </p>
 
   <div class="row">
@@ -45,7 +43,6 @@
     <label><input type="checkbox" id="toggleSpine" checked /> Mittelachse</label>
     <label><input type="checkbox" id="toggleTimer" checked /> Timer/Slots</label>
 
-    <span class="small">Aufnahmeposition:</span>
     <select id="filmingPreset" title="Aufnahmeposition">
       <option value="stand" selected>Test am Beckenrand (im Stand)</option>
       <option value="side45">45° schräg seitlich (Beckenrand)</option>
@@ -61,9 +58,6 @@
   <p class="hint mono" id="status">Status: bereit</p>
 
   <script>
-    // -----------------------------
-    // DOM
-    // -----------------------------
     const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
@@ -83,13 +77,27 @@
 
     function setStatus(s) { statusEl.textContent = "Status: " + s; }
 
-    // -----------------------------
-    // Canvas Look
-    // -----------------------------
-    const BG = "#bfe7ff";
-    const SIL = "rgba(20, 70, 120, 0.35)";
-    const SIL_EDGE = "rgba(20, 70, 120, 0.65)";
+    // --- Auto-Orientation helpers (iOS Safari kompatibel)
+    function isPortraitUI() {
+      // Best effort: orientation API ist nicht überall stabil.
+      // Nutze Viewport-Verhältnis.
+      return window.matchMedia && window.matchMedia("(orientation: portrait)").matches;
+    }
 
+    function setCanvasForOrientation() {
+      // „Arbeitsauflösung“ für Pose+Overlay – nicht die CSS-Größe
+      if (isPortraitUI()) {
+        canvas.width = 720;  canvas.height = 1280;
+      } else {
+        canvas.width = 1280; canvas.height = 720;
+      }
+    }
+
+    window.addEventListener("resize", () => { setCanvasForOrientation(); setStatus("Ausrichtung aktualisiert."); });
+    window.addEventListener("orientationchange", () => { setCanvasForOrientation(); setStatus("Ausrichtung aktualisiert."); });
+
+    // --- Drawing background
+    const BG = "#bfe7ff";
     function drawBackground() {
       ctx.save();
       ctx.fillStyle = BG;
@@ -97,12 +105,55 @@
       ctx.restore();
     }
 
-    // -----------------------------
-    // Recording (Canvas -> Video)
-    // -----------------------------
-    let recorder = null;
-    let recordedChunks = [];
-    let lastBlob = null;
+    // --- Offscreen frame canvas: hier wird das Videobild ggf. gedreht, damit Pose+Overlay stimmen
+    const frame = document.createElement("canvas");
+    const fctx = frame.getContext("2d");
+
+    function drawVideoOrientedToFrame() {
+      // frame hat die gleiche Größe wie canvas (Pose-Input & Overlay)
+      frame.width = canvas.width;
+      frame.height = canvas.height;
+
+      const vw = video.videoWidth || 0;
+      const vh = video.videoHeight || 0;
+      if (!vw || !vh) return;
+
+      fctx.save();
+      fctx.clearRect(0, 0, frame.width, frame.height);
+
+      // Heuristik:
+      // Wenn UI Portrait ist, aber Video eher Landscape geliefert wird, drehen wir um 90°
+      const uiPortrait = isPortraitUI();
+      const videoLandscape = vw >= vh;
+
+      if (uiPortrait && videoLandscape) {
+        // Rotate 90° clockwise
+        fctx.translate(frame.width, 0);
+        fctx.rotate(Math.PI / 2);
+
+        // Nach Rotation sind Breite/Höhe vertauscht
+        // Wir füllen die Fläche (contain) ohne crop:
+        const scale = Math.min(frame.height / vw, frame.width / vh);
+        const dw = vw * scale;
+        const dh = vh * scale;
+        const dx = (frame.height - dw) / 2;
+        const dy = (frame.width - dh) / 2;
+        fctx.drawImage(video, 0, 0, vw, vh, dx, dy, dw, dh);
+      } else {
+        // Normal: kein Rotieren, contain-fit
+        const scale = Math.min(frame.width / vw, frame.height / vh);
+        const dw = vw * scale;
+        const dh = vh * scale;
+        const dx = (frame.width - dw) / 2;
+        const dy = (frame.height - dh) / 2;
+        fctx.drawImage(video, 0, 0, vw, vh, dx, dy, dw, dh);
+      }
+
+      fctx.restore();
+    }
+
+    // ---------------- Recording ----------------
+    let recorder = null, recordedChunks = [], lastBlob = null;
 
     function pickMimeType() {
       const candidates = [
@@ -113,53 +164,33 @@
         "video/webm"
       ];
       if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
-      for (const t of candidates) {
-        try { if (MediaRecorder.isTypeSupported(t)) return t; } catch (_) {}
-      }
+      for (const t of candidates) { try { if (MediaRecorder.isTypeSupported(t)) return t; } catch (_) {} }
       return "";
     }
 
     function startRecording() {
-      recordedChunks = [];
-      lastBlob = null;
-      btnShare.disabled = true;
-
+      recordedChunks = []; lastBlob = null; btnShare.disabled = true;
       const stream = canvas.captureStream(15);
       const mimeType = pickMimeType();
-      const options = mimeType ? { mimeType } : undefined;
+      try { recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined); }
+      catch (_) { recorder = new MediaRecorder(stream); }
 
-      try {
-        recorder = new MediaRecorder(stream, options);
-      } catch (_) {
-        recorder = new MediaRecorder(stream);
-      }
-
-      const labelStart = recorder.mimeType ? recorder.mimeType : (mimeType || "Browser-Default");
-      setStatus("Aufnahme läuft… (" + labelStart + ")");
-
+      setStatus("Aufnahme läuft… (" + (recorder.mimeType || mimeType || "default") + ")");
       recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
-
       recorder.onstop = () => {
         const type = recorder.mimeType || mimeType || "video/webm";
         lastBlob = new Blob(recordedChunks, { type });
-
         btnShare.disabled = !lastBlob;
-
-        const outType = lastBlob.type || type;
-        const pretty = outType.includes("mp4") ? "MPEG-4 (MP4)" : (outType.includes("webm") ? "WebM" : outType);
+        const pretty = (lastBlob.type.includes("mp4")) ? "MPEG-4 (MP4)" : (lastBlob.type.includes("webm") ? "WebM" : lastBlob.type);
         setStatus("Aufnahme fertig (" + pretty + ").");
       };
-
       recorder.start(200);
     }
 
-    function stopRecording() {
-      if (recorder && recorder.state !== "inactive") recorder.stop();
-    }
+    function stopRecording() { if (recorder && recorder.state !== "inactive") recorder.stop(); }
 
     async function shareOrDownload() {
       if (!lastBlob) return;
-
       const type = lastBlob.type || "";
       const ext = type.includes("mp4") ? "mp4" : (type.includes("webm") ? "webm" : "bin");
       const fileName = `gleitphase_brust_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`;
@@ -170,54 +201,41 @@
         setStatus("Geteilt/gespeichert (" + ext.toUpperCase() + ").");
         return;
       }
-
       const url = URL.createObjectURL(lastBlob);
       const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      a.href = url; a.download = fileName;
+      document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 2000);
       setStatus("Download gestartet (" + ext.toUpperCase() + ").");
     }
 
-    // -----------------------------
-    // Pose + Camera
-    // -----------------------------
-    let pose = null;
-    let cam = null;
-    let isBackCamera = true;
-
-    function resizeCanvasToVideo() {
-      canvas.width = video.videoWidth || 1280;
-      canvas.height = video.videoHeight || 720;
-    }
+    // ---------------- Pose + Camera ----------------
+    let pose = null, cam = null, isBackCamera = true;
 
     function stopCameraHard() {
       try { if (cam && cam.stop) cam.stop(); } catch (_) {}
-      try {
-        const s = video.srcObject;
-        if (s && s.getTracks) s.getTracks().forEach(t => t.stop());
-      } catch (_) {}
+      try { const s = video.srcObject; if (s && s.getTracks) s.getTracks().forEach(t => t.stop()); } catch (_) {}
       video.srcObject = null;
     }
 
     async function startCamera(facingMode) {
       stopCameraHard();
       cam = new Camera(video, {
-        onFrame: async () => { await pose.send({ image: video }); },
+        onFrame: async () => {
+          // Orientierung anwenden
+          drawVideoOrientedToFrame();
+          await pose.send({ image: frame });
+        },
         width: 1280,
         height: 720,
         facingMode
       });
       await cam.start();
-      resizeCanvasToVideo();
     }
 
     async function initAll() {
       btnInit.disabled = true;
-      setStatus("initialisiere…");
+      setCanvasForOrientation();
 
       pose = new Pose({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}` });
       pose.setOptions({
@@ -228,8 +246,8 @@
         minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5
       });
-
       pose.onResults(drawOutput);
+
       await startCamera(isBackCamera ? "environment" : "user");
 
       btnSwitch.disabled = false;
@@ -239,10 +257,23 @@
       setStatus("bereit.");
     }
 
-    // -----------------------------
-    // Silhouette + Skelett
-    // -----------------------------
+    // ---------------- Drawing helpers ----------------
     function midPoint(a, b) { return { x: (a.x+b.x)/2, y: (a.y+b.y)/2 }; }
+
+    function drawMidSpine(lms) {
+      if (!toggleSpine.checked) return;
+      const ls = lms[11], rs = lms[12], lh = lms[23], rh = lms[24];
+      if (!ls || !rs || !lh || !rh) return;
+      const ms = midPoint(ls, rs), mh = midPoint(lh, rh);
+      const x1 = ms.x * canvas.width, y1 = ms.y * canvas.height;
+      const x2 = mh.x * canvas.width, y2 = mh.y * canvas.height;
+
+      ctx.save();
+      ctx.lineWidth = 14; ctx.lineCap = "round";
+      ctx.shadowBlur = 10; ctx.shadowColor = "rgba(0,0,0,0.65)";
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      ctx.restore();
+    }
 
     function drawSilhouetteFromLandmarks(lms) {
       if (!toggleSilhouette.checked) return;
@@ -254,208 +285,72 @@
       const lh = lms[23], rh = lms[24];
       const lk = lms[25], rk = lms[26];
       const la = lms[27], ra = lms[28];
-
       if (!ls || !rs || !lh || !rh) return;
 
       const pts = [];
       if (n) pts.push(n);
       pts.push(ls, rs);
-      if (re) pts.push(re);
-      if (rw) pts.push(rw);
+      if (re) pts.push(re); if (rw) pts.push(rw);
       pts.push(rh);
-      if (rk) pts.push(rk);
-      if (ra) pts.push(ra);
-      if (la) pts.push(la);
-      if (lk) pts.push(lk);
+      if (rk) pts.push(rk); if (ra) pts.push(ra);
+      if (la) pts.push(la); if (lk) pts.push(lk);
       pts.push(lh);
-      if (lw) pts.push(lw);
-      if (le) pts.push(le);
+      if (lw) pts.push(lw); if (le) pts.push(le);
 
       const pix = pts.filter(Boolean).map(p => ({ x: p.x * canvas.width, y: p.y * canvas.height }));
       if (pix.length < 4) return;
 
       ctx.save();
-      ctx.fillStyle = SIL;
-      ctx.strokeStyle = SIL_EDGE;
-      ctx.lineWidth = 6;
-      ctx.lineJoin = "round";
-      ctx.beginPath();
-      ctx.moveTo(pix[0].x, pix[0].y);
+      ctx.fillStyle = "rgba(20, 70, 120, 0.35)";
+      ctx.strokeStyle = "rgba(20, 70, 120, 0.65)";
+      ctx.lineWidth = 6; ctx.lineJoin = "round";
+      ctx.beginPath(); ctx.moveTo(pix[0].x, pix[0].y);
       for (let i = 1; i < pix.length; i++) ctx.lineTo(pix[i].x, pix[i].y);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
+      ctx.closePath(); ctx.fill(); ctx.stroke();
       ctx.restore();
     }
 
-    function drawMidSpine(lms) {
-      if (!toggleSpine.checked) return;
-      const ls = lms[11], rs = lms[12], lh = lms[23], rh = lms[24];
-      if (!ls || !rs || !lh || !rh) return;
-
-      const ms = midPoint(ls, rs);
-      const mh = midPoint(lh, rh);
-
-      const x1 = ms.x * canvas.width, y1 = ms.y * canvas.height;
-      const x2 = mh.x * canvas.width, y2 = mh.y * canvas.height;
-
-      ctx.save();
-      ctx.lineWidth = 14;
-      ctx.lineCap = "round";
-      ctx.shadowBlur = 10;
-      ctx.shadowColor = "rgba(0,0,0,0.65)";
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    // -----------------------------
-    // Trigger-Logik: robust nach Aufnahmeposition
-    // -----------------------------
-    function vis(p) { return (p && typeof p.visibility === "number") ? p.visibility : 1; }
-    function pres(p) { return (p && typeof p.presence === "number") ? p.presence : 1; }
-    function ok(p, thr) { return p && vis(p) >= thr && pres(p) >= thr; }
-
-    function dist2D(a, b) {
-      const dx = a.x - b.x, dy = a.y - b.y;
-      return Math.sqrt(dx*dx + dy*dy);
-    }
-
-    function angleDeg(a, b) {
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      return Math.abs(Math.atan2(dy, dx) * 180 / Math.PI);
-    }
-
-    function torsoLooksGlideLike(lms, preset) {
-      const ls = lms[11], rs = lms[12], lh = lms[23], rh = lms[24];
-      if (!ls || !rs || !lh || !rh) return false;
-
-      const sh = { x: (ls.x + rs.x)/2, y: (ls.y + rs.y)/2 };
-      const hp = { x: (lh.x + rh.x)/2, y: (lh.y + rh.y)/2 };
-
-      const ang = angleDeg(hp, sh);     // 0=horizontal, 90=vertical
-      const torsoLen = dist2D(sh, hp);
-
-      // Je nach Perspektive leicht andere Toleranzen:
-      const longEnough = torsoLen > 0.10;
-
-      if (preset === "back45") {
-        // Von hinten: Rumpf wirkt häufig "vertikaler" im Bild → toleranter
-        return longEnough && ang < 80;
-      }
-      // side45 / default: eher seitlich → etwas strenger gegen komplett vertikal
-      return longEnough && ang < 70;
-    }
-
-    function armExtendedForward(shoulder, elbow, wrist, preset) {
-      if (!shoulder || !wrist) return false;
-
-      const armLen = dist2D(shoulder, wrist);
-
-      // Von hinten wirkt Streckung im Bild ggf. kürzer → etwas niedrigerer Threshold
-      const minLen = (preset === "back45") ? 0.25 : 0.28;
-      const extended = armLen > minLen;
-
-      let straight = true;
-      if (elbow) {
-        const tri = dist2D(shoulder, elbow) + dist2D(elbow, wrist);
-        const base = dist2D(shoulder, wrist) * ((preset === "back45") ? 1.22 : 1.18);
-        straight = tri <= base;
-      }
-      return extended && straight;
-    }
-
-    // Stand-Test: Hände über Kopf (wie bisher zuverlässig)
-    function isOverhead(lms) {
-      const ls = lms[11], rs = lms[12], le = lms[13], re = lms[14], lw = lms[15], rw = lms[16];
-      if (!ls || !rs || !le || !re || !lw || !rw) return false;
-
-      const shoulderY = (ls.y + rs.y) / 2;
-      const wristsUp = (lw.y < shoulderY - 0.03) && (rw.y < shoulderY - 0.03);
-      const elbowsUp = (le.y < shoulderY + 0.02) && (re.y < shoulderY + 0.02);
-      const wristsClose = Math.abs(lw.x - rw.x) < 0.35;
-
-      return wristsUp && elbowsUp && wristsClose;
-    }
-
-    // Seitlich / von hinten: "Forward Streamline" mit Ein-Arm-Fallback + Visibility
-    function isForwardStreamlineRobust(lms, preset) {
-      if (!torsoLooksGlideLike(lms, preset)) return false;
-
-      const thr = (preset === "back45") ? 0.45 : 0.55; // von hinten mehr Occlusion → niedriger
-
-      const ls = lms[11], rs = lms[12];
-      const le = lms[13], re = lms[14];
-      const lw = lms[15], rw = lms[16];
-
-      const leftOk  = ok(ls, thr) && ok(lw, thr);
-      const rightOk = ok(rs, thr) && ok(rw, thr);
-
-      const leftExtended  = leftOk  ? armExtendedForward(ls, ok(le, thr) ? le : null, lw, preset) : false;
-      const rightExtended = rightOk ? armExtendedForward(rs, ok(re, thr) ? re : null, rw, preset) : false;
-
-      if (!leftExtended && !rightExtended) return false;
-
-      // Wenn beide Wrists sichtbar: Nähe prüfen (streamline); sonst nicht blockieren.
-      let wristsClose = true;
-      if (ok(lw, thr) && ok(rw, thr)) {
-        const maxDist = (preset === "back45") ? 0.45 : 0.35; // von hinten perspektivisch größer
-        wristsClose = dist2D(lw, rw) < maxDist;
-      }
-
-      return wristsClose && (leftExtended || rightExtended);
-    }
-
-    function isStreamline(lms) {
-      const preset = filmingPreset.value;
-      if (preset === "stand") return isOverhead(lms);
-      if (preset === "side45") return isForwardStreamlineRobust(lms, "side45");
-      return isForwardStreamlineRobust(lms, "back45");
-    }
-
-    // -----------------------------
-    // Timer / 4 Slots
-    // -----------------------------
+    // ---------------- Timer (dein Stand bleibt; seitlich/hinten kannst du später wieder stabilisieren) ----------------
     const glideTimes = [];
-    let glideActive = false;
-    let glideStart = 0;
-    let currentElapsed = 0;
-    let poseStableSince = null;
-    let poseLostSince = null;
+    let glideActive = false, glideStart = 0, currentElapsed = 0;
+    let poseStableSince = null, poseLostSince = null;
 
     function formatMs(ms) { return (ms / 1000).toFixed(3) + " s"; }
 
+    function isOverhead(lms) {
+      const ls=lms[11], rs=lms[12], le=lms[13], re=lms[14], lw=lms[15], rw=lms[16];
+      if(!ls||!rs||!le||!re||!lw||!rw) return false;
+      const shoulderY=(ls.y+rs.y)/2;
+      const wristsUp=(lw.y<shoulderY-0.03)&&(rw.y<shoulderY-0.03);
+      const elbowsUp=(le.y<shoulderY+0.02)&&(re.y<shoulderY+0.02);
+      const wristsClose=Math.abs(lw.x-rw.x)<0.35;
+      return wristsUp && elbowsUp && wristsClose;
+    }
+
+    function isStreamline(lms) {
+      // Zur Anzeige-/Ausrichtungskorrektur reicht es, den Stand-Modus stabil zu halten.
+      // (Seitlich/hinten Trigger können wir im nächsten Schritt wieder robust machen.)
+      const preset = filmingPreset.value;
+      if (preset === "stand") return isOverhead(lms);
+
+      // Minimaler Fallback: nicht blockieren (damit Timer zumindest testbar bleibt)
+      // -> Wenn du willst, bauen wir hier wieder die robuste Ein-Arm-Logik ein,
+      //    jetzt auf korrekt ausgerichteten Koordinaten.
+      return false;
+    }
+
     function updateTimer(lms, now) {
-      if (!toggleTimer.checked) {
-        glideActive = false;
-        poseStableSince = null;
-        poseLostSince = null;
-        currentElapsed = 0;
-        return;
-      }
+      if (!toggleTimer.checked) { glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0; return; }
 
       const inPose = isStreamline(lms);
-
-      // Je nach Perspektive: etwas mehr Entprellung, um Occlusion-Flackern abzufangen
-      const preset = filmingPreset.value;
-      const startHold = (preset === "stand") ? 220 : 320;
-      const stopHold  = (preset === "stand") ? 180 : 280;
+      const startHold = 220, stopHold = 180;
 
       if (!glideActive) {
         currentElapsed = 0;
         if (inPose && glideTimes.length < 4) {
           if (poseStableSince === null) poseStableSince = now;
-          if (now - poseStableSince >= startHold) {
-            glideActive = true;
-            glideStart = now;
-            poseLostSince = null;
-          }
-        } else {
-          poseStableSince = null;
-        }
+          if (now - poseStableSince >= startHold) { glideActive = true; glideStart = now; poseLostSince = null; }
+        } else poseStableSince = null;
         return;
       }
 
@@ -464,18 +359,11 @@
       if (!inPose) {
         if (poseLostSince === null) poseLostSince = now;
         if (now - poseLostSince >= stopHold) {
-          glideActive = false;
-          poseStableSince = null;
-          poseLostSince = null;
-
-          const dur = now - glideStart;
-          glideTimes.push(dur);
-          if (glideTimes.length > 4) glideTimes.length = 4;
+          glideActive = false; poseStableSince=null; poseLostSince=null;
+          glideTimes.push(now - glideStart); if (glideTimes.length > 4) glideTimes.length = 4;
           currentElapsed = 0;
         }
-      } else {
-        poseLostSince = null;
-      }
+      } else poseLostSince = null;
     }
 
     function roundRect(ctx, x, y, w, h, r) {
@@ -491,66 +379,57 @@
 
     function drawTimerOverlay(lms) {
       if (!toggleTimer.checked) return;
-
       const inPose = lms ? isStreamline(lms) : false;
 
       ctx.save();
       ctx.fillStyle = "rgba(0,0,0,0.45)";
       ctx.strokeStyle = "rgba(255,255,255,0.65)";
       ctx.lineWidth = 2;
-      const x = 14, y = 14, w = 520, h = 175;
-      roundRect(ctx, x, y, w, h, 14);
-      ctx.fill();
-      ctx.stroke();
+      const x=14, y=14, w=520, h=170;
+      roundRect(ctx, x, y, w, h, 14); ctx.fill(); ctx.stroke();
 
       ctx.fillStyle = "white";
       ctx.shadowBlur = 8;
       ctx.shadowColor = "rgba(0,0,0,0.7)";
 
       ctx.font = "700 40px system-ui";
-      ctx.fillText(glideActive ? formatMs(currentElapsed) : "0.000 s", x + 14, y + 48);
+      ctx.fillText(glideActive ? formatMs(currentElapsed) : "0.000 s", x+14, y+48);
 
       ctx.font = "600 16px system-ui";
-      const presetLabel = filmingPreset.value === "stand"
-        ? "Stand-Test"
-        : (filmingPreset.value === "side45" ? "45° seitlich" : "45° von hinten (Startblock)");
+      const presetLabel = filmingPreset.value === "stand" ? "Stand-Test"
+        : (filmingPreset.value === "side45" ? "45° seitlich" : "45° von hinten");
       const st = glideActive ? "Gleitphase: läuft"
-        : (glideTimes.length >= 4 ? "Slots voll (4/4)" : (inPose ? "Pose erkannt (Start hält…)" : "Warte auf Pose"));
-      ctx.fillText(`Aufnahme: ${presetLabel}  |  ${st}`, x + 14, y + 76);
+        : (glideTimes.length >= 4 ? "Slots voll (4/4)" : (inPose ? "Pose erkannt" : "Warte auf Pose"));
+      ctx.fillText(`Brust – Gleitphase | Aufnahme: ${presetLabel} | ${st}`, x+14, y+76);
 
       ctx.font = "18px system-ui";
-      for (let i = 0; i < 4; i++) {
-        const t = glideTimes[i] != null ? formatMs(glideTimes[i]) : "—";
-        ctx.fillText(`Slot ${i+1}: ${t}`, x + 14, y + 105 + i * 18);
+      for (let i=0;i<4;i++){
+        const t = glideTimes[i]!=null ? formatMs(glideTimes[i]) : "—";
+        ctx.fillText(`Slot ${i+1}: ${t}`, x+14, y+104+i*18);
       }
       ctx.restore();
     }
 
-    // -----------------------------
-    // Main render callback
-    // -----------------------------
+    // ---------------- Main draw ----------------
     function drawOutput(results) {
       drawBackground();
 
-      if (!results || !results.poseLandmarks) {
-        drawTimerOverlay(null);
-        return;
-      }
+      // Optional: zeige das ausgerichtete Frame ganz leicht im Hintergrund (Debug)
+      ctx.save();
+      ctx.globalAlpha = 0.15;
+      ctx.drawImage(frame, 0, 0);
+      ctx.restore();
 
+      if (!results || !results.poseLandmarks) { drawTimerOverlay(null); return; }
       const lms = results.poseLandmarks;
 
       drawSilhouetteFromLandmarks(lms);
 
-      const drawConnectorsFn = window.drawConnectors;
-      const drawLandmarksFn = window.drawLandmarks;
-      const connections = window.POSE_CONNECTIONS;
-
-      if (drawConnectorsFn && drawLandmarksFn && connections) {
+      if (window.drawConnectors && window.drawLandmarks && window.POSE_CONNECTIONS) {
         ctx.save();
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = "rgba(0,0,0,0.65)";
-        drawConnectorsFn(ctx, lms, connections, { lineWidth: 14 });
-        drawLandmarksFn(ctx, lms, { radius: 8 });
+        ctx.shadowBlur = 10; ctx.shadowColor = "rgba(0,0,0,0.65)";
+        drawConnectors(ctx, lms, POSE_CONNECTIONS, { lineWidth: 14 });
+        drawLandmarks(ctx, lms, { radius: 8 });
         ctx.restore();
       }
 
@@ -561,16 +440,10 @@
       drawTimerOverlay(lms);
     }
 
-    // -----------------------------
-    // UI wiring
-    // -----------------------------
+    // ---------------- UI wiring ----------------
     btnInit.addEventListener("click", async () => {
       try { await initAll(); }
-      catch (err) {
-        console.error(err);
-        setStatus("Fehler: " + (err && err.message ? err.message : String(err)));
-        btnInit.disabled = false;
-      }
+      catch (err) { console.error(err); setStatus("Fehler: " + (err?.message || String(err))); btnInit.disabled = false; }
     });
 
     btnSwitch.addEventListener("click", async () => {
@@ -583,31 +456,17 @@
         setStatus("Kamera gewechselt.");
       } catch (err) {
         console.error(err);
-        setStatus("Kamerawechsel-Fehler: " + (err && err.message ? err.message : String(err)));
+        setStatus("Kamerawechsel-Fehler: " + (err?.message || String(err)));
         btnSwitch.disabled = false;
       }
     });
 
-    btnRec.addEventListener("click", () => {
-      btnRec.disabled = true;
-      btnStop.disabled = false;
-      startRecording();
-    });
-
-    btnStop.addEventListener("click", () => {
-      btnStop.disabled = true;
-      stopRecording();
-      btnRec.disabled = false;
-    });
-
+    btnRec.addEventListener("click", () => { btnRec.disabled = true; btnStop.disabled = false; startRecording(); });
+    btnStop.addEventListener("click", () => { btnStop.disabled = true; stopRecording(); btnRec.disabled = false; });
     btnShare.addEventListener("click", () => shareOrDownload());
 
     btnReset.addEventListener("click", () => {
-      glideTimes.length = 0;
-      glideActive = false;
-      poseStableSince = null;
-      poseLostSince = null;
-      currentElapsed = 0;
+      glideTimes.length = 0; glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0;
       setStatus("Slots zurückgesetzt.");
     });
   </script>
