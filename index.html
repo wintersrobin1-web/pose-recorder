@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Swim Pose Recorder (MP4 via ffmpeg.wasm)</title>
+  <title>Swim Pose Recorder (Silhouette + Timer)</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
@@ -14,39 +14,29 @@
     label { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #ddd; border-radius: 10px; }
     .hint { color: #555; font-size: 14px; line-height: 1.4; max-width: 980px; }
     .small { font-size: 13px; color: #666; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
   </style>
 
-  <!-- MediaPipe (klassisch) -->
+  <!-- MediaPipe (klassisch, ohne ES-Module) -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
-
-  <!-- ffmpeg.wasm (UMD) -->
-  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/ffmpeg.min.js"></script>
 </head>
 
 <body>
-  <h1>Swim Pose Recorder (echtes MP4 über Konvertierung)</h1>
-  <p class="hint">
-    iPhone/Safari nimmt oft nur WebM auf. Dieses Tool konvertiert danach im Browser zu MP4 (H.264).
-    Halte Clips kurz (5–10 s), sonst kann es auf iPhones langsam werden.
-  </p>
+  <h1>Swim Pose Recorder (Skelett + Silhouette + Timer)</h1>
 
   <div class="row">
     <button id="btnInit" class="primary">Kamera aktivieren (Rückkamera)</button>
     <button id="btnRec" disabled>Aufnahme starten</button>
     <button id="btnStop" disabled>Stop</button>
-    <button id="btnConvert" disabled>In MP4 umwandeln</button>
-    <button id="btnShareMp4" disabled>MP4 teilen/speichern</button>
+    <button id="btnShare" disabled>Teilen/Speichern</button>
     <button id="btnReset" disabled>Slots zurücksetzen</button>
   </div>
 
   <div class="row">
     <label><input type="checkbox" id="toggleSilhouette" checked /> Silhouette (anonym)</label>
-    <label><input type="checkbox" id="toggleSpine" checked /> Mittelachse</label>
+    <label><input type="checkbox" id="toggleSpine" checked /> Mittelachse („Wirbelsäule“)</label>
     <label><input type="checkbox" id="toggleTimer" checked /> Timer/Slots</label>
-    <span class="small">Perspektive: seitlich/leicht von oben ist ok.</span>
   </div>
 
   <div class="row">
@@ -55,7 +45,6 @@
   </div>
 
   <p class="hint" id="status">Status: bereit</p>
-  <p class="hint mono" id="log"></p>
 
   <script>
     const video = document.getElementById("video");
@@ -65,23 +54,21 @@
     const btnInit = document.getElementById("btnInit");
     const btnRec = document.getElementById("btnRec");
     const btnStop = document.getElementById("btnStop");
-    const btnConvert = document.getElementById("btnConvert");
-    const btnShareMp4 = document.getElementById("btnShareMp4");
+    const btnShare = document.getElementById("btnShare");
     const btnReset = document.getElementById("btnReset");
-
     const statusEl = document.getElementById("status");
-    const logEl = document.getElementById("log");
 
     const toggleSilhouette = document.getElementById("toggleSilhouette");
     const toggleSpine = document.getElementById("toggleSpine");
     const toggleTimer = document.getElementById("toggleTimer");
 
     function setStatus(s) { statusEl.textContent = "Status: " + s; }
-    function setLog(s) { logEl.textContent = s || ""; }
 
-    // ---------- Canvas Look ----------
-    const BG = "#bfe7ff";
-    const SIL = "rgba(20, 70, 120, 0.35)";
+    // -----------------------------
+    // Canvas Styling
+    // -----------------------------
+    const BG = "#bfe7ff";                      // hellblau
+    const SIL = "rgba(20, 70, 120, 0.35)";     // Silhouette-Füllung
     const SIL_EDGE = "rgba(20, 70, 120, 0.65)";
 
     function drawBackground() {
@@ -91,45 +78,255 @@
       ctx.restore();
     }
 
-    // ---------- Timer / Slots ----------
+    // -----------------------------
+    // Recording (Canvas -> Video)
+    // -----------------------------
+    let recorder = null;
+    let recordedChunks = [];
+    let lastBlob = null;
+    let lastMime = "";
+
+    function pickMimeTypePreferred() {
+      // MP4 nur verwenden, wenn Safari es wirklich unterstützt.
+      // Achtung: Bei vielen iOS-Versionen ist MP4 in MediaRecorder NICHT verfügbar.
+      if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
+
+      const candidates = [
+        'video/mp4;codecs="avc1.42E01E"',   // H.264 baseline
+        'video/mp4;codecs="avc1.4D401E"',   // H.264 main
+        "video/mp4",
+        'video/webm;codecs="vp8"',
+        "video/webm"
+      ];
+
+      for (const t of candidates) {
+        try {
+          if (MediaRecorder.isTypeSupported(t)) return t;
+        } catch (_) {}
+      }
+      return "";
+    }
+
+    function startRecording() {
+      recordedChunks = [];
+      lastBlob = null;
+      btnShare.disabled = true;
+
+      const fps = 15;
+      const stream = canvas.captureStream(fps);
+
+      const mimeType = pickMimeTypePreferred();
+      const options = mimeType ? { mimeType } : undefined;
+
+      try {
+        recorder = new MediaRecorder(stream, options);
+      } catch (e) {
+        // Fallback ohne mimeType (Safari entscheidet)
+        recorder = new MediaRecorder(stream);
+      }
+
+      lastMime = recorder.mimeType || mimeType || "";
+      setStatus("Aufnahme läuft… (" + (lastMime || "Format unbekannt") + ")");
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+      };
+
+      recorder.onstop = () => {
+        const type = recorder.mimeType || lastMime || "";
+        lastBlob = new Blob(recordedChunks, { type: type || "video/webm" });
+
+        btnShare.disabled = !lastBlob;
+
+        const isMp4 = (lastBlob.type || "").includes("mp4");
+        if (isMp4) {
+          setStatus("Aufnahme fertig (MP4).");
+        } else {
+          setStatus("Aufnahme fertig (" + (lastBlob.type || "unbekannt") + "). Hinweis: iPhone kann WebM teils nicht direkt abspielen – bei Bedarf per Kurzbefehle nach MP4 konvertieren.");
+        }
+      };
+
+      recorder.start(200);
+    }
+
+    function stopRecording() {
+      if (recorder && recorder.state !== "inactive") recorder.stop();
+    }
+
+    async function shareOrDownload() {
+      if (!lastBlob) return;
+
+      const type = lastBlob.type || "";
+      const ext = type.includes("mp4") ? "mp4" : "webm"; // kein Fake-MP4 mehr
+      const fileName = `pose_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`;
+      const file = new File([lastBlob], fileName, { type: lastBlob.type });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: "Pose-Aufnahme" });
+        setStatus("Geteilt/gespeichert (" + ext.toUpperCase() + ").");
+        return;
+      }
+
+      const url = URL.createObjectURL(lastBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      setStatus("Download gestartet (" + ext.toUpperCase() + ").");
+    }
+
+    // -----------------------------
+    // Pose + Rendering
+    // -----------------------------
+    let pose = null;
+    let cam = null;
+
+    function resizeCanvasToVideo() {
+      canvas.width = video.videoWidth || 1280;
+      canvas.height = video.videoHeight || 720;
+    }
+
+    function midPoint(a, b) { return { x: (a.x+b.x)/2, y: (a.y+b.y)/2 }; }
+
+    function drawSilhouetteFromLandmarks(landmarks) {
+      if (!toggleSilhouette.checked) return;
+
+      const n  = landmarks[0];
+      const ls = landmarks[11], rs = landmarks[12];
+      const le = landmarks[13], re = landmarks[14];
+      const lw = landmarks[15], rw = landmarks[16];
+      const lh = landmarks[23], rh = landmarks[24];
+      const lk = landmarks[25], rk = landmarks[26];
+      const la = landmarks[27], ra = landmarks[28];
+
+      if (!ls || !rs || !lh || !rh) return;
+
+      const pts = [];
+      if (n) pts.push(n);
+      pts.push(ls, rs);
+      if (re) pts.push(re);
+      if (rw) pts.push(rw);
+      pts.push(rh);
+      if (rk) pts.push(rk);
+      if (ra) pts.push(ra);
+      if (la) pts.push(la);
+      if (lk) pts.push(lk);
+      pts.push(lh);
+      if (lw) pts.push(lw);
+      if (le) pts.push(le);
+
+      const pix = pts.filter(Boolean).map(p => ({ x: p.x * canvas.width, y: p.y * canvas.height }));
+      if (pix.length < 4) return;
+
+      ctx.save();
+      ctx.fillStyle = SIL;
+      ctx.strokeStyle = SIL_EDGE;
+      ctx.lineWidth = 6;
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+      ctx.moveTo(pix[0].x, pix[0].y);
+      for (let i = 1; i < pix.length; i++) ctx.lineTo(pix[i].x, pix[i].y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawMidSpine(landmarks) {
+      if (!toggleSpine.checked) return;
+      const ls = landmarks[11], rs = landmarks[12], lh = landmarks[23], rh = landmarks[24];
+      if (!ls || !rs || !lh || !rh) return;
+
+      const ms = midPoint(ls, rs);
+      const mh = midPoint(lh, rh);
+
+      const x1 = ms.x * canvas.width, y1 = ms.y * canvas.height;
+      const x2 = mh.x * canvas.width, y2 = mh.y * canvas.height;
+
+      ctx.save();
+      ctx.lineWidth = 14;
+      ctx.lineCap = "round";
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = "rgba(0,0,0,0.65)";
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // -----------------------------
+    // Timer / Slots
+    // -----------------------------
     const glideTimes = [];
-    let glideActive = false, glideStart = 0, currentElapsed = 0;
-    let poseStableSince = null, poseLostSince = null;
+    let glideActive = false;
+    let glideStart = 0;
+    let currentElapsed = 0;
+    let poseStableSince = null;
+    let poseLostSince = null;
 
     function formatMs(ms) { return (ms / 1000).toFixed(3) + " s"; }
 
-    function isStreamline(lms) {
-      const ls = lms[11], rs = lms[12], le = lms[13], re = lms[14], lw = lms[15], rw = lms[16];
+    function isStreamline(landmarks) {
+      const ls = landmarks[11], rs = landmarks[12];
+      const le = landmarks[13], re = landmarks[14];
+      const lw = landmarks[15], rw = landmarks[16];
       if (!ls || !rs || !le || !re || !lw || !rw) return false;
+
       const shoulderY = (ls.y + rs.y) / 2;
       const wristsUp = (lw.y < shoulderY - 0.03) && (rw.y < shoulderY - 0.03);
       const elbowsUp = (le.y < shoulderY + 0.02) && (re.y < shoulderY + 0.02);
-      const wristsClose = Math.abs(lw.x - rw.x) < 0.35;
+      const wristDist = Math.abs(lw.x - rw.x);
+      const wristsClose = wristDist < 0.35;
+
       return wristsUp && elbowsUp && wristsClose;
     }
 
-    function updateTimer(lms, now) {
-      if (!toggleTimer.checked) { glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0; return; }
-      const inPose = isStreamline(lms);
+    function updateTimer(landmarks, now) {
+      if (!toggleTimer.checked) {
+        glideActive = false;
+        poseStableSince = null;
+        poseLostSince = null;
+        currentElapsed = 0;
+        return;
+      }
+
+      const inPose = isStreamline(landmarks);
 
       if (!glideActive) {
         currentElapsed = 0;
         if (inPose && glideTimes.length < 4) {
           if (poseStableSince === null) poseStableSince = now;
-          if (now - poseStableSince >= 200) { glideActive=true; glideStart=now; poseLostSince=null; }
-        } else poseStableSince = null;
+          if (now - poseStableSince >= 200) {
+            glideActive = true;
+            glideStart = now;
+            poseLostSince = null;
+          }
+        } else {
+          poseStableSince = null;
+        }
         return;
       }
+
       currentElapsed = now - glideStart;
 
       if (!inPose) {
         if (poseLostSince === null) poseLostSince = now;
         if (now - poseLostSince >= 160) {
-          glideActive=false; poseStableSince=null; poseLostSince=null;
-          const dur = now - glideStart; glideTimes.push(dur); if (glideTimes.length>4) glideTimes.length=4;
-          currentElapsed=0;
+          glideActive = false;
+          poseStableSince = null;
+          poseLostSince = null;
+          const dur = now - glideStart;
+          glideTimes.push(dur);
+          if (glideTimes.length > 4) glideTimes.length = 4;
+          currentElapsed = 0;
         }
-      } else poseLostSince = null;
+      } else {
+        poseLostSince = null;
+      }
     }
 
     function roundRect(ctx, x, y, w, h, r) {
@@ -143,118 +340,81 @@
       ctx.closePath();
     }
 
-    function drawTimerOverlay(lms) {
+    function drawTimerOverlay(landmarks) {
       if (!toggleTimer.checked) return;
-      const inPose = lms ? isStreamline(lms) : false;
+
+      const inPose = landmarks ? isStreamline(landmarks) : false;
 
       ctx.save();
       ctx.fillStyle = "rgba(0,0,0,0.45)";
       ctx.strokeStyle = "rgba(255,255,255,0.65)";
       ctx.lineWidth = 2;
-      const x=14,y=14,w=380,h=170;
-      roundRect(ctx,x,y,w,h,14); ctx.fill(); ctx.stroke();
+      const x = 14, y = 14, w = 380, h = 170;
+      roundRect(ctx, x, y, w, h, 14);
+      ctx.fill();
+      ctx.stroke();
 
       ctx.fillStyle = "white";
       ctx.shadowBlur = 8;
       ctx.shadowColor = "rgba(0,0,0,0.7)";
 
       ctx.font = "700 40px system-ui";
-      ctx.fillText(glideActive ? formatMs(currentElapsed) : "0.000 s", x+14, y+48);
+      ctx.fillText(glideActive ? formatMs(currentElapsed) : "0.000 s", x + 14, y + 48);
 
       ctx.font = "600 18px system-ui";
       const st = glideActive ? "Gleitphase: läuft"
-        : (glideTimes.length >= 4 ? "Slots voll (4/4)" : (inPose ? "Streamline erkannt (Start in 0.2s)" : "Warte: Hände über Kopf"));
-      ctx.fillText(st, x+14, y+76);
+               : (glideTimes.length >= 4 ? "Slots voll (4/4)" : (inPose ? "Streamline erkannt (Start in 0.2s)" : "Warte: Hände über Kopf"));
+      ctx.fillText(st, x + 14, y + 76);
 
       ctx.font = "18px system-ui";
-      for (let i=0;i<4;i++){
-        const t = glideTimes[i]!=null ? formatMs(glideTimes[i]) : "—";
-        ctx.fillText(`Slot ${i+1}: ${t}`, x+14, y+104+i*18);
+      for (let i = 0; i < 4; i++) {
+        const t = glideTimes[i] != null ? formatMs(glideTimes[i]) : "—";
+        ctx.fillText(`Slot ${i+1}: ${t}`, x + 14, y + 104 + i * 18);
       }
+
       ctx.restore();
     }
 
-    function midPoint(a,b){ return {x:(a.x+b.x)/2,y:(a.y+b.y)/2}; }
-
-    function drawMidSpine(lms){
-      if (!toggleSpine.checked) return;
-      const ls=lms[11], rs=lms[12], lh=lms[23], rh=lms[24];
-      if(!ls||!rs||!lh||!rh) return;
-      const ms=midPoint(ls,rs), mh=midPoint(lh,rh);
-      const x1=ms.x*canvas.width,y1=ms.y*canvas.height,x2=mh.x*canvas.width,y2=mh.y*canvas.height;
-      ctx.save();
-      ctx.lineWidth=14; ctx.lineCap="round";
-      ctx.shadowBlur=10; ctx.shadowColor="rgba(0,0,0,0.65)";
-      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
-      ctx.restore();
-    }
-
-    function drawSilhouetteFromLandmarks(lms){
-      if(!toggleSilhouette.checked) return;
-      const n=lms[0], ls=lms[11], rs=lms[12], le=lms[13], re=lms[14], lw=lms[15], rw=lms[16],
-            lh=lms[23], rh=lms[24], lk=lms[25], rk=lms[26], la=lms[27], ra=lms[28];
-      if(!ls||!rs||!lh||!rh) return;
-      const pts=[];
-      if(n) pts.push(n);
-      pts.push(ls,rs);
-      if(re) pts.push(re); if(rw) pts.push(rw);
-      pts.push(rh);
-      if(rk) pts.push(rk); if(ra) pts.push(ra);
-      if(la) pts.push(la); if(lk) pts.push(lk);
-      pts.push(lh);
-      if(lw) pts.push(lw); if(le) pts.push(le);
-
-      const pix=pts.filter(Boolean).map(p=>({x:p.x*canvas.width,y:p.y*canvas.height}));
-      if(pix.length<4) return;
-      ctx.save();
-      ctx.fillStyle=SIL; ctx.strokeStyle=SIL_EDGE; ctx.lineWidth=6; ctx.lineJoin="round";
-      ctx.beginPath(); ctx.moveTo(pix[0].x,pix[0].y);
-      for(let i=1;i<pix.length;i++) ctx.lineTo(pix[i].x,pix[i].y);
-      ctx.closePath(); ctx.fill(); ctx.stroke();
-      ctx.restore();
-    }
-
-    // ---------- MediaPipe ----------
-    let pose=null, cam=null;
-    function resizeCanvasToVideo(){
-      canvas.width = video.videoWidth || 1280;
-      canvas.height = video.videoHeight || 720;
-    }
-
-    function drawOutput(results){
+    function drawOutput(results) {
       drawBackground();
-      if(!results || !results.poseLandmarks){
+
+      if (!results || !results.poseLandmarks) {
         drawTimerOverlay(null);
         return;
       }
-      const lms=results.poseLandmarks;
+
+      const lms = results.poseLandmarks;
 
       drawSilhouetteFromLandmarks(lms);
 
-      const drawConnectorsFn=window.drawConnectors;
-      const drawLandmarksFn=window.drawLandmarks;
-      const connections=window.POSE_CONNECTIONS;
+      const drawConnectorsFn = window.drawConnectors;
+      const drawLandmarksFn = window.drawLandmarks;
+      const connections = window.POSE_CONNECTIONS;
 
-      if(drawConnectorsFn && drawLandmarksFn && connections){
+      if (drawConnectorsFn && drawLandmarksFn && connections) {
         ctx.save();
-        ctx.shadowBlur=10; ctx.shadowColor="rgba(0,0,0,0.65)";
-        drawConnectorsFn(ctx,lms,connections,{lineWidth:14});
-        drawLandmarksFn(ctx,lms,{radius:8});
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = "rgba(0,0,0,0.65)";
+        drawConnectorsFn(ctx, lms, connections, { lineWidth: 14 });
+        drawLandmarksFn(ctx, lms, { radius: 8 });
         ctx.restore();
       }
 
       drawMidSpine(lms);
 
-      const now=performance.now();
-      updateTimer(lms,now);
+      const now = performance.now();
+      updateTimer(lms, now);
       drawTimerOverlay(lms);
     }
 
-    async function initAll(){
-      btnInit.disabled=true;
+    async function initAll() {
+      btnInit.disabled = true;
       setStatus("initialisiere…");
 
-      pose = new Pose({ locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}` });
+      pose = new Pose({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+      });
+
       pose.setOptions({
         modelComplexity: 1,
         smoothLandmarks: true,
@@ -263,142 +423,56 @@
         minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5
       });
+
       pose.onResults(drawOutput);
 
-      cam = new Camera(video,{
-        onFrame: async ()=>{ await pose.send({image:video}); },
-        width: 1280, height: 720,
+      cam = new Camera(video, {
+        onFrame: async () => { await pose.send({ image: video }); },
+        width: 1280,
+        height: 720,
         facingMode: "environment"
       });
+
       await cam.start();
       resizeCanvasToVideo();
 
-      btnRec.disabled=false;
-      btnReset.disabled=false;
-      setStatus("bereit.");
+      btnRec.disabled = false;
+      btnReset.disabled = false;
+
+      const mt = pickMimeTypePreferred() || "(Safari entscheidet)";
+      setStatus("bereit. Aufnahmeformat-Präferenz: " + mt);
     }
 
-    // ---------- Recording (WebM) ----------
-    let recorder=null, recordedChunks=[], webmBlob=null, mp4Blob=null;
-
-    function pickWebm(){
-      if(!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
-      const c=['video/webm;codecs=vp8','video/webm'];
-      for(const t of c) if(MediaRecorder.isTypeSupported(t)) return t;
-      return "";
-    }
-
-    function startRecording(){
-      recordedChunks=[]; webmBlob=null; mp4Blob=null;
-      btnConvert.disabled=true;
-      btnShareMp4.disabled=true;
-
-      const stream = canvas.captureStream(15);
-      const mt = pickWebm();
-      recorder = new MediaRecorder(stream, mt?{mimeType:mt}:undefined);
-      recorder.ondataavailable=(e)=>{ if(e.data && e.data.size>0) recordedChunks.push(e.data); };
-      recorder.onstop=()=>{
-        webmBlob = new Blob(recordedChunks,{type:recorder.mimeType || "video/webm"});
-        btnConvert.disabled=false;
-        setStatus("Aufnahme fertig (WebM). Jetzt: In MP4 umwandeln.");
-      };
-      recorder.start(200);
-      setStatus("Aufnahme läuft…");
-    }
-
-    function stopRecording(){
-      if(recorder && recorder.state!=="inactive") recorder.stop();
-    }
-
-    // ---------- Convert WebM -> MP4 with ffmpeg.wasm ----------
-    let ffmpegLoaded=false;
-    const { createFFmpeg, fetchFile } = FFmpeg; // from ffmpeg.min.js
-    const ffmpeg = createFFmpeg({
-      log: true,
-      // Core wird automatisch nachgeladen; wenn du es lieber selbst hosten willst: corePath setzen.
+    // UI wiring
+    btnInit.addEventListener("click", async () => {
+      try { await initAll(); }
+      catch (err) {
+        console.error(err);
+        setStatus("Fehler: " + (err && err.message ? err.message : String(err)));
+        btnInit.disabled = false;
+      }
     });
 
-    async function ensureFfmpeg(){
-      if(ffmpegLoaded) return;
-      setStatus("Lade MP4-Konverter (ffmpeg)…");
-      setLog("Erst-Download kann groß sein.");
-      ffmpeg.setLogger(({ message }) => {
-        // sehr kurze Ausgabe, damit iPhone nicht überläuft
-        if (message && (message.includes("frame=") || message.includes("time="))) {
-          setLog(message.slice(0, 140));
-        }
-      });
-      await ffmpeg.load();
-      ffmpegLoaded=true;
-      setLog("");
-    }
+    btnRec.addEventListener("click", () => {
+      btnRec.disabled = true;
+      btnStop.disabled = false;
+      startRecording();
+    });
 
-    async function convertToMp4(){
-      if(!webmBlob) return;
-      btnConvert.disabled=true;
+    btnStop.addEventListener("click", () => {
+      btnStop.disabled = true;
+      stopRecording();
+      btnRec.disabled = false;
+    });
 
-      await ensureFfmpeg();
-      setStatus("Konvertiere zu MP4… (bitte warten, 5–10s Clips empfohlen)");
+    btnShare.addEventListener("click", () => shareOrDownload());
 
-      // Dateien ins virtuelle FS schreiben
-      ffmpeg.FS('writeFile','in.webm', await fetchFile(webmBlob));
-
-      // MP4 H.264, yuv420p, faststart, 15 fps, gerade Pixelmaße (H.264 braucht oft gerade Werte)
-      // scale:trunc(iw/2)*2:trunc(ih/2)*2 erzwingt gerade Breite/Höhe
-      await ffmpeg.run(
-        '-i','in.webm',
-        '-vf','scale=trunc(iw/2)*2:trunc(ih/2)*2',
-        '-r','15',
-        '-c:v','libx264',
-        '-pix_fmt','yuv420p',
-        '-movflags','+faststart',
-        'out.mp4'
-      );
-
-      const data = ffmpeg.FS('readFile','out.mp4');
-      mp4Blob = new Blob([data.buffer], { type: 'video/mp4' });
-
-      // Cleanup
-      try { ffmpeg.FS('unlink','in.webm'); } catch(e){}
-      try { ffmpeg.FS('unlink','out.mp4'); } catch(e){}
-
-      btnShareMp4.disabled=false;
-      setStatus("MP4 fertig. Jetzt MP4 teilen/speichern.");
-    }
-
-    async function shareMp4(){
-      if(!mp4Blob) return;
-      const fileName = `pose_${new Date().toISOString().replace(/[:.]/g,"-")}.mp4`;
-      const file = new File([mp4Blob], fileName, { type: 'video/mp4' });
-
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: "Pose MP4" });
-        setStatus("MP4 geteilt/gespeichert.");
-        return;
-      }
-
-      const url = URL.createObjectURL(mp4Blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(()=>URL.revokeObjectURL(url),2000);
-      setStatus("MP4 Download gestartet.");
-    }
-
-    // ---------- UI ----------
-    btnInit.addEventListener("click", async()=>{ try{ await initAll(); } catch(e){ console.error(e); setStatus("Fehler: "+(e.message||String(e))); btnInit.disabled=false; } });
-
-    btnRec.addEventListener("click", ()=>{ btnRec.disabled=true; btnStop.disabled=false; startRecording(); });
-    btnStop.addEventListener("click", ()=>{ btnStop.disabled=true; stopRecording(); btnRec.disabled=false; });
-
-    btnConvert.addEventListener("click", ()=> convertToMp4().catch(e=>{ console.error(e); setStatus("Konvertierungsfehler: "+(e.message||String(e))); btnConvert.disabled=false; }));
-    btnShareMp4.addEventListener("click", ()=> shareMp4().catch(e=>{ console.error(e); setStatus("Teilen-Fehler: "+(e.message||String(e))); }));
-
-    btnReset.addEventListener("click", ()=>{
-      glideTimes.length=0; glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0;
+    btnReset.addEventListener("click", () => {
+      glideTimes.length = 0;
+      glideActive = false;
+      poseStableSince = null;
+      poseLostSince = null;
+      currentElapsed = 0;
       setStatus("Slots zurückgesetzt.");
     });
   </script>
