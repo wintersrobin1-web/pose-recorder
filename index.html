@@ -10,19 +10,15 @@
     video, canvas { max-width: 100%; border: 1px solid #ddd; border-radius: 10px; }
     video { width: 360px; height: auto; background:#000; }
     canvas { width: 360px; height: auto; }
-
     button { padding: 10px 14px; border-radius: 10px; border: 1px solid #ccc; background: #fff; }
     button.primary { border-color: #111; }
     button:disabled { opacity: 0.5; }
-
     label { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #ddd; border-radius: 10px; }
     select { padding: 9px 12px; border-radius: 10px; border: 1px solid #ccc; background: #fff; }
-
     details { border: 1px solid #ddd; border-radius: 10px; padding: 10px 12px; max-width: 1100px; }
     summary { cursor: pointer; font-weight: 600; }
     .hint { color: #555; font-size: 14px; line-height: 1.4; max-width: 1100px; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
-
     .rangeWrap { display:flex; align-items:center; gap:10px; padding: 8px 10px; border:1px solid #ddd; border-radius: 10px; margin-top: 10px; flex-wrap: wrap; }
     .rangeWrap span { min-width: 170px; font-size: 13px; color:#666; }
     .small { font-size: 13px; color:#666; min-width: 64px; text-align:right; }
@@ -103,8 +99,7 @@
     </div>
 
     <p class="hint">
-      Empfehlung: 0.50/0.50/0.50 ist ein guter Start. Für Schwimmen ist zu hoch (0.99) oft instabil.
-      Silhouette: gelb ~40% ist „Google-Style“ aber anonym.
+      Empfehlung: 0.50/0.50/0.50 ist ein guter Start. Silhouette: gelb ~40% ist anonym und “Google-Style”.
     </p>
   </details>
 
@@ -195,6 +190,10 @@
       // draw in CSS pixels
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false;
+
+      // update internal mask canvas to match output internal size
+      maskCanvas.width = canvas.width;
+      maskCanvas.height = canvas.height;
     }
 
     function applyLayoutFromOrientation() {
@@ -224,11 +223,10 @@
     function getPoseConnectionsSafe() {
       const c = PoseLandmarker?.POSE_CONNECTIONS;
       const arr = (Array.isArray(c) && c.length) ? c : FALLBACK_POSE_CONNECTIONS;
-      // Safety: entferne 27-28 falls irgendwo enthalten
       return arr.filter(([a,b]) => !((a===27 && b===28) || (a===28 && b===27)));
     }
 
-    // ---------- Video-to-canvas "contain" mapping ----------
+    // ---------- contain mapping ----------
     function containRect(vw, vh, cw, ch) {
       const scale = Math.min(cw / vw, ch / vh);
       const dispW = vw * scale;
@@ -237,7 +235,6 @@
       const offY = (ch - dispH) / 2;
       return { offX, offY, dispW, dispH, scale };
     }
-
     function mapLandmarksContain(rawLandmarks, vw, vh, cw, ch) {
       const { offX, offY, scale } = containRect(vw, vh, cw, ch);
       return rawLandmarks.map(p => {
@@ -249,51 +246,56 @@
       });
     }
 
-    // ---------- Silhouette via GPU blending (drawConfidenceMask) ----------
-    // WebGL canvas only for mask blending
-    const glCanvas = document.createElement("canvas");
-    // preserveDrawingBuffer wichtig, damit drawImage(glCanvas, ...) zuverlässig klappt
-    const gl = glCanvas.getContext("webgl2", { alpha: true, premultipliedAlpha: false, preserveDrawingBuffer: true });
-    let gpuDrawer = null;
+    // ---------- Silhouette (CPU-safe, no getImageData) ----------
+    const maskCanvas = document.createElement("canvas");
+    const maskCtx = maskCanvas.getContext("2d");
 
-    function ensureGpuDrawer() {
-      if (!gl) return false;
-      if (!gpuDrawer) gpuDrawer = new DrawingUtils(gl);
-      return true;
+    function segMaskToCanvas(segMask) {
+      if (!segMask) return null;
+      if (typeof segMask.getAsCanvas === "function") return segMask.getAsCanvas();
+      if (segMask.canvas) return segMask.canvas;
+      return null;
     }
 
-    // RGBAColor shape: {r,g,b,a} (0..255). drawConfidenceMask ist dokumentiert. :contentReference[oaicite:2]{index=2}
-    function drawSilhouetteGPU(segMask) {
+    function drawSilhouette(segMask) {
       if (!toggleSilhouette.checked || !segMask) return false;
-      if (!ensureGpuDrawer()) return false;
+
+      const sc = segMaskToCanvas(segMask);
+      if (!sc) return false;
 
       const vw = video.videoWidth || 0;
       const vh = video.videoHeight || 0;
       if (!vw || !vh) return false;
 
-      // drawConfidenceMask rendert in den aktuell gebundenen WebGL2-Kontext (glCanvas).
-      // Damit die Maske nicht verzerrt wird, setzen wir glCanvas auf Video-Seitenverhältnis
-      // und zeichnen das Ergebnis anschließend im "contain"-Rechteck in den Output.
-      const targetW = vw;
-      const targetH = vh;
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
 
-      if (glCanvas.width !== targetW || glCanvas.height !== targetH) {
-        glCanvas.width = targetW;
-        glCanvas.height = targetH;
-        gl.viewport(0, 0, targetW, targetH);
-      }
+      // 1) Maske in internes maskCanvas zeichnen (in Output-Pixeln)
+      maskCtx.setTransform(1,0,0,1,0,0);
+      maskCtx.clearRect(0,0,maskCanvas.width,maskCanvas.height);
 
-      const bg = { r: 191, g: 231, b: 255, a: 255 }; // BG wie Canvas
-      const alpha = Math.round(255 * Number(silOpacity.value)); // z.B. 0.40
-      const overlay = { r: 255, g: 235, b: 70, a: alpha }; // gelb, anonym
+      const cw = CSS_W, ch = CSS_H;
+      const { offX, offY, dispW, dispH } = containRect(vw, vh, cw, ch);
 
-      // GPU-Blend (robust, keine Pixel-Readbacks). :contentReference[oaicite:3]{index=3}
-      gpuDrawer.drawConfidenceMask(segMask, bg, overlay);
+      // draw mask grayscale into internal resolution
+      maskCtx.drawImage(
+        sc,
+        0, 0, sc.width, sc.height,
+        Math.round(offX * dpr), Math.round(offY * dpr),
+        Math.round(dispW * dpr), Math.round(dispH * dpr)
+      );
 
-      // Jetzt in Output-Canvas einpassen (contain), damit es mit Landmark-Mapping übereinstimmt
-      const { offX, offY, dispW, dispH } = containRect(vw, vh, CSS_W, CSS_H);
+      // 2) Gelb "in" der Maske füllen (source-in) – KEIN getImageData
+      maskCtx.globalCompositeOperation = "source-in";
+      maskCtx.fillStyle = "rgb(255,235,70)";
+      maskCtx.fillRect(0,0,maskCanvas.width,maskCanvas.height);
+      maskCtx.globalCompositeOperation = "source-over";
 
-      ctx.drawImage(glCanvas, offX, offY, dispW, dispH);
+      // 3) Auf Output mit gewünschter Deckkraft
+      ctx.save();
+      ctx.globalAlpha = Number(silOpacity.value);
+      ctx.drawImage(maskCanvas, 0, 0, CSS_W, CSS_H);
+      ctx.restore();
+
       return true;
     }
 
@@ -317,7 +319,7 @@
       return smoothed;
     }
 
-    // ---------- Timer / Slots ----------
+    // ---------- Timer / Pose logic ----------
     const glideTimes = [];
     let glideActive = false, glideStart = 0, currentElapsed = 0;
     let poseStableSince = null, poseLostSince = null;
@@ -326,7 +328,6 @@
     const fmt = (ms)=> (ms/1000).toFixed(3) + " s";
 
     function angleDeg(a,b,c){
-      // angle ABC
       const abx=a.x-b.x, aby=a.y-b.y;
       const cbx=c.x-b.x, cby=c.y-b.y;
       const dot=abx*cbx+aby*cby;
@@ -336,7 +337,7 @@
       return Math.acos(cos)*180/Math.PI;
     }
 
-    function armOverheadSide(lms, side /*"L"|"R"*/){
+    function armOverheadSide(lms, side){
       const ls = lms[11], rs = lms[12];
       const shoulderY = (ls && rs) ? (ls.y + rs.y) / 2 : (ls ? ls.y : (rs ? rs.y : null));
       if (shoulderY == null) return false;
@@ -344,38 +345,29 @@
       const elbow = side==="L" ? lms[13] : lms[14];
       const wrist = side==="L" ? lms[15] : lms[16];
 
-      // Ein Arm reicht; wenn Wrist fehlt, Ellbogen genügt.
-      // Schwelle bewusst nicht zu streng, weil 45° seitlich oft verdeckt.
       const yRef = shoulderY - 0.03;
       const wristUp = wrist ? (wrist.y < yRef) : false;
       const elbowUp = elbow ? (elbow.y < shoulderY + 0.01) : false;
-
       return wristUp || elbowUp;
     }
 
-    function legStraightSide(lms, side /*"L"|"R"*/){
+    function legStraightSide(lms, side){
       const hip  = side==="L" ? lms[23] : lms[24];
       const knee = side==="L" ? lms[25] : lms[26];
       const ank  = side==="L" ? lms[27] : lms[28];
-
       if (!hip || !knee) return false;
 
-      // Primär: Winkel Hip-Knee-Ankle (wenn ankle da)
       if (ank) {
         const a = angleDeg(hip, knee, ank);
-        return a >= 155; // bewusst toleranter
+        return a >= 155;
       }
-
-      // Fallback: wenn ankle fehlt, grobe Streck-Heuristik
-      const verticalOk = (knee.y > hip.y + 0.04);
-      const xOk = Math.abs(knee.x - hip.x) < 0.15;
-      return verticalOk && xOk;
+      // fallback
+      return (knee.y > hip.y + 0.04) && (Math.abs(knee.x - hip.x) < 0.15);
     }
 
     function inGlidePose(lms){
       if (!lms || lms.length < 29) return false;
 
-      // Körper "lang": Schulter-Hüfte Abstand nicht zu klein
       const ls=lms[11], rs=lms[12], lh=lms[23], rh=lms[24];
       if(!ls||!rs||!lh||!rh) return false;
 
@@ -384,10 +376,7 @@
       if(dist(sh,hp) < 0.10) return false;
 
       const armOk = armOverheadSide(lms,"L") || armOverheadSide(lms,"R");
-
-      // Beine: ein Bein reicht, wenn das andere verdeckt ist
       const legOk = legStraightSide(lms,"L") || legStraightSide(lms,"R");
-
       return armOk && legOk;
     }
 
@@ -396,9 +385,12 @@
         glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0;
         return;
       }
+      if(!lms){
+        glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0;
+        return;
+      }
 
       const p=filmingPreset.value;
-      // Seitlich/Hinten etwas mehr Stabilitätszeit
       const startHold=(p==="stand")?200:360;
       const stopHold =(p==="stand")?160:320;
 
@@ -476,7 +468,7 @@
 
     // ---------- MediaPipe Tasks ----------
     let landmarker = null;
-    let drawing2d = null;
+    let drawingUtils = null;
     let running = false;
 
     const POSE_TASK_URL =
@@ -490,7 +482,11 @@
 
       setStatus("Lade Pose Landmarker heavy …");
       landmarker = await PoseLandmarker.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: POSE_TASK_URL },
+        baseOptions: {
+          modelAssetPath: POSE_TASK_URL,
+          // entscheidend: stabiler Mask-Pfad auf iOS => CPU erzwingen
+          delegate: "CPU"
+        },
         runningMode: "VIDEO",
         numPoses: 1,
         outputSegmentationMasks: true,
@@ -499,7 +495,7 @@
         minTrackingConfidence: Number(trackConf.value),
       });
 
-      drawing2d = new DrawingUtils(ctx);
+      drawingUtils = new DrawingUtils(ctx);
     }
 
     function updateLandmarkerThresholds(){
@@ -521,7 +517,6 @@
 
     async function startCamera(){
       stopCamera();
-
       stream = await navigator.mediaDevices.getUserMedia({
         audio:false,
         video:{
@@ -550,10 +545,9 @@
       video.srcObject=null;
     }
 
-    // ---------- Skeleton drawing (crisp) ----------
+    // ---------- Skeleton drawing ----------
     function drawSkeleton(landmarksNorm){
-      if(!toggleSkeleton.checked || !landmarksNorm || !drawing2d) return;
-
+      if(!toggleSkeleton.checked || !landmarksNorm || !drawingUtils) return;
       const connections = getPoseConnectionsSafe();
 
       ctx.save();
@@ -564,10 +558,9 @@
       const r  = Math.round(Number(skelDot.value));
 
       if(Array.isArray(connections) && connections.length){
-        drawing2d.drawConnectors(landmarksNorm, connections, { lineWidth: lw, color: "#000000" });
+        drawingUtils.drawConnectors(landmarksNorm, connections, { lineWidth: lw, color: "#000000" });
       }
-      drawing2d.drawLandmarks(landmarksNorm, { radius: r, color: "#000000" });
-
+      drawingUtils.drawLandmarks(landmarksNorm, { radius: r, color: "#000000" });
       ctx.restore();
     }
 
@@ -576,11 +569,9 @@
       if(!running || !landmarker) return;
 
       try{
-        // Grundfläche
         ctx.fillStyle = BG;
         ctx.fillRect(0, 0, CSS_W, CSS_H);
 
-        // Wenn Video kurz nicht bereit ist (z.B. beim Kamerawechsel), Loop weiterlaufen lassen
         if (video.videoWidth === 0 || video.videoHeight === 0) {
           drawOverlay("DEBUG: video not ready");
           requestAnimationFrame(loop);
@@ -593,13 +584,11 @@
         const hasMask = !!(result?.segmentationMasks?.length);
         const hasLandmarks = !!(result?.landmarks?.length && result.landmarks[0]?.length);
 
-        // Silhouette (GPU blend)
         let silOk = false;
-        if (hasMask && toggleSilhouette.checked) {
-          silOk = drawSilhouetteGPU(result.segmentationMasks[0]);
+        if (hasMask) {
+          silOk = drawSilhouette(result.segmentationMasks[0]);
         }
 
-        // Landmarks -> contain mapping -> EMA -> draw + timer
         let lms = null;
         if(hasLandmarks){
           const raw = result.landmarks[0];
@@ -611,24 +600,21 @@
           drawSkeleton(lms);
           updateTimer(lms, ts);
         } else {
-          // wenn keine Pose erkannt: Timer sauber zurücksetzen
           updateTimer(null, ts);
         }
 
-        drawOverlay(
-          `DEBUG: lm=${hasLandmarks?result.landmarks[0].length:0} mask=${hasMask?1:0} sil=${silOk?1:0} ui=${isPortraitUI()?"P":"L"} v=${video.videoWidth}x${video.videoHeight} c=${CSS_W}x${CSS_H}`
-        );
+        drawOverlay(`DEBUG: lm=${hasLandmarks?result.landmarks[0].length:0} mask=${hasMask?1:0} sil=${silOk?1:0} ui=${isPortraitUI()?"P":"L"} v=${video.videoWidth}x${video.videoHeight} c=${CSS_W}x${CSS_H}`);
 
         requestAnimationFrame(loop);
       } catch(e){
         console.error(e);
         setStatus("Loop-Fehler: " + (e?.message || String(e)));
-        // Wichtig: Loop NICHT abbrechen – weiter rendern, damit es sich nach Kamerawechsel erholt
         ctx.fillStyle = BG;
         ctx.fillRect(0, 0, CSS_W, CSS_H);
         ctx.fillStyle = "rgba(0,0,0,0.85)";
         ctx.font = "16px system-ui";
         ctx.fillText("Loop-Fehler: " + (e?.message || String(e)), 20, 40);
+        // wichtig: weiterlaufen lassen (erholt sich nach Kamerawechsel)
         requestAnimationFrame(loop);
       }
     }
@@ -716,10 +702,7 @@
       try{
         btnSwitch.disabled=true;
         isBackCamera=!isBackCamera;
-
-        // Kamera wechseln: Loop läuft weiter, wartet bis videoWidth>0
         await startCamera();
-
         btnSwitch.disabled=false;
         setStatus("Kamera gewechselt.");
       } catch(e){
