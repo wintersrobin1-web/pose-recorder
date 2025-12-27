@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Bewegungsanalyse Recorder | anonym (Skelett + HWS-Achse + Timer)</title>
+  <title>Bewegungsanalyse Recorder | Video + Pose + Maske + Timer</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
@@ -26,10 +26,10 @@
 </head>
 
 <body>
-  <h1>Bewegungsanalyse Recorder (anonym)</h1>
+  <h1>Bewegungsanalyse Recorder</h1>
   <p class="hint">
-    Output-Video enthält nur Hintergrund (hellblau) + Skelett + HWS-Achse + Timer/Slots.
-    Links ist nur Input. Hochkant/Querformat wechseln automatisch.
+    Output-Video enthält das Kamerabild + optional Maske + Skelett + HWS-Achse + Timer.
+    Links ist der Kamera-Input (zur Kontrolle), rechts ist der Output-Canvas (wird aufgenommen).
   </p>
 
   <div class="row">
@@ -42,6 +42,8 @@
   </div>
 
   <div class="row">
+    <label><input type="checkbox" id="toggleVideo" checked /> Video im Output</label>
+    <label><input type="checkbox" id="toggleMask" checked /> Segmentationsmaske</label>
     <label><input type="checkbox" id="toggleSkeleton" checked /> Skelett</label>
     <label><input type="checkbox" id="toggleAxis" checked /> Achse Kopf–Rumpf (HWS)</label>
     <label><input type="checkbox" id="toggleAxisColor" checked /> HWS-Ampel (grün/rot)</label>
@@ -56,6 +58,18 @@
 
   <details>
     <summary>Erweiterte Einstellungen (optional)</summary>
+
+    <div class="rangeWrap">
+      <span>Maske Deckkraft</span>
+      <input id="maskOpacity" type="range" min="0" max="1" step="0.05" value="0.40">
+      <span id="maskOpacityVal" class="small">0.40</span>
+    </div>
+
+    <div class="rangeWrap">
+      <span>Maske Schwelle</span>
+      <input id="maskThresh" type="range" min="0" max="80" step="1" value="8">
+      <span id="maskThreshVal" class="small">8</span>
+    </div>
 
     <div class="rangeWrap">
       <span>Skelett-Linienstärke</span>
@@ -94,7 +108,7 @@
     </div>
 
     <p class="hint">
-      HWS-Ampel: grün = Kopf/Hals in Linie mit Rumpf (neutral), rot = deutlich gebeugt/überstreckt.
+      Tipp iPhone: Maske Schwelle klein (5–15) und Deckkraft 0.30–0.60. Wenn „maskmax=0“, liefert das Backend aktuell keine brauchbaren Maskenwerte.
     </p>
   </details>
 
@@ -121,12 +135,16 @@
     const btnShare = document.getElementById("btnShare");
     const btnReset = document.getElementById("btnReset");
 
+    const toggleVideo = document.getElementById("toggleVideo");
+    const toggleMask = document.getElementById("toggleMask");
     const toggleSkeleton = document.getElementById("toggleSkeleton");
     const toggleAxis = document.getElementById("toggleAxis");
     const toggleAxisColor = document.getElementById("toggleAxisColor");
     const toggleTimer = document.getElementById("toggleTimer");
     const filmingPreset = document.getElementById("filmingPreset");
 
+    const maskOpacity = document.getElementById("maskOpacity");
+    const maskThresh = document.getElementById("maskThresh");
     const skelLine  = document.getElementById("skelLine");
     const skelDot   = document.getElementById("skelDot");
     const detConf = document.getElementById("detConf");
@@ -134,6 +152,8 @@
     const trackConf = document.getElementById("trackConf");
     const smooth = document.getElementById("smooth");
 
+    const maskOpacityVal = document.getElementById("maskOpacityVal");
+    const maskThreshVal = document.getElementById("maskThreshVal");
     const skelLineVal   = document.getElementById("skelLineVal");
     const skelDotVal    = document.getElementById("skelDotVal");
     const detVal = document.getElementById("detVal");
@@ -149,6 +169,8 @@
       el.addEventListener("input", update);
       update();
     }
+    bindSlider(maskOpacity, maskOpacityVal, v => Number(v).toFixed(2));
+    bindSlider(maskThresh, maskThreshVal, v => String(Math.round(Number(v))));
     bindSlider(skelLine,   skelLineVal,   v => String(Math.round(Number(v))));
     bindSlider(skelDot,    skelDotVal,    v => String(Math.round(Number(v))));
     bindSlider(detConf, detVal);
@@ -178,6 +200,10 @@
       // draw in CSS pixels
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false;
+
+      // keep mask buffers aligned to output internal resolution
+      maskCanvas.width = canvas.width;
+      maskCanvas.height = canvas.height;
     }
 
     function applyLayoutFromOrientation() {
@@ -188,10 +214,7 @@
     window.addEventListener("resize", applyLayoutFromOrientation);
     window.addEventListener("orientationchange", applyLayoutFromOrientation);
 
-    // ---------- Background ----------
-    const BG = "#bfe7ff";
-
-    // ---------- Connections ----------
+    // ---------- Pose connections ----------
     const POSE_CONNECTIONS = [
       [0,1],[1,2],[2,3],[3,7],
       [0,4],[4,5],[5,6],[6,8],
@@ -247,6 +270,31 @@
       return smoothed;
     }
 
+    // ---------- Draw video into output (contain + optional mirror) ----------
+    function drawVideoContain() {
+      if (!toggleVideo.checked) return;
+
+      const vw = video.videoWidth || 0;
+      const vh = video.videoHeight || 0;
+      if (!vw || !vh) return;
+
+      const { offX, offY, dispW, dispH } = containRect(vw, vh, CSS_W, CSS_H);
+
+      ctx.save();
+      const mirrorX = !isBackCamera;
+      if (mirrorX) {
+        // mirror around canvas center
+        ctx.translate(CSS_W, 0);
+        ctx.scale(-1, 1);
+        // after mirror, offX becomes: CSS_W - offX - dispW
+        const mx = (CSS_W - offX - dispW);
+        ctx.drawImage(video, mx, offY, dispW, dispH);
+      } else {
+        ctx.drawImage(video, offX, offY, dispW, dispH);
+      }
+      ctx.restore();
+    }
+
     // ---------- Skeleton drawing ----------
     function drawSkeletonCssPoints(cssPoints){
       if(!toggleSkeleton.checked || !cssPoints) return;
@@ -285,7 +333,7 @@
       ctx.restore();
     }
 
-    // ---------- HWS / Kopf-Rumpf-Achse ----------
+    // ---------- HWS axis ----------
     function angleDegBetweenVectors(ax, ay, bx, by) {
       const da = Math.hypot(ax, ay);
       const db = Math.hypot(bx, by);
@@ -294,9 +342,7 @@
       const clamped = Math.max(-1, Math.min(1, dot));
       return Math.acos(clamped) * (180 / Math.PI);
     }
-
-    // neutral, wenn Kopf-Achse & Rumpf-Achse nahezu kollinear (Winkel nahe 180°)
-    const NECK_NEUTRAL_TOL_DEG = 18; // <- bei Bedarf 15..25 testen
+    const NECK_NEUTRAL_TOL_DEG = 18;
 
     function drawHeadTorsoAxis(cssPoints) {
       if (!toggleAxis.checked || !cssPoints) return;
@@ -309,26 +355,19 @@
       const sh = { x: (ls._cx + rs._cx)/2, y: (ls._cy + rs._cy)/2 };
       const hp = { x: (lh._cx + rh._cx)/2, y: (lh._cy + rh._cy)/2 };
 
-      // Vektoren (Schultermitte als Ursprung):
-      // Kopf: Schulter -> Nose
-      // Rumpf: Schulter -> Hüfte
       let headVec = null;
       if (nose && !(typeof nose.visibility === "number" && nose.visibility < 0.2)) {
         headVec = { x: (nose._cx - sh.x), y: (nose._cy - sh.y) };
       }
       const torsoVec = { x: (hp.x - sh.x), y: (hp.y - sh.y) };
 
-      // Standardfarbe (wenn Ampel aus oder Nose fehlt)
       let colHead = "rgba(0,0,0,0.55)";
       let colTorso = "rgba(0,0,0,0.85)";
 
       if (toggleAxisColor.checked && headVec) {
         const ang = angleDegBetweenVectors(headVec.x, headVec.y, torsoVec.x, torsoVec.y);
-        // neutral => Winkel nahe 180°
         const dev = (ang == null) ? null : Math.abs(180 - ang);
-
         const ok = (dev != null && dev <= NECK_NEUTRAL_TOL_DEG);
-        // grün/rot für beide Achsen, aber Kopf etwas transparenter
         colTorso = ok ? "rgba(0,170,0,0.95)" : "rgba(220,0,0,0.95)";
         colHead  = ok ? "rgba(0,170,0,0.65)" : "rgba(220,0,0,0.65)";
       }
@@ -341,7 +380,6 @@
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
 
-      // Rumpfachse (Schultermitte -> Hüftmitte)
       ctx.strokeStyle = colTorso;
       ctx.lineWidth = lwBase;
       ctx.beginPath();
@@ -349,7 +387,6 @@
       ctx.lineTo(hp.x, hp.y);
       ctx.stroke();
 
-      // Kopf/HWS-Achse (Nase -> Schultermitte)
       if (headVec) {
         ctx.strokeStyle = colHead;
         ctx.lineWidth = lwHead;
@@ -359,7 +396,6 @@
         ctx.stroke();
       }
 
-      // Marker an Schulter-/Hüftmitte
       ctx.fillStyle = colTorso;
       ctx.beginPath(); ctx.arc(sh.x, sh.y, rMid, 0, Math.PI*2); ctx.fill();
       ctx.beginPath(); ctx.arc(hp.x, hp.y, rMid, 0, Math.PI*2); ctx.fill();
@@ -396,8 +432,6 @@
       let leftExt=false, rightExt=false;
       if(ls&&lw) leftExt=distN(ls,lw)>(preset==="back45"?0.23:0.26);
       if(rs&&rw) rightExt=distN(rs,rw)>(preset==="back45"?0.23:0.26);
-
-      // Ein Arm reicht (seitlich fällt oft einer weg)
       if(!leftExt && !rightExt) return false;
 
       if(lw&&rw){
@@ -493,6 +527,88 @@
       ctx.restore();
     }
 
+    // ---------- Segmentation mask overlay (from PoseLandmarker) ----------
+    const maskCanvas = document.createElement("canvas");
+    const maskCtx = maskCanvas.getContext("2d", { willReadFrequently: true });
+
+    function segMaskToCanvas(segMask) {
+      if (!segMask) return null;
+      if (typeof segMask.getAsCanvas === "function") return segMask.getAsCanvas();
+      if (segMask.canvas) return segMask.canvas;
+      return null;
+    }
+
+    function drawMaskOverlay(segMask) {
+      if (!toggleMask.checked || !segMask) return;
+
+      const sc = segMaskToCanvas(segMask);
+      if (!sc) return;
+
+      const vw = video.videoWidth || 0;
+      const vh = video.videoHeight || 0;
+      if (!vw || !vh) return;
+
+      // draw mask into internal maskCanvas with same contain mapping as video
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
+      const { offX, offY, dispW, dispH } = containRect(vw, vh, CSS_W, CSS_H);
+
+      maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+
+      // mirror consistent with output video if front camera
+      const mirrorX = !isBackCamera;
+      if (mirrorX) {
+        maskCtx.save();
+        maskCtx.translate(maskCanvas.width, 0);
+        maskCtx.scale(-1, 1);
+        const mx = (CSS_W - offX - dispW);
+        maskCtx.drawImage(
+          sc,
+          0, 0, sc.width, sc.height,
+          Math.round(mx * dpr), Math.round(offY * dpr),
+          Math.round(dispW * dpr), Math.round(dispH * dpr)
+        );
+        maskCtx.restore();
+      } else {
+        maskCtx.drawImage(
+          sc,
+          0, 0, sc.width, sc.height,
+          Math.round(offX * dpr), Math.round(offY * dpr),
+          Math.round(dispW * dpr), Math.round(dispH * dpr)
+        );
+      }
+
+      // turn mask into colored overlay (pixel-based; robust across browsers)
+      const img = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+      const d = img.data;
+
+      const opacity = Number(maskOpacity.value);
+      const alphaBase = Math.round(255 * opacity);
+      const thresh = Math.round(Number(maskThresh.value)); // 0..80
+
+      let maskMax = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const m = Math.max(d[i], d[i+1], d[i+2], d[i+3]); // 0..255
+        if (m > maskMax) maskMax = m;
+
+        if (m > thresh) {
+          // yellow overlay (like you wanted earlier)
+          d[i]   = 255;
+          d[i+1] = 220;
+          d[i+2] = 0;
+          d[i+3] = Math.min(255, Math.round((m / 255) * alphaBase) + 40);
+        } else {
+          d[i+3] = 0;
+        }
+      }
+
+      maskCtx.putImageData(img, 0, 0);
+
+      // draw overlay in CSS pixel space
+      ctx.drawImage(maskCanvas, 0, 0, CSS_W, CSS_H);
+
+      return maskMax; // for debug
+    }
+
     // ---------- MediaPipe Tasks ----------
     let landmarker=null;
     let running=false;
@@ -507,12 +623,12 @@
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
       );
 
-      setStatus("Lade Pose Landmarker …");
+      setStatus("Lade Pose Landmarker heavy …");
       landmarker = await PoseLandmarker.createFromOptions(fileset, {
         baseOptions: { modelAssetPath: POSE_TASK_URL },
         runningMode: "VIDEO",
         numPoses: 1,
-        outputSegmentationMasks: false,
+        outputSegmentationMasks: true, // <- wichtig
         minPoseDetectionConfidence: Number(detConf.value),
         minPosePresenceConfidence: Number(presConf.value),
         minTrackingConfidence: Number(trackConf.value),
@@ -571,8 +687,8 @@
       if(!running || !landmarker) return;
 
       try{
-        ctx.fillStyle = BG;
-        ctx.fillRect(0,0,CSS_W,CSS_H);
+        // clear
+        ctx.clearRect(0,0,CSS_W,CSS_H);
 
         if(video.videoWidth===0 || video.videoHeight===0){
           drawOverlaySmall("DEBUG: video not ready");
@@ -580,18 +696,26 @@
           return;
         }
 
+        // draw background video first (or nothing)
+        drawVideoContain();
+
         const ts = performance.now();
         const result = landmarker.detectForVideo(video, ts);
+
+        const hasMask = !!(result?.segmentationMasks?.length);
         const hasLandmarks = !!(result?.landmarks?.length && result.landmarks[0]?.length);
+
+        let maskMax = 0;
+        if (hasMask) {
+          maskMax = drawMaskOverlay(result.segmentationMasks[0]) || 0;
+        }
 
         if (hasLandmarks){
           const raw = result.landmarks[0];
-
           const mirrorX = !isBackCamera;
           const mapped = mapLandmarksToCss(raw, video.videoWidth, video.videoHeight, CSS_W, CSS_H, mirrorX);
           const cssPoints = ema(mapped);
 
-          // HWS-Achse (vor oder nach Skelett – je nach Optik; hier nach Skelett)
           drawSkeletonCssPoints(cssPoints);
           drawHeadTorsoAxis(cssPoints);
 
@@ -600,14 +724,14 @@
           updateTimer(null, ts);
         }
 
-        drawOverlaySmall(`lm=${hasLandmarks?33:0} ui=${isPortraitUI()?"P":"L"}`);
+        drawOverlaySmall(`lm=${hasLandmarks?33:0} mask=${hasMask?1:0} maskmax=${maskMax} ui=${isPortraitUI()?"P":"L"}`);
         rafId = requestAnimationFrame(loop);
       } catch(e){
         console.error(e);
         setStatus("Loop-Fehler: " + (e?.message || String(e)));
-        ctx.fillStyle = BG;
-        ctx.fillRect(0,0,CSS_W,CSS_H);
         ctx.fillStyle = "rgba(0,0,0,0.85)";
+        ctx.fillRect(0,0,CSS_W,CSS_H);
+        ctx.fillStyle = "white";
         ctx.font = "16px system-ui";
         ctx.fillText("Loop-Fehler: " + (e?.message || String(e)), 20, 40);
       }
@@ -657,7 +781,7 @@
       const file=new File([lastBlob],fileName,{type:lastBlob.type});
 
       if(navigator.canShare && navigator.canShare({files:[file]})){
-        await navigator.share({files:[file], title:"Bewegungsanalyse Recorder (anonym)"});
+        await navigator.share({files:[file], title:"Bewegungsanalyse Recorder"});
         setStatus("Geteilt/gespeichert ("+ext.toUpperCase()+").");
         return;
       }
