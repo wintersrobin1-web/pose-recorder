@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Swim Pose Recorder (Gleit-Timer)</title>
+  <title>Swim Pose Recorder (Silhouette + Gleit-Timer)</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
@@ -23,10 +23,10 @@
 </head>
 
 <body>
-  <h1>Swim Pose Recorder (Skelett + Gleit-Timer)</h1>
+  <h1>Swim Pose Recorder (Skelett + Silhouette + Timer)</h1>
   <p class="hint">
-    Links: Live-Kamera (nur zur Erkennung). Rechts: Canvas (wird gespeichert) mit Skelett, optionaler Silhouette und Timer/Slots.
-    Gespeichert wird nur das Canvas-Video, nicht das Kamerabild.
+    Links: Live-Kamera (nur zur Erkennung). Rechts: Canvas (wird gespeichert) mit hellblauem Hintergrund, anonymem Körper-Umriss,
+    Skelett und Timer/Slots (werden ins Video gerendert).
   </p>
 
   <div class="row">
@@ -40,8 +40,8 @@
   <div class="row">
     <label><input type="checkbox" id="toggleSilhouette" checked /> Silhouette (anonym)</label>
     <label><input type="checkbox" id="toggleSpine" checked /> Mittelachse („Wirbelsäule“)</label>
-    <label><input type="checkbox" id="toggleTimer" checked /> Timer/Slots einblenden</label>
-    <span class="small">Tipp: Wenn Silhouette im Schwimmbad flackert, deaktivieren.</span>
+    <label><input type="checkbox" id="toggleTimer" checked /> Timer/Slots</label>
+    <span class="small">Aufnahme: 10–20 s Clips, seitlich/leicht von oben ist ok.</span>
   </div>
 
   <div class="row">
@@ -70,6 +70,13 @@
     function setStatus(s) { statusEl.textContent = "Status: " + s; }
 
     // -----------------------------
+    // Canvas Styling
+    // -----------------------------
+    const BG = "#bfe7ff";          // hellblau
+    const SIL = "rgba(20, 70, 120, 0.35)"; // Silhouette-Füllung (kontrastreich)
+    const SIL_EDGE = "rgba(20, 70, 120, 0.65)";
+
+    // -----------------------------
     // Recording (Canvas -> Video)
     // -----------------------------
     let recorder = null;
@@ -77,7 +84,7 @@
     let lastBlob = null;
 
     function pickMimeType() {
-      // iOS/Safari: oft webm; mp4 ist nicht garantiert.
+      // iOS ist wählerisch; WebM ist oft die einzige sichere MediaRecorder-Option.
       const candidates = ["video/webm;codecs=vp8", "video/webm", "video/mp4"];
       if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
       for (const t of candidates) if (MediaRecorder.isTypeSupported(t)) return t;
@@ -91,7 +98,6 @@
 
       const fps = 15;
       const stream = canvas.captureStream(fps);
-
       const mimeType = pickMimeType();
       const options = mimeType ? { mimeType } : undefined;
 
@@ -101,7 +107,7 @@
         const type = (recorder && recorder.mimeType) ? recorder.mimeType : "video/webm";
         lastBlob = new Blob(recordedChunks, { type });
         btnShare.disabled = !lastBlob;
-        setStatus("Aufnahme fertig. Hinweis: WebM kann auf iOS je nach Version eingeschränkt sein (Teilen/AirDrop oft ok).");
+        setStatus("Aufnahme fertig. Hinweis: iOS kann WebM teils nicht direkt in Fotos/Dateien abspielen (Teilen/AirDrop/Shortcut-Konvertierung klappt meist).");
       };
 
       recorder.start(200);
@@ -149,6 +155,87 @@
 
     function midPoint(a, b) { return { x: (a.x+b.x)/2, y: (a.y+b.y)/2 }; }
 
+    function drawBackground() {
+      ctx.save();
+      ctx.fillStyle = BG;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.restore();
+    }
+
+    // Anonyme Silhouette aus Landmarken (Polygon) – robust, ohne SegmentationMask
+    function drawSilhouetteFromLandmarks(landmarks) {
+      if (!toggleSilhouette.checked) return;
+
+      // Wir bauen ein einfaches „Körperpolygon“:
+      // Kopf/Schulterlinie -> rechter Arm -> rechter Rumpf -> rechtes Bein -> linker Fuß -> linkes Bein -> linker Rumpf -> linker Arm -> zurück
+      // Indizes (MediaPipe Pose):
+      // 0 nose
+      // 11/12 shoulders, 13/14 elbows, 15/16 wrists
+      // 23/24 hips, 25/26 knees, 27/28 ankles
+      const n  = landmarks[0];
+      const ls = landmarks[11], rs = landmarks[12];
+      const le = landmarks[13], re = landmarks[14];
+      const lw = landmarks[15], rw = landmarks[16];
+      const lh = landmarks[23], rh = landmarks[24];
+      const lk = landmarks[25], rk = landmarks[26];
+      const la = landmarks[27], ra = landmarks[28];
+
+      // Wenn Beine im Wasser nicht erkannt werden, reicht Oberkörper: wir prüfen minimal
+      if (!ls || !rs || !lh || !rh) return;
+
+      const pts = [];
+
+      // Kopfpunkt (optional)
+      if (n) pts.push(n);
+
+      // Oben: linke Schulter -> rechte Schulter
+      pts.push(ls, rs);
+
+      // rechter Arm: Ellbogen/Wrist wenn vorhanden, sonst Schulter
+      if (re) pts.push(re);
+      if (rw) pts.push(rw);
+
+      // rechte Rumpfseite: Hüfte
+      pts.push(rh);
+
+      // rechtes Bein runter (wenn vorhanden)
+      if (rk) pts.push(rk);
+      if (ra) pts.push(ra);
+
+      // linker Fuß/Bein hoch (wenn vorhanden)
+      if (la) pts.push(la);
+      if (lk) pts.push(lk);
+
+      // linke Hüfte
+      pts.push(lh);
+
+      // linker Arm zurück (wenn vorhanden)
+      if (lw) pts.push(lw);
+      if (le) pts.push(le);
+
+      // in Pixel umrechnen
+      const pix = pts
+        .filter(Boolean)
+        .map(p => ({ x: p.x * canvas.width, y: p.y * canvas.height }));
+
+      if (pix.length < 4) return;
+
+      ctx.save();
+      ctx.fillStyle = SIL;
+      ctx.strokeStyle = SIL_EDGE;
+      ctx.lineWidth = 6;
+      ctx.lineJoin = "round";
+
+      ctx.beginPath();
+      ctx.moveTo(pix[0].x, pix[0].y);
+      for (let i = 1; i < pix.length; i++) ctx.lineTo(pix[i].x, pix[i].y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
     function drawMidSpine(landmarks) {
       if (!toggleSpine.checked) return;
       const ls = landmarks[11], rs = landmarks[12], lh = landmarks[23], rh = landmarks[24];
@@ -161,10 +248,10 @@
       const x2 = mh.x * canvas.width, y2 = mh.y * canvas.height;
 
       ctx.save();
-      ctx.lineWidth = 12;
+      ctx.lineWidth = 14;
       ctx.lineCap = "round";
-      ctx.shadowBlur = 8;
-      ctx.shadowColor = "black";
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = "rgba(0,0,0,0.65)";
       ctx.beginPath();
       ctx.moveTo(x1, y1);
       ctx.lineTo(x2, y2);
@@ -172,194 +259,176 @@
       ctx.restore();
     }
 
-    // --- Silhouette Rendering (Maske -> weiße Silhouette) ---
-    // Wir zeichnen die segmentationMask und nutzen sie als Alpha-Maske (source-in).
-    function drawSilhouette(results) {
-      if (!toggleSilhouette.checked) return;
-      if (!results || !results.segmentationMask) return;
-
-      ctx.save();
-      // Maske in Canvas-Größe
-      ctx.globalAlpha = 0.35;
-      ctx.drawImage(results.segmentationMask, 0, 0, canvas.width, canvas.height);
-
-      // Alles, was nicht in der Maske ist, wird transparent; in der Maske wird weiß gefüllt
-      ctx.globalCompositeOperation = "source-in";
-      ctx.fillStyle = "white";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Zurücksetzen
-      ctx.restore();
-      ctx.globalCompositeOperation = "source-over";
-    }
-
     // -----------------------------
     // Gleit-Timer (4 Slots)
     // -----------------------------
-    const glideTimes = [];          // max 4 durations (ms)
+    const glideTimes = [];       // bis zu 4 Zeiten in ms
     let glideActive = false;
-    let glideStartMs = 0;
+    let glideStart = 0;
+    let currentElapsed = 0;
 
-    // Entprellung gegen Flackern
-    let pendingStartMs = null;
-    let pendingStopMs = null;
-
-    // Aktueller Timerwert (für Anzeige)
-    let currentElapsedMs = 0;
+    // Entprellung
+    let poseStableSince = null;
+    let poseLostSince = null;
 
     function formatMs(ms) {
-      const s = ms / 1000;
-      return s.toFixed(3) + " s";
+      return (ms / 1000).toFixed(3) + " s";
     }
 
-    function clamp01(v){ return Math.max(0, Math.min(1, v)); }
-
-    // Streamline-Detektion: "Hände über Kopf" + relativ gestreckter Rumpf
-    function isStreamlinePose(landmarks) {
-      // Indizes: 0 nose, 11/12 shoulders, 13/14 elbows, 15/16 wrists, 23/24 hips
-      const nose = landmarks[0];
+    // Streamline-Erkennung (robust für „seitlich von oben“ + „im Stehen testen“):
+    // - beide Handgelenke über Schultern
+    // - Ellenbogen über Schultern (ungefähr gestreckt/oben)
+    // - Handgelenke relativ nah beieinander (optional, aber nicht zu strikt)
+    function isStreamline(landmarks) {
       const ls = landmarks[11], rs = landmarks[12];
       const le = landmarks[13], re = landmarks[14];
       const lw = landmarks[15], rw = landmarks[16];
-      const lh = landmarks[23], rh = landmarks[24];
+      if (!ls || !rs || !le || !re || !lw || !rw) return false;
 
-      if (!nose || !ls || !rs || !le || !re || !lw || !rw || !lh || !rh) return false;
-
-      // y: kleiner = weiter oben im Bild
       const shoulderY = (ls.y + rs.y) / 2;
-      const hipY = (lh.y + rh.y) / 2;
 
-      // Hände deutlich über Kopf: beide Handgelenke oberhalb Nase (mit Puffer)
-      const wristAboveHead = (lw.y < nose.y - 0.03) && (rw.y < nose.y - 0.03);
-
-      // Ellenbogen oberhalb Schultern (als Proxy für "Arme gestreckt nach oben")
+      const wristsUp = (lw.y < shoulderY - 0.03) && (rw.y < shoulderY - 0.03);
       const elbowsUp = (le.y < shoulderY + 0.02) && (re.y < shoulderY + 0.02);
 
-      // Körper „lang“: Abstand Schulter-Hüfte nicht extrem klein
-      const torsoLen = Math.abs(hipY - shoulderY);
-      const torsoOk = torsoLen > 0.12;
+      const wristDist = Math.abs(lw.x - rw.x); // 0..1
+      const wristsReasonablyClose = wristDist < 0.35; // weniger streng als zuvor
 
-      // Optional: Hände relativ nah beieinander (klassische Streamline)
-      const wristDist = Math.abs(lw.x - rw.x);
-      const wristsClose = wristDist < 0.25; // normalisiert
-
-      return wristAboveHead && elbowsUp && torsoOk && wristsClose;
+      return wristsUp && elbowsUp && wristsReasonablyClose;
     }
 
-    function updateGlideTimer(landmarks, now) {
+    function updateTimer(landmarks, now) {
       if (!toggleTimer.checked) {
         glideActive = false;
-        pendingStartMs = null;
-        pendingStopMs = null;
-        currentElapsedMs = 0;
+        poseStableSince = null;
+        poseLostSince = null;
+        currentElapsed = 0;
         return;
       }
 
-      const inPose = isStreamlinePose(landmarks);
+      const inPose = isStreamline(landmarks);
 
-      // Start-Logik mit Entprellung
       if (!glideActive) {
-        currentElapsedMs = 0;
+        currentElapsed = 0;
 
         if (inPose && glideTimes.length < 4) {
-          if (pendingStartMs === null) pendingStartMs = now;
-          // Pose muss 180ms stabil sein, dann Start
-          if (now - pendingStartMs >= 180) {
+          if (poseStableSince === null) poseStableSince = now;
+          // Pose muss 200ms stabil sein
+          if (now - poseStableSince >= 200) {
             glideActive = true;
-            glideStartMs = now;
-            pendingStopMs = null;
-            setStatus("Gleitphase erkannt: Timer läuft.");
+            glideStart = now;
+            poseLostSince = null;
           }
         } else {
-          pendingStartMs = null;
+          poseStableSince = null;
         }
         return;
       }
 
-      // Wenn aktiv: laufenden Timer updaten
-      currentElapsedMs = now - glideStartMs;
+      // aktiv
+      currentElapsed = now - glideStart;
 
-      // Stop-Logik mit Entprellung
       if (!inPose) {
-        if (pendingStopMs === null) pendingStopMs = now;
-        // Pose muss 150ms weg sein, dann Stop (verhindert Flackern)
-        if (now - pendingStopMs >= 150) {
+        if (poseLostSince === null) poseLostSince = now;
+        // Pose muss 160ms weg sein, dann stoppen
+        if (now - poseLostSince >= 160) {
           glideActive = false;
-          pendingStartMs = null;
-          pendingStopMs = null;
-
-          const dur = now - glideStartMs;
+          poseStableSince = null;
+          poseLostSince = null;
+          const dur = now - glideStart;
           glideTimes.push(dur);
           if (glideTimes.length > 4) glideTimes.length = 4;
-
-          currentElapsedMs = 0;
-          setStatus(`Gleitphase gespeichert (${formatMs(dur)}).`);
+          currentElapsed = 0;
         }
       } else {
-        pendingStopMs = null;
+        poseLostSince = null;
       }
     }
 
-    function drawTimerOverlay() {
+    function drawTimerOverlay(landmarks) {
       if (!toggleTimer.checked) return;
 
+      const inPose = landmarks ? isStreamline(landmarks) : false;
+
+      // Overlay Box (sehr sichtbar)
       ctx.save();
-      ctx.shadowBlur = 10;
-      ctx.shadowColor = "black";
+      ctx.fillStyle = "rgba(0,0,0,0.45)";
+      ctx.strokeStyle = "rgba(255,255,255,0.65)";
+      ctx.lineWidth = 2;
+      const x = 14, y = 14, w = 360, h = 170;
+      roundRect(ctx, x, y, w, h, 14);
+      ctx.fill();
+      ctx.stroke();
+
       ctx.fillStyle = "white";
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = "rgba(0,0,0,0.7)";
 
-      // Haupttimer
-      ctx.font = "bold 44px system-ui";
-      const mainText = glideActive ? formatMs(currentElapsedMs) : "0.000 s";
-      ctx.fillText(mainText, 20, 55);
+      // Timer
+      ctx.font = "700 40px system-ui";
+      const main = glideActive ? formatMs(currentElapsed) : "0.000 s";
+      ctx.fillText(main, x + 14, y + 48);
 
-      // Statuszeile
-      ctx.font = "22px system-ui";
-      const st = glideActive ? "Gleitphase: läuft" :
-                (glideTimes.length >= 4 ? "Slots voll (4/4)" : "Warte auf Streamline (Hände über Kopf)");
-      ctx.fillText(st, 20, 90);
+      // Debug/Status (hilft beim Einrichten)
+      ctx.font = "600 18px system-ui";
+      const st = glideActive ? "Gleitphase: läuft"
+               : (glideTimes.length >= 4 ? "Slots voll (4/4)" : (inPose ? "Streamline erkannt (Start in 0.2s)" : "Warte: Hände über Kopf"));
+      ctx.fillText(st, x + 14, y + 76);
 
       // Slots
-      ctx.font = "24px system-ui";
+      ctx.font = "18px system-ui";
       for (let i = 0; i < 4; i++) {
-        const label = `Slot ${i+1}: ` + (glideTimes[i] != null ? formatMs(glideTimes[i]) : "—");
-        ctx.fillText(label, 20, 130 + i * 28);
+        const t = glideTimes[i] != null ? formatMs(glideTimes[i]) : "—";
+        ctx.fillText(`Slot ${i+1}: ${t}`, x + 14, y + 104 + i * 18);
       }
 
       ctx.restore();
+    }
+
+    function roundRect(ctx, x, y, w, h, r) {
+      const rr = Math.min(r, w/2, h/2);
+      ctx.beginPath();
+      ctx.moveTo(x + rr, y);
+      ctx.arcTo(x + w, y, x + w, y + h, rr);
+      ctx.arcTo(x + w, y + h, x, y + h, rr);
+      ctx.arcTo(x, y + h, x, y, rr);
+      ctx.arcTo(x, y, x + w, y, rr);
+      ctx.closePath();
     }
 
     function drawOutput(results) {
-      // Neutraler Hintergrund (kein Kamerabild)
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawBackground();
 
-      if (!results) return;
+      if (!results || !results.poseLandmarks) {
+        // Timer-Overlay trotzdem zeigen (damit du es sicher siehst)
+        drawTimerOverlay(null);
+        return;
+      }
 
-      // Silhouette
-      drawSilhouette(results);
+      const lms = results.poseLandmarks;
 
-      // Skelett
-      if (!results.poseLandmarks) return;
+      // Silhouette (aus Landmarken)
+      drawSilhouetteFromLandmarks(lms);
 
+      // Skelett (dick + gut sichtbar)
       const drawConnectorsFn = window.drawConnectors;
       const drawLandmarksFn = window.drawLandmarks;
       const connections = window.POSE_CONNECTIONS;
-      if (!drawConnectorsFn || !drawLandmarksFn || !connections) return;
+      if (drawConnectorsFn && drawLandmarksFn && connections) {
+        ctx.save();
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = "rgba(0,0,0,0.65)";
+        drawConnectorsFn(ctx, lms, connections, { lineWidth: 14 });
+        drawLandmarksFn(ctx, lms, { radius: 8 });
+        ctx.restore();
+      }
 
-      ctx.save();
-      ctx.shadowBlur = 8;
-      ctx.shadowColor = "black";
-      drawConnectorsFn(ctx, results.poseLandmarks, connections, { lineWidth: 12 });
-      drawLandmarksFn(ctx, results.poseLandmarks, { radius: 7 });
-      ctx.restore();
-
-      // zusätzliche Mittelachse
-      drawMidSpine(results.poseLandmarks);
+      // Mittelachse
+      drawMidSpine(lms);
 
       // Timer-Update + Overlay (wird ins Video gerendert)
       const now = performance.now();
-      updateGlideTimer(results.poseLandmarks, now);
-      drawTimerOverlay();
+      updateTimer(lms, now);
+      drawTimerOverlay(lms);
     }
 
     async function initAll() {
@@ -373,8 +442,8 @@
       pose.setOptions({
         modelComplexity: 1,
         smoothLandmarks: true,
-        enableSegmentation: true,
-        smoothSegmentation: true,
+        // segmentation deaktiviert, da wir Silhouette stabil aus Landmarken zeichnen
+        enableSegmentation: false,
         selfieMode: false,
         minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5
@@ -382,7 +451,6 @@
 
       pose.onResults(drawOutput);
 
-      // Rückkamera, kein doppelter Stream
       cam = new Camera(video, {
         onFrame: async () => { await pose.send({ image: video }); },
         width: 1280,
@@ -395,12 +463,10 @@
 
       btnRec.disabled = false;
       btnReset.disabled = false;
-      setStatus("bereit (Rückkamera + Skelett läuft).");
+      setStatus("bereit (Rückkamera + Canvas-Overlay aktiv).");
     }
 
-    // -----------------------------
     // UI wiring
-    // -----------------------------
     btnInit.addEventListener("click", async () => {
       try { await initAll(); }
       catch (err) {
@@ -427,9 +493,9 @@
     btnReset.addEventListener("click", () => {
       glideTimes.length = 0;
       glideActive = false;
-      pendingStartMs = null;
-      pendingStopMs = null;
-      currentElapsedMs = 0;
+      poseStableSince = null;
+      poseLostSince = null;
+      currentElapsed = 0;
       setStatus("Slots zurückgesetzt.");
     });
   </script>
