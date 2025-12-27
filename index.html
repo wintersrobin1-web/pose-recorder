@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Brust – Gleitphase | anonym (Mask + Skelett)</title>
+  <title>Brust – Gleitphase (anonym) | Silhouette + Skelett + Timer</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
@@ -20,7 +20,7 @@
     .hint { color: #555; font-size: 14px; line-height: 1.4; max-width: 1100px; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
     .rangeWrap { display:flex; align-items:center; gap:10px; padding: 8px 10px; border:1px solid #ddd; border-radius: 10px; margin-top: 10px; flex-wrap: wrap; }
-    .rangeWrap span { min-width: 160px; font-size: 13px; color:#666; }
+    .rangeWrap span { min-width: 170px; font-size: 13px; color:#666; }
     .small { font-size: 13px; color:#666; min-width: 64px; text-align:right; }
   </style>
 </head>
@@ -28,8 +28,8 @@
 <body>
   <h1>Brust – Gleitphase (anonym)</h1>
   <p class="hint">
-    Output enthält nur Hintergrund + Silhouette (Segmentation Mask) + Skelett + Timer. Das Video links ist nur Input.
-    Die Ausrichtung (Hoch/Quer) wird automatisch angepasst.
+    Output-Video enthält nur Hintergrund (hellblau) + Silhouette (Segmentation Mask) + Skelett + Timer/Slots.
+    Das Video links ist nur Input (wird nicht in den Output gezeichnet). Hochkant und Querformat funktionieren gleichermaßen.
   </p>
 
   <div class="row">
@@ -60,6 +60,12 @@
       <span>Silhouette-Deckkraft</span>
       <input id="silOpacity" type="range" min="0" max="1" step="0.05" value="0.85">
       <span id="silOpacityVal" class="small">0.85</span>
+    </div>
+
+    <div class="rangeWrap">
+      <span>Silhouette-Schwelle (Mask)</span>
+      <input id="silThresh" type="range" min="0" max="80" step="1" value="8">
+      <span id="silThreshVal" class="small">8</span>
     </div>
 
     <div class="rangeWrap">
@@ -97,6 +103,11 @@
       <input id="smooth" type="range" min="0" max="0.9" step="0.05" value="0.65">
       <span id="smoothVal" class="small">0.65</span>
     </div>
+
+    <p class="hint">
+      Empfehlung: 0.50/0.50/0.50 ist ein guter Start. Für Schwimmen ist zu hoch (0.99) oft instabil.
+      Silhouette sichtbar machen: Schwelle niedrig (5–15) und Deckkraft 0.7–1.0.
+    </p>
   </details>
 
   <div class="row">
@@ -128,8 +139,9 @@
     const filmingPreset = document.getElementById("filmingPreset");
 
     const silOpacity = document.getElementById("silOpacity");
-    const skelLine = document.getElementById("skelLine");
-    const skelDot = document.getElementById("skelDot");
+    const silThresh = document.getElementById("silThresh");
+    const skelLine  = document.getElementById("skelLine");
+    const skelDot   = document.getElementById("skelDot");
 
     const detConf = document.getElementById("detConf");
     const presConf = document.getElementById("presConf");
@@ -137,8 +149,9 @@
     const smooth = document.getElementById("smooth");
 
     const silOpacityVal = document.getElementById("silOpacityVal");
-    const skelLineVal = document.getElementById("skelLineVal");
-    const skelDotVal = document.getElementById("skelDotVal");
+    const silThreshVal  = document.getElementById("silThreshVal");
+    const skelLineVal   = document.getElementById("skelLineVal");
+    const skelDotVal    = document.getElementById("skelDotVal");
 
     const detVal = document.getElementById("detVal");
     const presVal = document.getElementById("presVal");
@@ -154,14 +167,15 @@
       update();
     }
     bindSlider(silOpacity, silOpacityVal, v => Number(v).toFixed(2));
-    bindSlider(skelLine, skelLineVal, v => String(Math.round(Number(v))));
-    bindSlider(skelDot, skelDotVal, v => String(Math.round(Number(v))));
+    bindSlider(silThresh,  silThreshVal,  v => String(Math.round(Number(v))));
+    bindSlider(skelLine,   skelLineVal,   v => String(Math.round(Number(v))));
+    bindSlider(skelDot,    skelDotVal,    v => String(Math.round(Number(v))));
     bindSlider(detConf, detVal);
     bindSlider(presConf, presVal);
     bindSlider(trackConf, trackVal);
     bindSlider(smooth, smoothVal, v => Number(v).toFixed(2));
 
-    // ---------- Orientation helpers ----------
+    // ---------- Orientation + HiDPI ----------
     function isPortraitUI() {
       const wo = window.orientation;
       if (typeof wo === "number") return (wo === 0 || wo === 180);
@@ -171,8 +185,12 @@
       return window.innerHeight >= window.innerWidth;
     }
 
-    // ---------- HiDPI canvas ----------
     let CSS_W = 360, CSS_H = 640;
+
+    // internal maskCanvas (HiDPI)
+    const maskCanvas = document.createElement("canvas");
+    const maskCtx = maskCanvas.getContext("2d", { willReadFrequently: true });
+
     function setupHiDPICanvas(cssW, cssH) {
       CSS_W = cssW; CSS_H = cssH;
       const dpr = Math.max(1, window.devicePixelRatio || 1);
@@ -187,11 +205,13 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false;
 
+      // maskCanvas internal size = output internal size
       maskCanvas.width = canvas.width;
       maskCanvas.height = canvas.height;
     }
 
     function applyLayoutFromOrientation() {
+      // UI portrait => output portrait; UI landscape => output landscape
       if (isPortraitUI()) setupHiDPICanvas(360, 640);
       else setupHiDPICanvas(640, 360);
       setStatus("Ausrichtung: " + (isPortraitUI() ? "Hochformat" : "Querformat"));
@@ -203,7 +223,7 @@
     // ---------- Background ----------
     const BG = "#bfe7ff";
 
-    // ---------- Fallback connections ----------
+    // ---------- Pose connections fallback ----------
     const FALLBACK_POSE_CONNECTIONS = [
       [0,1],[1,2],[2,3],[3,7],
       [0,4],[4,5],[5,6],[6,8],
@@ -221,10 +241,45 @@
       return (Array.isArray(c) && c.length) ? c : FALLBACK_POSE_CONNECTIONS;
     }
 
-    // ---------- Mask canvas ----------
-    const maskCanvas = document.createElement("canvas");
-    const maskCtx = maskCanvas.getContext("2d", { willReadFrequently: true });
+    // ---------- Video-to-canvas "contain" mapping ----------
+    // Maps landmarks (normed to video) into canvas space assuming the video is drawn with contain-fit.
+    function mapLandmarksContain(rawLandmarks, vw, vh, cw, ch) {
+      const scale = Math.min(cw / vw, ch / vh);
+      const dispW = vw * scale;
+      const dispH = vh * scale;
+      const offX = (cw - dispW) / 2;
+      const offY = (ch - dispH) / 2;
 
+      return rawLandmarks.map(p => {
+        const px = p.x * vw;
+        const py = p.y * vh;
+        const cx = offX + px * scale;
+        const cy = offY + py * scale;
+        return { ...p, x: cx / cw, y: cy / ch };
+      });
+    }
+
+    // Same contain mapping but for drawing the mask into maskCanvas (internal pixels)
+    function drawMaskContainIntoMaskCanvas(sc, vw, vh) {
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
+      const cw = CSS_W, ch = CSS_H;
+
+      const scale = Math.min(cw / vw, ch / vh);
+      const dispW = vw * scale;
+      const dispH = vh * scale;
+      const offX = (cw - dispW) / 2;
+      const offY = (ch - dispH) / 2;
+
+      maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+      maskCtx.drawImage(
+        sc,
+        0, 0, sc.width, sc.height,
+        Math.round(offX * dpr), Math.round(offY * dpr),
+        Math.round(dispW * dpr), Math.round(dispH * dpr)
+      );
+    }
+
+    // ---------- Segmentation mask helpers ----------
     function segMaskToCanvas(segMask) {
       if (!segMask) return null;
       if (typeof segMask.getAsCanvas === "function") return segMask.getAsCanvas();
@@ -232,72 +287,42 @@
       return null;
     }
 
-    // ---------- Coordinate rotation for orientation ----------
-    // When UI portrait but the model effectively sees landscape video (common on iOS),
-    // we rotate outputs to match UI orientation.
-    function needRotateOutputs() {
-      const vw = video.videoWidth || 0;
-      const vh = video.videoHeight || 0;
-      if (!vw || !vh) return false;
-      const uiPortrait = isPortraitUI();
-      const videoLandscape = vw >= vh;
-      return uiPortrait && videoLandscape;
-    }
-
-    function rotateLandmarks90CW(normLandmarks) {
-      // (x,y) -> (y, 1-x)
-      return normLandmarks.map(p => ({
-        ...p,
-        x: p.y,
-        y: 1 - p.x
-      }));
-    }
-
-    // ---------- Silhouette drawing (with rotation if needed) ----------
     function drawMaskSilhouette(segMask) {
       if (!toggleSilhouette.checked || !segMask) return;
 
       const sc = segMaskToCanvas(segMask);
       if (!sc) return;
 
-      // draw mask into maskCanvas (internal size)
-      maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+      const vw = video.videoWidth || 0;
+      const vh = video.videoHeight || 0;
+      if (!vw || !vh) return;
 
-      const rotate = needRotateOutputs();
-
-      maskCtx.save();
-      if (rotate) {
-        // rotate 90° clockwise into maskCanvas
-        maskCtx.translate(maskCanvas.width, 0);
-        maskCtx.rotate(Math.PI / 2);
-        // after rotation, draw into swapped area
-        maskCtx.drawImage(sc, 0, 0, maskCanvas.height, maskCanvas.width);
-      } else {
-        maskCtx.drawImage(sc, 0, 0, maskCanvas.width, maskCanvas.height);
-      }
-      maskCtx.restore();
+      // Draw mask into maskCanvas with the same contain mapping as landmarks
+      drawMaskContainIntoMaskCanvas(sc, vw, vh);
 
       const img = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
       const d = img.data;
 
       const opacity = Number(silOpacity.value);
       const alphaBase = Math.round(255 * opacity);
+      const thresh = Math.round(Number(silThresh.value)); // 0..80
 
-      // Robust intensity: max(R,G,B,A)
+      // Robust intensity extraction for Safari: max(R,G,B,A)
       for (let i = 0; i < d.length; i += 4) {
-        const m = Math.max(d[i], d[i+1], d[i+2], d[i+3]);
-        if (m > 35) {
-          d[i]   = 20;
-          d[i+1] = 70;
-          d[i+2] = 120;
-          d[i+3] = Math.min(255, Math.max(0, Math.round((m/255)*alphaBase) + 40));
+        const m = Math.max(d[i], d[i+1], d[i+2], d[i+3]); // 0..255
+        if (m > thresh) {
+          d[i]   = 20;   // R
+          d[i+1] = 70;   // G
+          d[i+2] = 120;  // B
+          // strong alpha so it is definitely visible
+          d[i+3] = Math.min(255, Math.round((m / 255) * alphaBase) + 140);
         } else {
           d[i+3] = 0;
         }
       }
       maskCtx.putImageData(img, 0, 0);
 
-      // draw silhouette onto output (CSS pixels)
+      // Draw silhouette to output (CSS pixels)
       ctx.drawImage(maskCanvas, 0, 0, CSS_W, CSS_H);
     }
 
@@ -310,21 +335,21 @@
         smoothed = lms.map(p => ({ ...p }));
         return smoothed;
       }
-      for (let i=0; i<lms.length; i++) {
+      for (let i = 0; i < lms.length; i++) {
         const p = lms[i], s = smoothed[i];
-        s.x = a*s.x + (1-a)*p.x;
-        s.y = a*s.y + (1-a)*p.y;
-        s.z = a*(s.z ?? 0) + (1-a)*(p.z ?? 0);
+        s.x = a * s.x + (1 - a) * p.x;
+        s.y = a * s.y + (1 - a) * p.y;
+        s.z = a * (s.z ?? 0) + (1 - a) * (p.z ?? 0);
         if (typeof p.visibility === "number") s.visibility = p.visibility;
         if (typeof p.presence === "number") s.presence = p.presence;
       }
       return smoothed;
     }
 
-    // ---------- Timer / Slots (unchanged core) ----------
+    // ---------- Timer / Slots ----------
     const glideTimes = [];
-    let glideActive=false, glideStart=0, currentElapsed=0;
-    let poseStableSince=null, poseLostSince=null;
+    let glideActive = false, glideStart = 0, currentElapsed = 0;
+    let poseStableSince = null, poseLostSince = null;
 
     const dist = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
     const fmt = (ms)=> (ms/1000).toFixed(3) + " s";
@@ -441,9 +466,9 @@
     }
 
     // ---------- MediaPipe Tasks ----------
-    let landmarker=null;
-    let drawingUtils=null;
-    let running=false;
+    let landmarker = null;
+    let drawingUtils = null;
+    let running = false;
 
     const POSE_TASK_URL =
       "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task";
@@ -482,8 +507,8 @@
     trackConf.addEventListener("change", updateLandmarkerThresholds);
 
     // ---------- Camera ----------
-    let isBackCamera=true;
-    let stream=null;
+    let isBackCamera = true;
+    let stream = null;
 
     async function startCamera(){
       stopCamera();
@@ -535,12 +560,11 @@
       ctx.restore();
     }
 
-    // ---------- Render loop ----------
+    // ---------- Loop ----------
     function loop(){
       if(!running || !landmarker) return;
 
       try{
-        // clean background (anonym)
         ctx.fillStyle = BG;
         ctx.fillRect(0, 0, CSS_W, CSS_H);
 
@@ -551,21 +575,22 @@
         const hasLandmarks = !!(result?.landmarks?.length && result.landmarks[0]?.length);
 
         // silhouette
-        if(hasMask){
-          drawMaskSilhouette(result.segmentationMasks[0]);
-        }
+        if(hasMask) drawMaskSilhouette(result.segmentationMasks[0]);
 
-        // landmarks (rotate if needed)
+        // landmarks -> contain mapping -> EMA -> draw + timer
         let lms = null;
         if(hasLandmarks){
           const raw = result.landmarks[0];
-          const rotated = needRotateOutputs() ? rotateLandmarks90CW(raw) : raw;
-          lms = ema(rotated);
+          const vw = video.videoWidth, vh = video.videoHeight;
+
+          const mapped = mapLandmarksContain(raw, vw, vh, CSS_W, CSS_H);
+          lms = ema(mapped);
+
           drawSkeleton(lms);
           updateTimer(lms, ts);
         }
 
-        drawOverlay(`DEBUG: lm=${hasLandmarks?result.landmarks[0].length:0} mask=${hasMask?1:0} rot=${needRotateOutputs()?1:0} ui=${isPortraitUI()?"P":"L"}`);
+        drawOverlay(`DEBUG: lm=${hasLandmarks?result.landmarks[0].length:0} mask=${hasMask?1:0} ui=${isPortraitUI()?"P":"L"} v=${video.videoWidth}x${video.videoHeight} c=${CSS_W}x${CSS_H}`);
 
         requestAnimationFrame(loop);
       } catch(e){
