@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Pose Recorder (Privacy Skeleton)</title>
+  <title>Pose Recorder (Skelett)</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
@@ -12,12 +12,18 @@
     button.primary { border-color: #111; }
     .hint { color: #555; font-size: 14px; line-height: 1.4; }
   </style>
+
+  <!-- MediaPipe (klassisch, ohne ES-Module) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
 </head>
+
 <body>
-<h1>POSE TEST 123</h1>
+  <h1>Pose Recorder (nur Skelett-Video)</h1>
   <p class="hint">
-    Speichert nur die abstrahierte Skelettdarstellung (Canvas), nicht das Kamerabild.
-    Für iPhones per HTTPS hosten.
+    Speichert nur die abstrakte Skelettdarstellung (Canvas), nicht das Kamerabild.
+    Bitte per HTTPS (GitHub Pages) nutzen.
   </p>
 
   <div class="row">
@@ -33,16 +39,8 @@
   </div>
 
   <p class="hint" id="status">Status: bereit</p>
-<script>
-  document.getElementById("btnInit").addEventListener("click", () => {
-    document.getElementById("status").textContent = "Status: Klick erkannt";
-  });
-</script>
 
-  <script type="module">
-    import vision from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
-    const { PoseLandmarker, FilesetResolver, DrawingUtils } = vision;
-
+  <script>
     const video = document.getElementById("video");
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
@@ -53,122 +51,25 @@
     const btnShare = document.getElementById("btnShare");
     const statusEl = document.getElementById("status");
 
-    let poseLandmarker = null;
-    let drawingUtils = null;
-    let rafId = null;
+    function setStatus(s) { statusEl.textContent = "Status: " + s; }
 
-    // Recorder state
+    // Aufnahme (Canvas -> Video)
     let recorder = null;
     let recordedChunks = [];
     let lastBlob = null;
 
-    function setStatus(s) { statusEl.textContent = "Status: " + s; }
-
-    // Pick a supported mimeType (iOS differs)
     function pickMimeType() {
+      // iOS/Safari ist wählerisch; wir nehmen, was unterstützt wird.
       const candidates = [
-        "video/webm;codecs=vp9",
         "video/webm;codecs=vp8",
         "video/webm",
-        "video/mp4" // sometimes supported, often not with MediaRecorder on iOS
+        "video/mp4" // oft NICHT unterstützt; nur als Fallback
       ];
+      if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
       for (const t of candidates) {
-        if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t)) return t;
+        if (MediaRecorder.isTypeSupported(t)) return t;
       }
-      return ""; // let browser choose
-    }
-
-    async function initPose() {
-      setStatus("lade MediaPipe PoseLandmarker…");
-      const fileset = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
-      );
-
-      // Lite model: schnell und ausreichend für Unterricht
-      // (Sie können die .task Datei auch selbst hosten)
-      const modelUrl = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task";
-
-      poseLandmarker = await PoseLandmarker.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: modelUrl },
-        runningMode: "VIDEO",
-        numPoses: 1
-      });
-
-      drawingUtils = new DrawingUtils(ctx);
-      setStatus("PoseLandmarker bereit.");
-    }
-
-    async function initCamera() {
-      setStatus("fordere Kamera an…");
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: "environment", // im Bad meist besser; ggf. "user"
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        },
-        audio: false
-      });
-      video.srcObject = stream;
-
-      await new Promise((res) => { video.onloadedmetadata = () => res(); });
-
-      // Canvas auf Videogröße setzen
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-
-      setStatus("Kamera aktiv. Pose-Overlay läuft.");
-    }
-
-    function drawSkeleton(result) {
-      // Hintergrund bewusst neutral (keine Person sichtbar)
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      if (!result?.landmarks?.length) return;
-
-      // Landmarks: Array<NormalizedLandmark> pro Pose
-      const landmarks = result.landmarks[0];
-
-      // Zeichnen: Skelett + Punkte
-      drawingUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS, { lineWidth: 4 });
-      drawingUtils.drawLandmarks(landmarks, { radius: 3 });
-
-      // Optional: Beispiel-Winkel (Knie rechts), sehr simpel berechnet
-      // Indizes nach MediaPipe Pose: hip=24, knee=26, ankle=28 (rechte Seite)
-      const hip = landmarks[24], knee = landmarks[26], ankle = landmarks[28];
-      if (hip && knee && ankle) {
-        const ang = angleDeg(hip, knee, ankle);
-        ctx.font = "28px system-ui";
-        ctx.fillText(`Knie (R): ${Math.round(ang)}°`, 20, 40);
-      }
-    }
-
-    function angleDeg(a, b, c) {
-      // Winkel ABC
-      const abx = a.x - b.x, aby = a.y - b.y;
-      const cbx = c.x - b.x, cby = c.y - b.y;
-      const dot = abx*cbx + aby*cby;
-      const mag1 = Math.hypot(abx, aby);
-      const mag2 = Math.hypot(cbx, cby);
-      const cos = dot / (mag1 * mag2 + 1e-9);
-      const clamped = Math.max(-1, Math.min(1, cos));
-      return Math.acos(clamped) * (180 / Math.PI);
-    }
-
-    function loop() {
-      const nowMs = performance.now();
-      const res = poseLandmarker.detectForVideo(video, nowMs);
-      drawSkeleton(res);
-      rafId = requestAnimationFrame(loop);
-    }
-
-    function startLoop() {
-      if (rafId) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(loop);
-    }
-
-    function stopLoop() {
-      if (rafId) cancelAnimationFrame(rafId);
-      rafId = null;
+      return "";
     }
 
     function startRecording() {
@@ -176,7 +77,7 @@
       lastBlob = null;
       btnShare.disabled = true;
 
-      const fps = 15; // für iPhones meist stabil genug
+      const fps = 15;
       const stream = canvas.captureStream(fps);
 
       const mimeType = pickMimeType();
@@ -187,12 +88,13 @@
         if (e.data && e.data.size > 0) recordedChunks.push(e.data);
       };
       recorder.onstop = () => {
-        lastBlob = new Blob(recordedChunks, { type: recorder.mimeType || "video/webm" });
+        const type = (recorder && recorder.mimeType) ? recorder.mimeType : "video/webm";
+        lastBlob = new Blob(recordedChunks, { type });
         btnShare.disabled = !lastBlob;
-        setStatus(`Aufnahme fertig (${Math.round(lastBlob.size/1024)} KB).`);
+        setStatus("Aufnahme fertig.");
       };
 
-      recorder.start(200); // alle 200ms Chunks
+      recorder.start(200);
       setStatus("Aufnahme läuft…");
     }
 
@@ -202,10 +104,12 @@
 
     async function shareOrDownload() {
       if (!lastBlob) return;
-      const ext = (lastBlob.type.includes("mp4")) ? "mp4" : "webm";
-      const file = new File([lastBlob], `pose_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`, { type: lastBlob.type });
 
-      // iOS: Share Sheet ist oft der sauberste Weg
+      const ext = lastBlob.type.includes("mp4") ? "mp4" : "webm";
+      const fileName = `pose_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`;
+      const file = new File([lastBlob], fileName, { type: lastBlob.type });
+
+      // iOS: Share Sheet ist meist der beste Weg
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: "Pose-Aufnahme" });
         setStatus("Geteilt/gespeichert.");
@@ -216,25 +120,91 @@
       const url = URL.createObjectURL(lastBlob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = file.name;
+      a.download = fileName;
       document.body.appendChild(a);
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 2000);
-      setStatus("Download gestartet (Fallback).");
+      setStatus("Download gestartet.");
+    }
+
+    // MediaPipe Pose Setup
+    let pose = null;
+    let cam = null;
+
+    function resizeCanvasToVideo() {
+      const w = video.videoWidth || 1280;
+      const h = video.videoHeight || 720;
+      canvas.width = w;
+      canvas.height = h;
+    }
+
+    function drawSkeleton(results) {
+      // KEIN Kamerabild rendern -> neutraler Hintergrund
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (!results.poseLandmarks) return;
+
+      // Skelett zeichnen
+      // (Zeichnet Verbindungen + Punkte; keine Person erkennbar)
+      drawConnectors(ctx, results.poseLandmarks, POSE_CONNECTIONS, { lineWidth: 4 });
+      drawLandmarks(ctx, results.poseLandmarks, { radius: 3 });
+    }
+
+    async function initAll() {
+      btnInit.disabled = true;
+      setStatus("initialisiere…");
+
+      // iPhone: Kamera via getUserMedia; MediaPipe Camera steuert Frames an Pose
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "environment",
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      });
+
+      video.srcObject = stream;
+      await new Promise((res) => { video.onloadedmetadata = () => res(); });
+      resizeCanvasToVideo();
+
+      pose = new Pose.Pose({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+      });
+
+      // Modell-Komplexität reduzieren -> stabiler auf iPhone
+      pose.setOptions({
+        modelComplexity: 1,
+        smoothLandmarks: true,
+        enableSegmentation: false,
+        selfieMode: false,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+      });
+
+      pose.onResults(drawSkeleton);
+
+      cam = new Camera(video, {
+        onFrame: async () => {
+          await pose.send({ image: video });
+        },
+        width: video.videoWidth,
+        height: video.videoHeight
+      });
+
+      await cam.start();
+
+      btnRec.disabled = false;
+      setStatus("bereit (Skelett läuft).");
     }
 
     btnInit.addEventListener("click", async () => {
       try {
-        btnInit.disabled = true;
-        await initPose();
-        await initCamera();
-        startLoop();
-        btnRec.disabled = false;
-        setStatus("bereit für Aufnahme.");
+        await initAll();
       } catch (err) {
         console.error(err);
-        setStatus("Fehler: " + (err?.message || err));
+        setStatus("Fehler: " + (err && err.message ? err.message : String(err)));
         btnInit.disabled = false;
       }
     });
