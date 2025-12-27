@@ -3,13 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Brust – Gleitphase (anonym) | Silhouette + Skelett + Timer</title>
+  <title>Bewegungsanalyse Recorder | anonym (Skelett + Timer)</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
-    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
-    video, canvas { max-width: 100%; border: 1px solid #ddd; border-radius: 10px; }
-    video { width: 360px; height: auto; background:#000; }
-    canvas { width: 360px; height: auto; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; margin: 12px 0; }
+    video, canvas { max-width: 100%; width: 360px; height: auto; border: 1px solid #ddd; border-radius: 10px; }
+    video { background:#000; }
     button { padding: 10px 14px; border-radius: 10px; border: 1px solid #ccc; background: #fff; }
     button.primary { border-color: #111; }
     button:disabled { opacity: 0.5; }
@@ -22,14 +21,35 @@
     .rangeWrap { display:flex; align-items:center; gap:10px; padding: 8px 10px; border:1px solid #ddd; border-radius: 10px; margin-top: 10px; flex-wrap: wrap; }
     .rangeWrap span { min-width: 170px; font-size: 13px; color:#666; }
     .small { font-size: 13px; color:#666; min-width: 64px; text-align:right; }
+
+    .panel {
+      width: 360px;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: #fff;
+    }
+    .panel h3 { margin: 0 0 8px 0; font-size: 16px; }
+    .panel .pill {
+      display:inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid #ddd;
+      margin: 4px 6px 0 0;
+      font-size: 12px;
+      color: #333;
+      background: #fafafa;
+    }
+    .panel ul { margin: 8px 0 0 18px; padding: 0; }
+    .panel li { margin: 4px 0; }
   </style>
 </head>
 
 <body>
-  <h1>Brust – Gleitphase (anonym)</h1>
+  <h1>Bewegungsanalyse Recorder (anonym)</h1>
   <p class="hint">
-    Output-Video enthält nur Hintergrund (hellblau) + Silhouette (Segmentation Mask) + Skelett + Timer/Slots.
-    Das Video links ist nur Input (wird nicht in den Output gezeichnet). Hochkant und Querformat funktionieren gleichermaßen.
+    Output-Video enthält <b>nur</b> Hintergrund (hellblau) + <b>Skelett</b> + <b>Timer/Slots</b>.
+    Links ist das Input-Video. Hochkant und Querformat funktionieren automatisch.
   </p>
 
   <div class="row">
@@ -43,24 +63,17 @@
 
   <div class="row">
     <label><input type="checkbox" id="toggleSkeleton" checked /> Skelett</label>
-    <label><input type="checkbox" id="toggleSilhouette" checked /> Silhouette</label>
     <label><input type="checkbox" id="toggleTimer" checked /> Timer/Slots</label>
 
     <select id="filmingPreset" title="Aufnahmeposition">
-      <option value="stand" selected>Test am Beckenrand (im Stand)</option>
-      <option value="side45">45° schräg seitlich</option>
-      <option value="back45">45° von hinten (Startblock)</option>
+      <option value="stand" selected>Stand-Test (Beckenrand)</option>
+      <option value="side45">45° seitlich</option>
+      <option value="back45">45° von hinten</option>
     </select>
   </div>
 
   <details>
     <summary>Erweiterte Einstellungen (optional)</summary>
-
-    <div class="rangeWrap">
-      <span>Silhouette-Deckkraft</span>
-      <input id="silOpacity" type="range" min="0" max="0.9" step="0.05" value="0.40">
-      <span id="silOpacityVal" class="small">0.40</span>
-    </div>
 
     <div class="rangeWrap">
       <span>Skelett-Linienstärke</span>
@@ -88,26 +101,39 @@
 
     <div class="rangeWrap">
       <span>Tracking (min)</span>
-      <input id="trackConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
-      <span id="trackVal" class="small">0.50</span>
+      <input id="trackConf" type="range" min="0.3" max="0.95" step="0.01" value="0.55">
+      <span id="trackVal" class="small">0.55</span>
     </div>
 
     <div class="rangeWrap">
       <span>Glättung (EMA)</span>
-      <input id="smooth" type="range" min="0" max="0.9" step="0.05" value="0.65">
-      <span id="smoothVal" class="small">0.65</span>
+      <input id="smooth" type="range" min="0" max="0.9" step="0.05" value="0.60">
+      <span id="smoothVal" class="small">0.60</span>
     </div>
+
+    <p class="hint">
+      Empfehlung für Schwimmen: <b>0.50/0.50/0.55</b> ist meist stabiler als 0.95+.
+    </p>
   </details>
 
   <div class="row">
     <video id="video" playsinline autoplay muted></video>
     <canvas id="canvas"></canvas>
+
+    <div class="panel">
+      <h3>Technik-Feedback (Gleitphase Brust)</h3>
+      <div id="badges"></div>
+      <ul id="tips"></ul>
+      <p class="hint" style="margin-top:10px">
+        Heuristiken sind perspektivenabhängig. Für „Schere“ ist <b>45° von hinten</b> am zuverlässigsten.
+      </p>
+    </div>
   </div>
 
   <p class="hint mono" id="status">Status: bereit</p>
 
   <script type="module">
-    import { FilesetResolver, PoseLandmarker, DrawingUtils }
+    import { FilesetResolver, PoseLandmarker }
       from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
     // ---------- DOM ----------
@@ -123,11 +149,9 @@
     const btnReset = document.getElementById("btnReset");
 
     const toggleSkeleton = document.getElementById("toggleSkeleton");
-    const toggleSilhouette = document.getElementById("toggleSilhouette");
     const toggleTimer = document.getElementById("toggleTimer");
     const filmingPreset = document.getElementById("filmingPreset");
 
-    const silOpacity = document.getElementById("silOpacity");
     const skelLine  = document.getElementById("skelLine");
     const skelDot   = document.getElementById("skelDot");
 
@@ -136,14 +160,15 @@
     const trackConf = document.getElementById("trackConf");
     const smooth = document.getElementById("smooth");
 
-    const silOpacityVal = document.getElementById("silOpacityVal");
     const skelLineVal   = document.getElementById("skelLineVal");
     const skelDotVal    = document.getElementById("skelDotVal");
-
     const detVal = document.getElementById("detVal");
     const presVal = document.getElementById("presVal");
     const trackVal = document.getElementById("trackVal");
     const smoothVal = document.getElementById("smoothVal");
+
+    const badgesEl = document.getElementById("badges");
+    const tipsEl = document.getElementById("tips");
 
     const statusEl = document.getElementById("status");
     const setStatus = (s) => statusEl.textContent = "Status: " + s;
@@ -153,9 +178,8 @@
       el.addEventListener("input", update);
       update();
     }
-    bindSlider(silOpacity, silOpacityVal, v => Number(v).toFixed(2));
-    bindSlider(skelLine,   skelLineVal,   v => String(Math.round(Number(v))));
-    bindSlider(skelDot,    skelDotVal,    v => String(Math.round(Number(v))));
+    bindSlider(skelLine, skelLineVal, v => String(Math.round(Number(v))));
+    bindSlider(skelDot,  skelDotVal,  v => String(Math.round(Number(v))));
     bindSlider(detConf, detVal);
     bindSlider(presConf, presVal);
     bindSlider(trackConf, trackVal);
@@ -163,8 +187,6 @@
 
     // ---------- Orientation + HiDPI ----------
     function isPortraitUI() {
-      const wo = window.orientation;
-      if (typeof wo === "number") return (wo === 0 || wo === 180);
       const so = screen.orientation && screen.orientation.type;
       if (typeof so === "string") return so.includes("portrait");
       if (window.matchMedia) return window.matchMedia("(orientation: portrait)").matches;
@@ -172,9 +194,6 @@
     }
 
     let CSS_W = 360, CSS_H = 640;
-
-    const maskCanvas = document.createElement("canvas");
-    const maskCtx = maskCanvas.getContext("2d");
 
     function setupHiDPICanvas(cssW, cssH) {
       CSS_W = cssW; CSS_H = cssH;
@@ -186,11 +205,9 @@
       canvas.width = Math.round(cssW * dpr);
       canvas.height = Math.round(cssH * dpr);
 
+      // draw in CSS pixels
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false;
-
-      maskCanvas.width = canvas.width;
-      maskCanvas.height = canvas.height;
     }
 
     function applyLayoutFromOrientation() {
@@ -204,8 +221,8 @@
     // ---------- Background ----------
     const BG = "#bfe7ff";
 
-    // ---------- Connections: robust normalize ----------
-    const FALLBACK_POSE_CONNECTIONS = [
+    // ---------- Connections ----------
+    const POSE_CONNECTIONS = [
       [0,1],[1,2],[2,3],[3,7],
       [0,4],[4,5],[5,6],[6,8],
       [9,10],
@@ -215,32 +232,10 @@
       [11,23],[12,24],[23,24],
       [23,25],[25,27],[27,29],[29,31],
       [24,26],[26,28],[28,30],[30,32]
-      // [27,28] nicht
+      // keine [27,28]
     ];
 
-    function normalizeConnections(maybe) {
-      const out = [];
-      if (!maybe) return out;
-      // Accept only real pairs [a,b]
-      for (const item of maybe) {
-        if (Array.isArray(item) && item.length === 2) {
-          const a = Number(item[0]), b = Number(item[1]);
-          if (Number.isFinite(a) && Number.isFinite(b)) {
-            // remove ankle-ankle
-            if (!((a === 27 && b === 28) || (a === 28 && b === 27))) out.push([a,b]);
-          }
-        }
-      }
-      return out;
-    }
-
-    function getPoseConnectionsSafe() {
-      const c = PoseLandmarker && PoseLandmarker.POSE_CONNECTIONS;
-      const normalized = normalizeConnections(c);
-      return normalized.length ? normalized : FALLBACK_POSE_CONNECTIONS;
-    }
-
-    // ---------- contain mapping ----------
+    // ---------- Contain mapping (single source of truth) ----------
     function containRect(vw, vh, cw, ch) {
       const scale = Math.min(cw / vw, ch / vh);
       const dispW = vw * scale;
@@ -249,155 +244,127 @@
       const offY = (ch - dispH) / 2;
       return { offX, offY, dispW, dispH, scale };
     }
-    function mapLandmarksContain(rawLandmarks, vw, vh, cw, ch) {
+
+    // CSS pixel points; mirrorX: true for front camera
+    function mapLandmarksToCss(rawLandmarks, vw, vh, cw, ch, mirrorX) {
       const { offX, offY, scale } = containRect(vw, vh, cw, ch);
       return rawLandmarks.map(p => {
-        const px = p.x * vw;
+        const nx = mirrorX ? (1 - p.x) : p.x;
+        const px = nx * vw;
         const py = p.y * vh;
-        const cx = offX + px * scale;
-        const cy = offY + py * scale;
-        return { ...p, x: cx / cw, y: cy / ch };
+        return { ...p, _cx: offX + px * scale, _cy: offY + py * scale, _nx: nx };
       });
     }
 
-    // ---------- Silhouette (no getImageData) ----------
-    function segMaskToCanvas(segMask) {
-      if (!segMask) return null;
-      if (typeof segMask.getAsCanvas === "function") return segMask.getAsCanvas();
-      if (segMask.canvas) return segMask.canvas;
-      return null;
-    }
-
-    function drawSilhouette(segMask) {
-      if (!toggleSilhouette.checked || !segMask) return false;
-
-      const sc = segMaskToCanvas(segMask);
-      if (!sc) return false;
-
-      const vw = video.videoWidth || 0;
-      const vh = video.videoHeight || 0;
-      if (!vw || !vh) return false;
-
-      const dpr = Math.max(1, window.devicePixelRatio || 1);
-
-      maskCtx.setTransform(1,0,0,1,0,0);
-      maskCtx.clearRect(0,0,maskCanvas.width,maskCanvas.height);
-
-      const { offX, offY, dispW, dispH } = containRect(vw, vh, CSS_W, CSS_H);
-
-      // draw mask into internal pixel space
-      maskCtx.drawImage(
-        sc,
-        0, 0, sc.width, sc.height,
-        Math.round(offX * dpr), Math.round(offY * dpr),
-        Math.round(dispW * dpr), Math.round(dispH * dpr)
-      );
-
-      // fill within mask (source-in) => yellow shape, no pixel reads
-      maskCtx.globalCompositeOperation = "source-in";
-      maskCtx.fillStyle = "rgb(255,235,70)";
-      maskCtx.fillRect(0,0,maskCanvas.width,maskCanvas.height);
-      maskCtx.globalCompositeOperation = "source-over";
-
-      ctx.save();
-      ctx.globalAlpha = Number(silOpacity.value);
-      ctx.drawImage(maskCanvas, 0, 0, CSS_W, CSS_H);
-      ctx.restore();
-
-      return true;
-    }
-
-    // ---------- EMA smoothing ----------
+    // ---------- EMA smoothing in CSS-space ----------
     let smoothed = null;
-    function ema(lms) {
+    function ema(cssPoints) {
       const a = Number(smooth.value);
-      if (!lms) return null;
-      if (!smoothed || smoothed.length !== lms.length) {
-        smoothed = lms.map(p => ({ ...p }));
+      if (!cssPoints) return null;
+
+      if (!smoothed || smoothed.length !== cssPoints.length) {
+        smoothed = cssPoints.map(p => ({...p}));
         return smoothed;
       }
-      for (let i = 0; i < lms.length; i++) {
-        const p = lms[i], s = smoothed[i];
-        s.x = a * s.x + (1 - a) * p.x;
-        s.y = a * s.y + (1 - a) * p.y;
-        s.z = a * (s.z ?? 0) + (1 - a) * (p.z ?? 0);
+      for (let i=0;i<cssPoints.length;i++){
+        const p = cssPoints[i], s = smoothed[i];
+        s._cx = a*s._cx + (1-a)*p._cx;
+        s._cy = a*s._cy + (1-a)*p._cy;
+        s._nx = a*(s._nx ?? p._nx) + (1-a)*p._nx; // for symmetry checks
+        s.y   = a*(s.y   ?? p.y)   + (1-a)*p.y;   // keep y stable for logic
+        s.z   = a*(s.z   ?? (p.z ?? 0)) + (1-a)*(p.z ?? 0);
         if (typeof p.visibility === "number") s.visibility = p.visibility;
         if (typeof p.presence === "number") s.presence = p.presence;
       }
       return smoothed;
     }
 
-    // ---------- Timer / Pose logic ----------
-    const glideTimes = [];
-    let glideActive = false, glideStart = 0, currentElapsed = 0;
-    let poseStableSince = null, poseLostSince = null;
+    // ---------- Drawing ----------
+    function drawSkeletonCssPoints(cssPoints){
+      if(!toggleSkeleton.checked || !cssPoints) return;
 
-    const dist = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
+      const lw = Math.round(Number(skelLine.value));
+      const r  = Math.round(Number(skelDot.value));
+
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = "#000";
+      ctx.fillStyle = "#000";
+      ctx.lineWidth = lw;
+
+      for(const [a,b] of POSE_CONNECTIONS){
+        const pa = cssPoints[a], pb = cssPoints[b];
+        if(!pa || !pb) continue;
+        if (typeof pa.visibility === "number" && pa.visibility < 0.2) continue;
+        if (typeof pb.visibility === "number" && pb.visibility < 0.2) continue;
+        ctx.beginPath();
+        ctx.moveTo(pa._cx, pa._cy);
+        ctx.lineTo(pb._cx, pb._cy);
+        ctx.stroke();
+      }
+
+      for(const p of cssPoints){
+        if(!p) continue;
+        if (typeof p.visibility === "number" && p.visibility < 0.2) continue;
+        ctx.beginPath();
+        ctx.arc(p._cx, p._cy, r, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // ---------- Timer / Slots (robuster Start, kleiner Overlay) ----------
+    const glideTimes = [];
+    let glideActive=false, glideStart=0, currentElapsed=0;
+    let poseStableSince=null, poseLostSince=null;
+
+    const dist = (a,b)=>Math.hypot(a._nx-b._nx, a.y-b.y);
     const fmt = (ms)=> (ms/1000).toFixed(3) + " s";
 
-    function angleDeg(a,b,c){
-      const abx=a.x-b.x, aby=a.y-b.y;
-      const cbx=c.x-b.x, cby=c.y-b.y;
-      const dot=abx*cbx+aby*cby;
-      const nab=Math.hypot(abx,aby), ncb=Math.hypot(cbx,cby);
-      if(!nab||!ncb) return 0;
-      const cos=Math.max(-1,Math.min(1,dot/(nab*ncb)));
-      return Math.acos(cos)*180/Math.PI;
-    }
-
-    function armOverheadSide(lms, side){
-      const ls = lms[11], rs = lms[12];
-      const shoulderY = (ls && rs) ? (ls.y + rs.y) / 2 : (ls ? ls.y : (rs ? rs.y : null));
-      if (shoulderY == null) return false;
-
-      const elbow = side==="L" ? lms[13] : lms[14];
-      const wrist = side==="L" ? lms[15] : lms[16];
-
-      const yRef = shoulderY - 0.03;
-      const wristUp = wrist ? (wrist.y < yRef) : false;
-      const elbowUp = elbow ? (elbow.y < shoulderY + 0.01) : false;
-      return wristUp || elbowUp;
-    }
-
-    function legStraightSide(lms, side){
-      const hip  = side==="L" ? lms[23] : lms[24];
-      const knee = side==="L" ? lms[25] : lms[26];
-      const ank  = side==="L" ? lms[27] : lms[28];
-      if (!hip || !knee) return false;
-
-      if (ank) {
-        const a = angleDeg(hip, knee, ank);
-        return a >= 155;
-      }
-      return (knee.y > hip.y + 0.04) && (Math.abs(knee.x - hip.x) < 0.15);
-    }
-
-    function inGlidePose(lms){
-      if (!lms || lms.length < 29) return false;
-
-      const ls=lms[11], rs=lms[12], lh=lms[23], rh=lms[24];
+    function inGlidePoseRobust(cssPoints){
+      // nutzt _nx (mirror-corrected) + y normiert
+      const ls=cssPoints[11], rs=cssPoints[12], lh=cssPoints[23], rh=cssPoints[24];
+      const lw=cssPoints[15], rw=cssPoints[16];
       if(!ls||!rs||!lh||!rh) return false;
 
-      const sh={x:(ls.x+rs.x)/2,y:(ls.y+rs.y)/2};
-      const hp={x:(lh.x+rh.x)/2,y:(lh.y+rh.y)/2};
-      if(dist(sh,hp) < 0.10) return false;
+      const sh={_nx:(ls._nx+rs._nx)/2, y:(ls.y+rs.y)/2};
+      const hp={_nx:(lh._nx+rh._nx)/2, y:(lh.y+rh.y)/2};
+      if(dist(sh,hp) < 0.10) return false; // nicht eingerollt
 
-      const armOk = armOverheadSide(lms,"L") || armOverheadSide(lms,"R");
-      const legOk = legStraightSide(lms,"L") || legStraightSide(lms,"R");
-      return armOk && legOk;
+      const shoulderY = sh.y;
+
+      // ein Arm reicht (seitlich oft ein Handgelenk weg)
+      const armOver =
+        (lw && lw.y < shoulderY - 0.03) ||
+        (rw && rw.y < shoulderY - 0.03);
+
+      // Beine "lang": mindestens ein Knie unter Hüfte und Fuß/Knöchel weiter unten
+      const lk=cssPoints[25], rk=cssPoints[26], la=cssPoints[27], ra=cssPoints[28];
+      const legOk =
+        (lk && lk.y > hp.y + 0.06 && la && la.y > lk.y + 0.04) ||
+        (rk && rk.y > hp.y + 0.06 && ra && ra.y > rk.y + 0.04) ||
+        (lk && lk.y > hp.y + 0.10) ||
+        (rk && rk.y > hp.y + 0.10);
+
+      // Hände nah zusammen optional (nur wenn beide sichtbar)
+      let handsClose = true;
+      if (lw && rw) handsClose = Math.abs(lw._nx - rw._nx) < 0.45;
+
+      return armOver && legOk && handsClose;
     }
 
-    function updateTimer(lms, now){
-      if(!toggleTimer.checked || !lms){
+    function updateTimer(cssPoints, now){
+      if(!toggleTimer.checked || !cssPoints){
         glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0;
         return;
       }
-
       const p=filmingPreset.value;
-      const startHold=(p==="stand")?200:360;
-      const stopHold =(p==="stand")?160:320;
+      const startHold=(p==="stand")?220:420;
+      const stopHold =(p==="stand")?180:360;
 
-      const ok=inGlidePose(lms);
+      const ok=inGlidePoseRobust(cssPoints);
 
       if(!glideActive){
         currentElapsed=0;
@@ -406,9 +373,7 @@
           if(now - poseStableSince >= startHold){
             glideActive=true; glideStart=now; poseLostSince=null;
           }
-        } else {
-          poseStableSince=null;
-        }
+        } else poseStableSince=null;
         return;
       }
 
@@ -422,57 +387,121 @@
           if(glideTimes.length>4) glideTimes.length=4;
           currentElapsed=0;
         }
-      } else {
-        poseLostSince=null;
-      }
+      } else poseLostSince=null;
     }
 
-    function drawOverlay(debugText=""){
+    function drawOverlaySmall(debugText=""){
       if(!toggleTimer.checked) return;
 
       ctx.save();
-      ctx.fillStyle="rgba(0,0,0,0.45)";
-      ctx.strokeStyle="rgba(255,255,255,0.65)";
-      ctx.lineWidth=2;
+      ctx.fillStyle="rgba(0,0,0,0.42)";
+      ctx.strokeStyle="rgba(255,255,255,0.55)";
+      ctx.lineWidth=1.5;
 
-      const x=14,y=14,w=Math.min(640, CSS_W-28),h=200,r=14;
-      const rr=Math.min(r,w/2,h/2);
+      // kleiner, oben rechts
+      const pad=10;
+      const w=Math.min(320, CSS_W-2*pad);
+      const h=130;
+      const x=CSS_W - w - pad;
+      const y=pad;
+      const r=12;
+
       ctx.beginPath();
-      ctx.moveTo(x+rr,y);
-      ctx.arcTo(x+w,y,x+w,y+h,rr);
-      ctx.arcTo(x+w,y+h,x,y+h,rr);
-      ctx.arcTo(x,y+h,x,y,rr);
-      ctx.arcTo(x,y,x+w,y,rr);
+      ctx.moveTo(x+r,y);
+      ctx.arcTo(x+w,y,x+w,y+h,r);
+      ctx.arcTo(x+w,y+h,x,y+h,r);
+      ctx.arcTo(x,y+h,x,y,r);
+      ctx.arcTo(x,y,x+w,y,r);
       ctx.closePath();
       ctx.fill(); ctx.stroke();
 
       ctx.fillStyle="white";
-      ctx.shadowBlur=0;
+      ctx.font="700 28px system-ui";
+      ctx.fillText(glideActive ? fmt(currentElapsed) : "0.000 s", x+12, y+36);
 
-      ctx.font="700 34px system-ui";
-      ctx.fillText(glideActive ? fmt(currentElapsed) : "0.000 s", x+14, y+48);
+      ctx.font="600 12px system-ui";
+      ctx.fillText("Gleitphase Brust | Slots", x+12, y+56);
 
-      ctx.font="600 14px system-ui";
-      const presetLabel=filmingPreset.value==="stand"?"Stand-Test":(filmingPreset.value==="side45"?"45° seitlich":"45° von hinten");
-      ctx.fillText(`Brust – Gleitphase | Aufnahme: ${presetLabel}`, x+14, y+74);
-
-      ctx.font="16px system-ui";
+      ctx.font="13px system-ui";
       for(let i=0;i<4;i++){
         const t=glideTimes[i]!=null?fmt(glideTimes[i]):"—";
-        ctx.fillText(`Slot ${i+1}: ${t}`, x+14, y+102+i*18);
+        ctx.fillText(`S${i+1}: ${t}`, x+12 + (i%2)*150, y+78 + Math.floor(i/2)*18);
       }
 
       if(debugText){
-        ctx.font="12px system-ui";
-        ctx.fillText(debugText, x+14, y+h-12);
+        ctx.font="11px system-ui";
+        ctx.fillText(debugText, x+12, y+h-10);
       }
       ctx.restore();
     }
 
+    // ---------- Technik-Feedback (heuristisch) ----------
+    function setFeedback(badges, tips){
+      badgesEl.innerHTML = badges.map(b=>`<span class="pill">${b}</span>`).join("");
+      tipsEl.innerHTML = tips.map(t=>`<li>${t}</li>`).join("");
+    }
+
+    function updateTechniqueFeedback(cssPoints){
+      if(!cssPoints){
+        setFeedback(["keine Pose"], ["Stelle dich vollständig ins Bild, gute Beleuchtung, wenig Spritzwasser."]);
+        return;
+      }
+
+      const preset = filmingPreset.value;
+      const tips = [];
+      const badges = [];
+
+      // (A) Knie zu stark gebeugt (einfacher Proxy)
+      const lh=cssPoints[23], rh=cssPoints[24];
+      const lk=cssPoints[25], rk=cssPoints[26];
+      if (lh && lk && (lk.y - lh.y) < 0.06) {
+        badges.push("Knie hoch");
+        tips.push("Beine länger strecken: Knie weiter nach hinten/unter Wasserlinie führen.");
+      }
+      if (rh && rk && (rk.y - rh.y) < 0.06) {
+        if (!badges.includes("Knie hoch")) badges.push("Knie hoch");
+        if (!tips.some(x=>x.startsWith("Beine länger strecken"))) {
+          tips.push("Beine länger strecken: Knie weiter nach hinten/unter Wasserlinie führen.");
+        }
+      }
+
+      // (B) Schere (nur sinnvoll bei back45)
+      if (preset === "back45") {
+        const la=cssPoints[27], ra=cssPoints[28];
+        if (la && ra) {
+          const dx = Math.abs(la._nx - ra._nx);
+          if (dx > 0.22) {
+            badges.push("Schere");
+            tips.push("Schere vermeiden: Knie/Füße symmetrisch schließen, Fokus auf gleichmäßige Beinführung.");
+          }
+        }
+      }
+
+      // (C) Hände nicht eng (wenn beide sichtbar)
+      const lw=cssPoints[15], rw=cssPoints[16];
+      if (lw && rw) {
+        const dx = Math.abs(lw._nx - rw._nx);
+        if (dx > 0.45) {
+          badges.push("Arme breit");
+          tips.push("Arme enger in Streamline: Hände übereinander, Oberarme an den Ohren.");
+        }
+      } else {
+        badges.push("1 Arm erkannt");
+        tips.push("Für Analyse: Kamera so positionieren, dass beide Arme möglichst im Bild sind.");
+      }
+
+      if (!tips.length) {
+        badges.push("ok");
+        tips.push("Sieht stabil aus. Halte die Streamline-Position konstant (wenig Bewegung/Rotation).");
+      }
+
+      setFeedback(badges, tips);
+    }
+
     // ---------- MediaPipe Tasks ----------
-    let landmarker = null;
-    let drawingUtils = null;
-    let running = false;
+    let landmarker=null;
+    let running=false;
+    let rafId=null;
 
     const POSE_TASK_URL =
       "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task";
@@ -483,18 +512,16 @@
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
       );
 
-      setStatus("Lade Pose Landmarker heavy …");
+      setStatus("Lade Pose Landmarker …");
       landmarker = await PoseLandmarker.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: POSE_TASK_URL, delegate: "CPU" },
+        baseOptions: { modelAssetPath: POSE_TASK_URL },
         runningMode: "VIDEO",
         numPoses: 1,
-        outputSegmentationMasks: true,
+        outputSegmentationMasks: false, // Silhouette bewusst aus
         minPoseDetectionConfidence: Number(detConf.value),
         minPosePresenceConfidence: Number(presConf.value),
         minTrackingConfidence: Number(trackConf.value),
       });
-
-      drawingUtils = new DrawingUtils(ctx);
     }
 
     function updateLandmarkerThresholds(){
@@ -511,8 +538,8 @@
     trackConf.addEventListener("change", updateLandmarkerThresholds);
 
     // ---------- Camera ----------
-    let isBackCamera = true;
-    let stream = null;
+    let isBackCamera=true;
+    let stream=null;
 
     async function startCamera(){
       stopCamera();
@@ -544,75 +571,51 @@
       video.srcObject=null;
     }
 
-    // ---------- Skeleton drawing ----------
-    function drawSkeleton(landmarksNorm){
-      if(!toggleSkeleton.checked || !landmarksNorm || !drawingUtils) return;
-
-      const connections = getPoseConnectionsSafe();
-
-      ctx.save();
-      ctx.shadowBlur = 0;
-      ctx.imageSmoothingEnabled = false;
-
-      const lw = Math.round(Number(skelLine.value));
-      const r  = Math.round(Number(skelDot.value));
-
-      if(Array.isArray(connections) && connections.length){
-        drawingUtils.drawConnectors(landmarksNorm, connections, { lineWidth: lw, color: "#000000" });
-      }
-      drawingUtils.drawLandmarks(landmarksNorm, { radius: r, color: "#000000" });
-
-      ctx.restore();
-    }
-
     // ---------- Loop ----------
     function loop(){
       if(!running || !landmarker) return;
 
       try{
         ctx.fillStyle = BG;
-        ctx.fillRect(0, 0, CSS_W, CSS_H);
+        ctx.fillRect(0,0,CSS_W,CSS_H);
 
-        if (video.videoWidth === 0 || video.videoHeight === 0) {
-          drawOverlay("DEBUG: video not ready");
-          requestAnimationFrame(loop);
+        if(video.videoWidth===0 || video.videoHeight===0){
+          drawOverlaySmall("DEBUG: video not ready");
+          rafId = requestAnimationFrame(loop);
           return;
         }
 
         const ts = performance.now();
         const result = landmarker.detectForVideo(video, ts);
 
-        const hasMask = !!(result?.segmentationMasks?.length);
         const hasLandmarks = !!(result?.landmarks?.length && result.landmarks[0]?.length);
 
-        const silOk = hasMask ? drawSilhouette(result.segmentationMasks[0]) : false;
-
-        let lms = null;
-        if(hasLandmarks){
+        let cssPoints = null;
+        if (hasLandmarks){
           const raw = result.landmarks[0];
-          const vw = video.videoWidth, vh = video.videoHeight;
+          // Frontcam ist typischerweise gespiegelt -> mirrorX = !isBackCamera
+          const mirrorX = !isBackCamera;
+          const mapped = mapLandmarksToCss(raw, video.videoWidth, video.videoHeight, CSS_W, CSS_H, mirrorX);
+          cssPoints = ema(mapped);
 
-          const mapped = mapLandmarksContain(raw, vw, vh, CSS_W, CSS_H);
-          lms = ema(mapped);
-
-          drawSkeleton(lms);
-          updateTimer(lms, ts);
+          drawSkeletonCssPoints(cssPoints);
+          updateTimer(cssPoints, ts);
+          updateTechniqueFeedback(cssPoints);
         } else {
           updateTimer(null, ts);
+          updateTechniqueFeedback(null);
         }
 
-        drawOverlay(`DEBUG: lm=${hasLandmarks?result.landmarks[0].length:0} mask=${hasMask?1:0} sil=${silOk?1:0} ui=${isPortraitUI()?"P":"L"} v=${video.videoWidth}x${video.videoHeight} c=${CSS_W}x${CSS_H}`);
-
-        requestAnimationFrame(loop);
+        drawOverlaySmall(`lm=${hasLandmarks?33:0} ui=${isPortraitUI()?"P":"L"} cam=${isBackCamera?"back":"front"}`);
+        rafId = requestAnimationFrame(loop);
       } catch(e){
         console.error(e);
         setStatus("Loop-Fehler: " + (e?.message || String(e)));
         ctx.fillStyle = BG;
-        ctx.fillRect(0, 0, CSS_W, CSS_H);
+        ctx.fillRect(0,0,CSS_W,CSS_H);
         ctx.fillStyle = "rgba(0,0,0,0.85)";
         ctx.font = "16px system-ui";
         ctx.fillText("Loop-Fehler: " + (e?.message || String(e)), 20, 40);
-        requestAnimationFrame(loop);
       }
     }
 
@@ -656,11 +659,11 @@
       if(!lastBlob) return;
       const type=lastBlob.type||"";
       const ext=type.includes("mp4")?"mp4":(type.includes("webm")?"webm":"bin");
-      const fileName=`gleitphase_brust_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`;
+      const fileName=`bewegungsanalyse_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`;
       const file=new File([lastBlob],fileName,{type:lastBlob.type});
 
       if(navigator.canShare && navigator.canShare({files:[file]})){
-        await navigator.share({files:[file], title:"Brust – Gleitphase (anonym)"});
+        await navigator.share({files:[file], title:"Bewegungsanalyse Recorder (anonym)"});
         setStatus("Geteilt/gespeichert ("+ext.toUpperCase()+").");
         return;
       }
@@ -678,6 +681,7 @@
         btnInit.disabled=true;
         applyLayoutFromOrientation();
         setStatus("Initialisiere …");
+
         await createLandmarker();
         await startCamera();
 
@@ -687,7 +691,7 @@
         btnReset.disabled=false;
 
         setStatus("bereit.");
-        requestAnimationFrame(loop);
+        rafId = requestAnimationFrame(loop);
       } catch(e){
         console.error(e);
         setStatus("Fehler: " + (e?.message || String(e)));
@@ -698,13 +702,27 @@
     btnSwitch.addEventListener("click", async ()=>{
       try{
         btnSwitch.disabled=true;
+
+        running=false;
+        if(rafId) cancelAnimationFrame(rafId);
+
         isBackCamera=!isBackCamera;
         await startCamera();
+
+        smoothed=null;
+        poseStableSince=null;
+        poseLostSince=null;
+
+        running=true;
+        rafId = requestAnimationFrame(loop);
+
         btnSwitch.disabled=false;
         setStatus("Kamera gewechselt.");
       } catch(e){
         console.error(e);
         setStatus("Kamerawechsel-Fehler: " + (e?.message || String(e)));
+        running=true;
+        rafId = requestAnimationFrame(loop);
         btnSwitch.disabled=false;
       }
     });
@@ -731,6 +749,7 @@
 
     // Initial layout
     applyLayoutFromOrientation();
+    setFeedback(["bereit"], ["Kamera aktivieren, dann Aufnahme starten."]);
   </script>
 </body>
 </html>
