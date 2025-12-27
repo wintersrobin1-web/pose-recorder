@@ -7,27 +7,29 @@
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
-    video, canvas { max-width: 100%; width: 360px; height: auto; border: 1px solid #ddd; border-radius: 10px; }
+    video, canvas { max-width: 100%; border: 1px solid #ddd; border-radius: 10px; }
+    video { width: 360px; height: auto; background:#000; }
+    canvas { width: 360px; height: auto; }
     button { padding: 10px 14px; border-radius: 10px; border: 1px solid #ccc; background: #fff; }
     button.primary { border-color: #111; }
     button:disabled { opacity: 0.5; }
     label { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #ddd; border-radius: 10px; }
-    select, input[type="range"] { padding: 9px 12px; border-radius: 10px; border: 1px solid #ccc; background: #fff; }
+    select { padding: 9px 12px; border-radius: 10px; border: 1px solid #ccc; background: #fff; }
     details { border: 1px solid #ddd; border-radius: 10px; padding: 10px 12px; max-width: 1100px; }
     summary { cursor: pointer; font-weight: 600; }
     .hint { color: #555; font-size: 14px; line-height: 1.4; max-width: 1100px; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
-    .rangeWrap { display:flex; align-items:center; gap:10px; padding: 8px 10px; border:1px solid #ddd; border-radius: 10px; margin-top: 10px; }
-    .rangeWrap span { min-width: 90px; font-size: 13px; color:#666; }
-    .small { font-size: 13px; color:#666; }
+    .rangeWrap { display:flex; align-items:center; gap:10px; padding: 8px 10px; border:1px solid #ddd; border-radius: 10px; margin-top: 10px; flex-wrap: wrap; }
+    .rangeWrap span { min-width: 160px; font-size: 13px; color:#666; }
+    .small { font-size: 13px; color:#666; min-width: 64px; text-align:right; }
   </style>
 </head>
 
 <body>
   <h1>Brust – Gleitphase (anonym)</h1>
   <p class="hint">
-    Output-Video enthält <b>nur</b> Hintergrund + <b>Segmentation-Silhouette</b> + Skelett + Timer/Slots.
-    Das Videoelement links ist nur Input (wird nicht in den Output gezeichnet).
+    Output enthält nur Hintergrund + Silhouette (Segmentation Mask) + Skelett + Timer. Das Video links ist nur Input.
+    Canvas passt sich automatisch an Hoch-/Querformat an.
   </p>
 
   <div class="row">
@@ -41,7 +43,7 @@
 
   <div class="row">
     <label><input type="checkbox" id="toggleSkeleton" checked /> Skelett</label>
-    <label><input type="checkbox" id="toggleSilhouette" checked /> Silhouette (Maske)</label>
+    <label><input type="checkbox" id="toggleSilhouette" checked /> Silhouette</label>
     <label><input type="checkbox" id="toggleTimer" checked /> Timer/Slots</label>
 
     <select id="filmingPreset" title="Aufnahmeposition">
@@ -54,34 +56,55 @@
   <details>
     <summary>Erweiterte Einstellungen (optional)</summary>
 
-    <div class="rangeWrap">
-      <span>Detection</span>
-      <input id="detConf" type="range" min="0.3" max="0.95" step="0.01" value="0.60">
-      <span id="detVal" class="small">0.60</span>
+    <div class="rangeWrap" title="Deckkraft der Silhouette (Segmentation).">
+      <span>Silhouette-Deckkraft</span>
+      <input id="silOpacity" type="range" min="0" max="1" step="0.05" value="0.85">
+      <span id="silOpacityVal" class="small">0.85</span>
     </div>
-    <div class="rangeWrap">
-      <span>Presence</span>
-      <input id="presConf" type="range" min="0.3" max="0.95" step="0.01" value="0.60">
-      <span id="presVal" class="small">0.60</span>
+
+    <div class="rangeWrap" title="Linienstärke des Skeletts (in px).">
+      <span>Skelett-Linienstärke</span>
+      <input id="skelLine" type="range" min="2" max="14" step="1" value="6">
+      <span id="skelLineVal" class="small">6</span>
     </div>
-    <div class="rangeWrap">
-      <span>Tracking</span>
-      <input id="trackConf" type="range" min="0.3" max="0.95" step="0.01" value="0.70">
-      <span id="trackVal" class="small">0.70</span>
+
+    <div class="rangeWrap" title="Punktgröße der Gelenke (Radius in px).">
+      <span>Gelenkpunkte (Radius)</span>
+      <input id="skelDot" type="range" min="1" max="8" step="1" value="3">
+      <span id="skelDotVal" class="small">3</span>
     </div>
-    <div class="rangeWrap">
-      <span>Glättung</span>
+
+    <div class="rangeWrap" title="Minimum pose detection confidence">
+      <span>Detection (min)</span>
+      <input id="detConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
+      <span id="detVal" class="small">0.50</span>
+    </div>
+
+    <div class="rangeWrap" title="Minimum pose presence confidence">
+      <span>Presence (min)</span>
+      <input id="presConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
+      <span id="presVal" class="small">0.50</span>
+    </div>
+
+    <div class="rangeWrap" title="Minimum tracking confidence">
+      <span>Tracking (min)</span>
+      <input id="trackConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
+      <span id="trackVal" class="small">0.50</span>
+    </div>
+
+    <div class="rangeWrap" title="EMA-Glättung der Landmarks (höher = ruhiger, aber träger)">
+      <span>Glättung (EMA)</span>
       <input id="smooth" type="range" min="0" max="0.9" step="0.05" value="0.65">
       <span id="smoothVal" class="small">0.65</span>
     </div>
 
     <p class="hint">
-      Empfehlung für Schwimmen: lieber <b>0.6–0.85</b> statt 0.99, sonst flackert/verschwindet die Pose.
+      Hinweis: 0.50/0.50/0.50 ist ein guter Start. Für Schwimmen häufig stabiler als 0.99.
     </p>
   </details>
 
   <div class="row">
-    <video id="video" playsinline autoplay muted style="background:#000"></video>
+    <video id="video" playsinline autoplay muted></video>
     <canvas id="canvas"></canvas>
   </div>
 
@@ -108,10 +131,18 @@
     const toggleTimer = document.getElementById("toggleTimer");
     const filmingPreset = document.getElementById("filmingPreset");
 
+    const silOpacity = document.getElementById("silOpacity");
+    const skelLine = document.getElementById("skelLine");
+    const skelDot = document.getElementById("skelDot");
+
     const detConf = document.getElementById("detConf");
     const presConf = document.getElementById("presConf");
     const trackConf = document.getElementById("trackConf");
     const smooth = document.getElementById("smooth");
+
+    const silOpacityVal = document.getElementById("silOpacityVal");
+    const skelLineVal = document.getElementById("skelLineVal");
+    const skelDotVal = document.getElementById("skelDotVal");
 
     const detVal = document.getElementById("detVal");
     const presVal = document.getElementById("presVal");
@@ -121,20 +152,98 @@
     const statusEl = document.getElementById("status");
     const setStatus = (s) => statusEl.textContent = "Status: " + s;
 
-    for (const [el, out] of [[detConf, detVal],[presConf,presVal],[trackConf,trackVal],[smooth,smoothVal]]) {
-      el.addEventListener("input", ()=> out.textContent = Number(el.value).toFixed(2));
+    function bindSlider(el, out, fmt=(v)=>Number(v).toFixed(2)) {
+      const update = () => out.textContent = fmt(el.value);
+      el.addEventListener("input", update);
+      update();
+    }
+    bindSlider(silOpacity, silOpacityVal, v => Number(v).toFixed(2));
+    bindSlider(skelLine, skelLineVal, v => String(Math.round(Number(v))));
+    bindSlider(skelDot, skelDotVal, v => String(Math.round(Number(v))));
+    bindSlider(detConf, detVal);
+    bindSlider(presConf, presVal);
+    bindSlider(trackConf, trackVal);
+    bindSlider(smooth, smoothVal, v => Number(v).toFixed(2));
+
+    // ---------- Orientation detection ----------
+    function isPortraitUI() {
+      // iOS: window.orientation (deprecated, but works)
+      const wo = window.orientation;
+      if (typeof wo === "number") return (wo === 0 || wo === 180);
+
+      // screen.orientation (not always on iOS)
+      const so = screen.orientation && screen.orientation.type;
+      if (typeof so === "string") return so.includes("portrait");
+
+      // fallback: matchMedia
+      if (window.matchMedia) return window.matchMedia("(orientation: portrait)").matches;
+
+      // final fallback: viewport ratio
+      return window.innerHeight >= window.innerWidth;
     }
 
-    // ---------- Output resolution ----------
-    canvas.width = 720;
-    canvas.height = 1280;
+    // ---------- HiDPI canvas setup ----------
+    let CSS_W = 360;
+    let CSS_H = 640;
+
+    function setupHiDPICanvas(cssW, cssH) {
+      CSS_W = cssW;
+      CSS_H = cssH;
+
+      const dpr = Math.max(1, window.devicePixelRatio || 1);
+
+      canvas.style.width = cssW + "px";
+      canvas.style.height = cssH + "px";
+
+      canvas.width = Math.round(cssW * dpr);
+      canvas.height = Math.round(cssH * dpr);
+
+      // draw in CSS pixels
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.imageSmoothingEnabled = false;
+    }
+
+    // ---------- Oriented frame for detection (never rendered to output) ----------
+    const orientedFrame = document.createElement("canvas");
+    const ofx = orientedFrame.getContext("2d", { willReadFrequently: false });
+
+    function resizeOrientedFrame(cssW, cssH) {
+      // keep internal resolution aligned to output internal res for stable mapping
+      orientedFrame.width = canvas.width;
+      orientedFrame.height = canvas.height;
+      ofx.imageSmoothingEnabled = true; // ok for model input
+    }
+
+    function applyLayoutFromOrientation() {
+      const portrait = isPortraitUI();
+
+      // output size: portrait 360×640, landscape 640×360
+      if (portrait) {
+        setupHiDPICanvas(360, 640);
+      } else {
+        setupHiDPICanvas(640, 360);
+      }
+      resizeMaskCanvas();
+      resizeOrientedFrame(CSS_W, CSS_H);
+      setStatus("Ausrichtung: " + (portrait ? "Hochformat" : "Querformat"));
+    }
+
+    window.addEventListener("resize", applyLayoutFromOrientation);
+    window.addEventListener("orientationchange", applyLayoutFromOrientation);
+
+    // ---------- Mask canvas (HiDPI internal) ----------
+    const maskCanvas = document.createElement("canvas");
+    const maskCtx = maskCanvas.getContext("2d", { willReadFrequently: true });
+
+    function resizeMaskCanvas() {
+      maskCanvas.width = canvas.width;
+      maskCanvas.height = canvas.height;
+    }
 
     // ---------- Background ----------
     const BG = "#bfe7ff";
 
-    // ---------- Fallback Pose connections (33 landmarks) ----------
-    // Das ist die klassische MediaPipe Pose Connection-Liste (auf Indizes).
-    // Wird genutzt, wenn PoseLandmarker.POSE_CONNECTIONS nicht verfügbar ist.
+    // ---------- Safe pose connections fallback ----------
     const FALLBACK_POSE_CONNECTIONS = [
       [0,1],[1,2],[2,3],[3,7],
       [0,4],[4,5],[5,6],[6,8],
@@ -149,20 +258,12 @@
     ];
 
     function getPoseConnectionsSafe() {
-      // In manchen Umgebungen ist POSE_CONNECTIONS nicht am Class-Objekt, daher fallback.
       const c = PoseLandmarker?.POSE_CONNECTIONS;
       return (Array.isArray(c) && c.length) ? c : FALLBACK_POSE_CONNECTIONS;
     }
 
-    // ---------- Mask rendering (true silhouette from segmentation mask) ----------
-    const maskCanvas = document.createElement("canvas");
-    maskCanvas.width = canvas.width;
-    maskCanvas.height = canvas.height;
-    const maskCtx = maskCanvas.getContext("2d");
-
+    // ---------- Segmentation mask -> silhouette ----------
     function segMaskToCanvas(segMask) {
-      // iOS Safari: MPImage nicht zuverlässig direkt drawImage-fähig.
-      // => getAsCanvas() nutzen.
       if (!segMask) return null;
       if (typeof segMask.getAsCanvas === "function") return segMask.getAsCanvas();
       if (segMask.canvas) return segMask.canvas;
@@ -175,28 +276,33 @@
       const sc = segMaskToCanvas(segMask);
       if (!sc) return;
 
-      maskCtx.clearRect(0,0,maskCanvas.width,maskCanvas.height);
+      // Draw mask into hiDPI maskCanvas
+      maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
       maskCtx.drawImage(sc, 0, 0, maskCanvas.width, maskCanvas.height);
 
-      const img = maskCtx.getImageData(0,0,maskCanvas.width, maskCanvas.height);
+      const img = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
       const d = img.data;
 
-      // Threshold + Einfärben
-      for (let i=0; i<d.length; i+=4) {
-        const m = d[i]; // intensity
+      const opacity = Number(silOpacity.value);     // 0..1
+      const alphaBase = Math.round(255 * opacity);
+
+      // Robust mask intensity extraction for Safari: max(R,G,B,A)
+      for (let i = 0; i < d.length; i += 4) {
+        const m = Math.max(d[i], d[i+1], d[i+2], d[i+3]); // 0..255
         if (m > 35) {
           d[i]   = 20;
           d[i+1] = 70;
           d[i+2] = 120;
-          d[i+3] = Math.min(255, m + 120);
+          // alpha depends on mask intensity + user opacity
+          d[i+3] = Math.min(255, Math.max(0, Math.round((m / 255) * alphaBase) + 40));
         } else {
           d[i+3] = 0;
         }
       }
       maskCtx.putImageData(img, 0, 0);
 
-      // Silhouette auf Output
-      ctx.drawImage(maskCanvas, 0, 0);
+      // draw silhouette into output (in CSS pixels)
+      ctx.drawImage(maskCanvas, 0, 0, CSS_W, CSS_H);
     }
 
     // ---------- EMA smoothing ----------
@@ -205,14 +311,14 @@
       const a = Number(smooth.value);
       if (!lms) return null;
       if (!smoothed || smoothed.length !== lms.length) {
-        smoothed = lms.map(p => ({...p}));
+        smoothed = lms.map(p => ({ ...p }));
         return smoothed;
       }
-      for (let i=0;i<lms.length;i++){
+      for (let i=0; i<lms.length; i++) {
         const p = lms[i], s = smoothed[i];
-        s.x = a*s.x + (1-a)*p.x;
-        s.y = a*s.y + (1-a)*p.y;
-        s.z = a*(s.z ?? 0) + (1-a)*(p.z ?? 0);
+        s.x = a * s.x + (1 - a) * p.x;
+        s.y = a * s.y + (1 - a) * p.y;
+        s.z = a * (s.z ?? 0) + (1 - a) * (p.z ?? 0);
         if (typeof p.visibility === "number") s.visibility = p.visibility;
         if (typeof p.presence === "number") s.presence = p.presence;
       }
@@ -221,13 +327,13 @@
 
     // ---------- Timer / Slots ----------
     const glideTimes = [];
-    let glideActive=false, glideStart=0, currentElapsed=0;
-    let poseStableSince=null, poseLostSince=null;
+    let glideActive = false, glideStart = 0, currentElapsed = 0;
+    let poseStableSince = null, poseLostSince = null;
 
     const dist = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
     const fmt = (ms)=> (ms/1000).toFixed(3) + " s";
 
-    function isStandOverhead(lms){
+    function isStandOverhead(lms) {
       const ls=lms[11], rs=lms[12], lw=lms[15], rw=lms[16], le=lms[13], re=lms[14];
       if(!ls||!rs||!lw||!rw||!le||!re) return false;
       const shoulderY=(ls.y+rs.y)/2;
@@ -257,15 +363,15 @@
       return true;
     }
 
-    function inGlidePose(lms){
+    function inGlidePose(lms) {
       const p = filmingPreset.value;
       if (p==="stand") return isStandOverhead(lms);
       if (p==="side45") return isGlideStreamlineRobust(lms, "side45");
       return isGlideStreamlineRobust(lms, "back45");
     }
 
-    function updateTimer(lms, now){
-      if(!toggleTimer.checked){ glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0; return; }
+    function updateTimer(lms, now) {
+      if(!toggleTimer.checked) { glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0; return; }
 
       const p = filmingPreset.value;
       const startHold = (p==="stand") ? 220 : 500;
@@ -297,14 +403,15 @@
       } else poseLostSince=null;
     }
 
-    function drawOverlay(debugText){
+    function drawOverlay(debugText="") {
       if(!toggleTimer.checked) return;
+
       ctx.save();
       ctx.fillStyle="rgba(0,0,0,0.45)";
       ctx.strokeStyle="rgba(255,255,255,0.65)";
       ctx.lineWidth=2;
 
-      const x=14,y=14,w=640,h=220,r=14;
+      const x=14,y=14,w=Math.min(640, CSS_W-28),h=200,r=14;
       const rr = Math.min(r, w/2, h/2);
       ctx.beginPath();
       ctx.moveTo(x+rr,y);
@@ -316,33 +423,33 @@
       ctx.fill(); ctx.stroke();
 
       ctx.fillStyle="white";
-      ctx.shadowBlur=8;
-      ctx.shadowColor="rgba(0,0,0,0.7)";
+      ctx.shadowBlur=0;
 
-      ctx.font="700 40px system-ui";
-      ctx.fillText(glideActive ? fmt(currentElapsed) : "0.000 s", x+14, y+52);
+      ctx.font="700 34px system-ui";
+      ctx.fillText(glideActive ? fmt(currentElapsed) : "0.000 s", x+14, y+48);
 
-      ctx.font="600 16px system-ui";
-      const presetLabel = filmingPreset.value==="stand" ? "Stand-Test" : (filmingPreset.value==="side45" ? "45° seitlich" : "45° von hinten");
-      ctx.fillText(`Brust – Gleitphase | Aufnahme: ${presetLabel}`, x+14, y+82);
+      ctx.font="600 14px system-ui";
+      const presetLabel = filmingPreset.value==="stand" ? "Stand-Test"
+        : (filmingPreset.value==="side45" ? "45° seitlich" : "45° von hinten");
+      ctx.fillText(`Brust – Gleitphase | Aufnahme: ${presetLabel}`, x+14, y+74);
 
-      ctx.font="18px system-ui";
+      ctx.font="16px system-ui";
       for(let i=0;i<4;i++){
         const t = glideTimes[i]!=null ? fmt(glideTimes[i]) : "—";
-        ctx.fillText(`Slot ${i+1}: ${t}`, x+14, y+112+i*18);
+        ctx.fillText(`Slot ${i+1}: ${t}`, x+14, y+102+i*18);
       }
 
-      ctx.font="12px system-ui";
-      ctx.fillText(debugText, x+14, y+h-14);
+      if (debugText) {
+        ctx.font="12px system-ui";
+        ctx.fillText(debugText, x+14, y+h-12);
+      }
       ctx.restore();
     }
 
-    // ---------- Landmarker / camera ----------
+    // ---------- MediaPipe Tasks Vision ----------
     let landmarker = null;
     let drawingUtils = null;
     let running = false;
-    let isBackCamera = true;
-    let stream = null;
 
     const POSE_TASK_URL =
       "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task";
@@ -380,12 +487,21 @@
     presConf.addEventListener("change", updateLandmarkerThresholds);
     trackConf.addEventListener("change", updateLandmarkerThresholds);
 
+    // ---------- Camera ----------
+    let isBackCamera = true;
+    let stream = null;
+
     async function startCamera() {
       stopCamera();
       const constraints = {
         audio: false,
-        video: { facingMode: isBackCamera ? "environment" : "user", width: {ideal:1280}, height: {ideal:720} }
+        video: {
+          facingMode: isBackCamera ? "environment" : "user",
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        }
       };
+
       stream = await navigator.mediaDevices.getUserMedia(constraints);
       video.srcObject = stream;
 
@@ -407,48 +523,100 @@
       video.srcObject = null;
     }
 
-    // ---------- Drawing ----------
-    function drawSkeleton(landmarks){
+    // ---------- Oriented input drawing (for detection only) ----------
+    function drawVideoIntoOrientedFrame() {
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      if (!vw || !vh) return false;
+
+      const outW = orientedFrame.width;
+      const outH = orientedFrame.height;
+
+      // clear
+      ofx.setTransform(1,0,0,1,0,0);
+      ofx.clearRect(0,0,outW,outH);
+
+      // Determine if we need to rotate video to match UI orientation
+      const uiPortrait = isPortraitUI();
+      const videoIsLandscape = vw >= vh;
+      const needRotate90 = uiPortrait && videoIsLandscape;
+
+      if (needRotate90) {
+        // rotate 90° clockwise into orientedFrame
+        ofx.translate(outW, 0);
+        ofx.rotate(Math.PI / 2);
+
+        // after rotation, available area: height becomes width in rotated coords
+        const targetW = outH;
+        const targetH = outW;
+
+        const scale = Math.min(targetW / vw, targetH / vh);
+        const dw = vw * scale;
+        const dh = vh * scale;
+        const dx = (targetW - dw) / 2;
+        const dy = (targetH - dh) / 2;
+
+        ofx.drawImage(video, 0, 0, vw, vh, dx, dy, dw, dh);
+      } else {
+        // no rotation; contain fit
+        const scale = Math.min(outW / vw, outH / vh);
+        const dw = vw * scale;
+        const dh = vh * scale;
+        const dx = (outW - dw) / 2;
+        const dy = (outH - dh) / 2;
+
+        ofx.drawImage(video, 0, 0, vw, vh, dx, dy, dw, dh);
+      }
+      return true;
+    }
+
+    // ---------- Drawing skeleton ----------
+    function drawSkeleton(landmarks) {
       if (!toggleSkeleton.checked || !landmarks || !drawingUtils) return;
 
       const connections = getPoseConnectionsSafe();
 
       ctx.save();
-      ctx.shadowBlur = 10;
-      ctx.shadowColor = "rgba(0,0,0,0.65)";
-      // Guard: connections must be array of pairs
+      ctx.shadowBlur = 0;
+      ctx.imageSmoothingEnabled = false;
+
+      const lw = Math.round(Number(skelLine.value));
+      const r  = Math.round(Number(skelDot.value));
+
       if (Array.isArray(connections) && connections.length) {
-        drawingUtils.drawConnectors(landmarks, connections, { lineWidth: 10, color: "#000000" });
+        drawingUtils.drawConnectors(landmarks, connections, { lineWidth: lw, color: "#000000" });
       }
-      drawingUtils.drawLandmarks(landmarks, { radius: 4, color: "#000000" });
+      drawingUtils.drawLandmarks(landmarks, { radius: r, color: "#000000" });
+
       ctx.restore();
     }
 
-    // ---------- Loop ----------
-    async function loop() {
+    // ---------- Render loop ----------
+    function loop() {
       if (!running || !landmarker) return;
 
       try {
-        // Nur anonymes Rendering: Hintergrundfarbe
+        // clean background (anonym)
+        ctx.imageSmoothingEnabled = false;
         ctx.fillStyle = BG;
-        ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillRect(0, 0, CSS_W, CSS_H);
 
-        if (video.videoWidth === 0 || video.videoHeight === 0) {
-          drawOverlay("DEBUG: video not ready (videoWidth=0)");
+        // draw oriented frame for detection
+        const okFrame = drawVideoIntoOrientedFrame();
+        if (!okFrame) {
+          drawOverlay("DEBUG: video not ready");
           requestAnimationFrame(loop);
           return;
         }
 
         const ts = performance.now();
-        const result = landmarker.detectForVideo(video, ts);
+        // IMPORTANT: detect on orientedFrame canvas (aligns mask+landmarks to our output orientation)
+        const result = landmarker.detectForVideo(orientedFrame, ts);
 
         const hasMask = !!(result?.segmentationMasks?.length);
         const hasLandmarks = !!(result?.landmarks?.length && result.landmarks[0]?.length);
 
-        if (hasMask) {
-          // IMPORTANT: Safari-safe rendering
-          drawMaskSilhouette(result.segmentationMasks[0]);
-        }
+        if (hasMask) drawMaskSilhouette(result.segmentationMasks[0]);
 
         let lms = null;
         if (hasLandmarks) {
@@ -457,22 +625,22 @@
           updateTimer(lms, ts);
         }
 
-        drawOverlay(`DEBUG: landmarks=${hasLandmarks ? result.landmarks[0].length : 0} | mask=${hasMask ? 1 : 0} | vw=${video.videoWidth} vh=${video.videoHeight}`);
+        drawOverlay(`DEBUG: landmarks=${hasLandmarks ? result.landmarks[0].length : 0} | mask=${hasMask ? 1 : 0} | ui=${isPortraitUI() ? "P" : "L"}`);
 
         requestAnimationFrame(loop);
       } catch (e) {
         console.error(e);
         setStatus("Loop-Fehler: " + (e?.message || String(e)));
         ctx.fillStyle = BG;
-        ctx.fillRect(0,0,canvas.width,canvas.height);
-        ctx.fillStyle = "rgba(0,0,0,0.8)";
+        ctx.fillRect(0, 0, CSS_W, CSS_H);
+        ctx.fillStyle = "rgba(0,0,0,0.85)";
         ctx.font = "16px system-ui";
         ctx.fillText("Loop-Fehler: " + (e?.message || String(e)), 20, 40);
       }
     }
 
-    // ---------- Recording ----------
-    let recorder=null, recordedChunks=[], lastBlob=null;
+    // ---------- Recording (Canvas -> Video) ----------
+    let recorder = null, recordedChunks = [], lastBlob = null;
 
     function pickMimeType() {
       const candidates = [
@@ -488,50 +656,63 @@
     }
 
     function startRecordingCanvas() {
-      recordedChunks = []; lastBlob = null; btnShare.disabled = true;
+      recordedChunks = [];
+      lastBlob = null;
+      btnShare.disabled = true;
+
       const stream = canvas.captureStream(15);
       const mimeType = pickMimeType();
-      try { recorder = new MediaRecorder(stream, mimeType ? {mimeType} : undefined); }
+      try { recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined); }
       catch(_) { recorder = new MediaRecorder(stream); }
 
       setStatus("Aufnahme läuft… (" + (recorder.mimeType || mimeType || "default") + ")");
-      recorder.ondataavailable = (e)=>{ if(e.data && e.data.size>0) recordedChunks.push(e.data); };
-      recorder.onstop = ()=>{
+
+      recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
+      recorder.onstop = () => {
         const type = recorder.mimeType || mimeType || "video/webm";
-        lastBlob = new Blob(recordedChunks, {type});
+        lastBlob = new Blob(recordedChunks, { type });
         btnShare.disabled = !lastBlob;
         const pretty = lastBlob.type.includes("mp4") ? "MPEG-4 (MP4)" : (lastBlob.type.includes("webm") ? "WebM" : lastBlob.type);
         setStatus("Aufnahme fertig (" + pretty + ").");
       };
+
       recorder.start(200);
     }
 
-    function stopRecordingCanvas() { if (recorder && recorder.state !== "inactive") recorder.stop(); }
+    function stopRecordingCanvas() {
+      if (recorder && recorder.state !== "inactive") recorder.stop();
+    }
 
     async function shareOrDownload() {
       if (!lastBlob) return;
+
       const type = lastBlob.type || "";
       const ext = type.includes("mp4") ? "mp4" : (type.includes("webm") ? "webm" : "bin");
       const fileName = `gleitphase_brust_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`;
-      const file = new File([lastBlob], fileName, {type: lastBlob.type});
+      const file = new File([lastBlob], fileName, { type: lastBlob.type });
 
-      if (navigator.canShare && navigator.canShare({files:[file]})) {
-        await navigator.share({files:[file], title:"Brust – Gleitphase (anonym)"});
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: "Brust – Gleitphase (anonym)" });
         setStatus("Geteilt/gespeichert (" + ext.toUpperCase() + ").");
         return;
       }
+
       const url = URL.createObjectURL(lastBlob);
       const a = document.createElement("a");
-      a.href = url; a.download = fileName;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(()=>URL.revokeObjectURL(url), 2000);
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
       setStatus("Download gestartet (" + ext.toUpperCase() + ").");
     }
 
     // ---------- Buttons ----------
-    btnInit.addEventListener("click", async ()=> {
+    btnInit.addEventListener("click", async () => {
       try {
         btnInit.disabled = true;
+        applyLayoutFromOrientation();
         setStatus("Initialisiere …");
 
         await createLandmarker();
@@ -551,7 +732,7 @@
       }
     });
 
-    btnSwitch.addEventListener("click", async ()=> {
+    btnSwitch.addEventListener("click", async () => {
       try {
         btnSwitch.disabled = true;
         isBackCamera = !isBackCamera;
@@ -565,10 +746,31 @@
       }
     });
 
-    btnRec.addEventListener("click", ()=> { btnRec.disabled = true; btnStop.disabled = false; startRecordingCanvas(); });
-    btnStop.addEventListener("click", ()=> { btnStop.disabled = true; stopRecordingCanvas(); btnRec.disabled = false; });
-    btnShare.addEventListener("click", ()=> shareOrDownload());
-    btnReset.addEventListener("click", ()=> { glideTimes.length = 0; glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0; setStatus("Slots zurückgesetzt."); });
+    btnRec.addEventListener("click", () => {
+      btnRec.disabled = true;
+      btnStop.disabled = false;
+      startRecordingCanvas();
+    });
+
+    btnStop.addEventListener("click", () => {
+      btnStop.disabled = true;
+      stopRecordingCanvas();
+      btnRec.disabled = false;
+    });
+
+    btnShare.addEventListener("click", () => shareOrDownload());
+
+    btnReset.addEventListener("click", () => {
+      glideTimes.length = 0;
+      glideActive = false;
+      poseStableSince = null;
+      poseLostSince = null;
+      currentElapsed = 0;
+      setStatus("Slots zurückgesetzt.");
+    });
+
+    // initial layout
+    applyLayoutFromOrientation();
   </script>
 </body>
 </html>
