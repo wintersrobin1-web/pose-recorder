@@ -1,22 +1,43 @@
 <!doctype html>
 <html lang="de">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Brust – Gleitphase (stabil)</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pose Recorder – stabil</title>
 
 <style>
-body { font-family: system-ui; margin:16px; }
-.row { display:flex; gap:12px; flex-wrap:wrap; margin:12px 0; }
-video,canvas { width:360px; border-radius:12px; border:1px solid #ccc; }
-button { padding:10px 14px; border-radius:10px; }
-label { display:inline-flex; gap:6px; align-items:center; }
+body {
+  font-family: system-ui, sans-serif;
+  margin: 16px;
+}
+.row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 12px;
+}
+video, canvas {
+  width: 360px;
+  max-width: 100%;
+  border-radius: 12px;
+  border: 1px solid #ccc;
+}
+button {
+  padding: 10px 14px;
+  border-radius: 10px;
+}
+label {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
 </style>
 </head>
 
 <body>
 
-<h2>Brust – Gleitphase</h2>
+<h2>Pose Recorder (stabil)</h2>
 
 <div class="row">
   <button id="btnInit">Kamera starten</button>
@@ -24,49 +45,52 @@ label { display:inline-flex; gap:6px; align-items:center; }
 </div>
 
 <div class="row">
-  <label><input type="checkbox" id="showSkeleton" checked>Skelett</label>
-  <label><input type="checkbox" id="showMask" checked>Silhouette</label>
+  <label><input type="checkbox" id="chkSkeleton" checked>Skelett</label>
+  <label><input type="checkbox" id="chkMask" checked>Silhouette</label>
 </div>
 
 <div class="row">
-  <video id="video" autoplay playsinline muted></video>
+  <video id="video" autoplay muted playsinline></video>
   <canvas id="canvas"></canvas>
 </div>
 
 <p id="status">bereit</p>
 
 <script type="module">
-import { FilesetResolver, PoseLandmarker, DrawingUtils }
-from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+import {
+  FilesetResolver,
+  PoseLandmarker,
+  DrawingUtils
+} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
+// ---------- DOM ----------
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
 const btnInit = document.getElementById("btnInit");
 const btnSwitch = document.getElementById("btnSwitch");
-const showSkeleton = document.getElementById("showSkeleton");
-const showMask = document.getElementById("showMask");
+const chkSkeleton = document.getElementById("chkSkeleton");
+const chkMask = document.getElementById("chkMask");
 const statusEl = document.getElementById("status");
 
+// ---------- State ----------
 let landmarker = null;
 let drawingUtils = null;
 let stream = null;
 let running = false;
-let isBack = true;
+let isBackCamera = true;
 let rafId = null;
 
-// ---------- Canvas ----------
-function resizeCanvas() {
-  const dpr = devicePixelRatio || 1;
-  const w = 360, h = 640;
-  canvas.style.width = w + "px";
-  canvas.style.height = h + "px";
-  canvas.width = w * dpr;
-  canvas.height = h * dpr;
-  ctx.setTransform(dpr,0,0,dpr,0,0);
+// ---------- Helpers ----------
+function setStatus(t){ statusEl.textContent = t; }
+
+function syncCanvasToVideo() {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width  = video.videoWidth  * dpr;
+  canvas.height = video.videoHeight * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
-resizeCanvas();
 
 // ---------- MediaPipe ----------
 async function createLandmarker() {
@@ -81,27 +105,33 @@ async function createLandmarker() {
     },
     runningMode: "VIDEO",
     numPoses: 1,
-    outputSegmentationMasks: true,
+    outputSegmentationMasks: true
   });
 
   drawingUtils = new DrawingUtils(ctx);
 }
 
-// ---------- Kamera ----------
+// ---------- Camera ----------
 async function startCamera() {
   stopCamera();
+
   stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: isBack ? "environment" : "user" },
+    video: {
+      facingMode: isBackCamera ? "environment" : "user"
+    },
     audio: false
   });
+
   video.srcObject = stream;
   await video.play();
 
   await new Promise(r => {
     const check = () =>
-      video.videoWidth ? r() : requestAnimationFrame(check);
+      video.videoWidth > 0 ? r() : requestAnimationFrame(check);
     check();
   });
+
+  syncCanvasToVideo();
 }
 
 function stopCamera() {
@@ -112,16 +142,41 @@ function stopCamera() {
   video.srcObject = null;
 }
 
-// ---------- Loop ----------
-function drawMask(mask) {
-  if (!mask || !showMask.checked) return;
+// ---------- Silhouette ----------
+function drawSilhouette(mask) {
+  if (!chkMask.checked || !mask) return;
 
-  ctx.save();
-  ctx.globalAlpha = 0.85;
-  ctx.drawImage(mask.getAsCanvas(), 0, 0, 360, 640);
-  ctx.restore();
+  const maskCanvas = mask.getAsCanvas();
+
+  ctx.drawImage(
+    maskCanvas,
+    0, 0,
+    video.videoWidth,
+    video.videoHeight
+  );
+
+  const img = ctx.getImageData(
+    0, 0,
+    canvas.width,
+    canvas.height
+  );
+  const d = img.data;
+
+  for (let i = 0; i < d.length; i += 4) {
+    const m = d[i];
+    if (m > 15) {
+      d[i]   = 30;
+      d[i+1] = 90;
+      d[i+2] = 160;
+      d[i+3] = 180;
+    } else {
+      d[i+3] = 0;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
 }
 
+// ---------- Loop ----------
 function loop() {
   if (!running || !landmarker) return;
 
@@ -131,24 +186,23 @@ function loop() {
   }
 
   ctx.fillStyle = "#bfe7ff";
-  ctx.fillRect(0,0,360,640);
+  ctx.fillRect(0, 0, video.videoWidth, video.videoHeight);
 
-  const ts = performance.now();
-  const res = landmarker.detectForVideo(video, ts);
+  const res = landmarker.detectForVideo(video, performance.now());
 
   if (res.segmentationMasks?.length) {
-    drawMask(res.segmentationMasks[0]);
+    drawSilhouette(res.segmentationMasks[0]);
   }
 
-  if (res.landmarks?.length && showSkeleton.checked) {
+  if (res.landmarks?.length && chkSkeleton.checked) {
     drawingUtils.drawConnectors(
       res.landmarks[0],
       PoseLandmarker.POSE_CONNECTIONS,
-      { color:"#000", lineWidth:4 }
+      { color: "#000", lineWidth: 4 }
     );
     drawingUtils.drawLandmarks(
       res.landmarks[0],
-      { color:"#000", radius:3 }
+      { color: "#000", radius: 3 }
     );
   }
 
@@ -158,22 +212,25 @@ function loop() {
 // ---------- UI ----------
 btnInit.onclick = async () => {
   btnInit.disabled = true;
-  statusEl.textContent = "Initialisiere…";
-  resizeCanvas();
+  setStatus("Initialisiere…");
+
   await createLandmarker();
   await startCamera();
+
   running = true;
   btnSwitch.disabled = false;
   loop();
-  statusEl.textContent = "bereit";
+
+  setStatus("läuft");
 };
 
 btnSwitch.onclick = async () => {
   btnSwitch.disabled = true;
+
   running = false;
   cancelAnimationFrame(rafId);
 
-  isBack = !isBack;
+  isBackCamera = !isBackCamera;
 
   await startCamera();
 
