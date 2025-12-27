@@ -13,9 +13,11 @@
     button:disabled { opacity: 0.5; }
     label { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #ddd; border-radius: 10px; }
     select, input[type="range"] { padding: 9px 12px; border-radius: 10px; border: 1px solid #ccc; background: #fff; }
+    details { border: 1px solid #ddd; border-radius: 10px; padding: 10px 12px; max-width: 1100px; }
+    summary { cursor: pointer; font-weight: 600; }
     .hint { color: #555; font-size: 14px; line-height: 1.4; max-width: 1100px; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
-    .rangeWrap { display:flex; align-items:center; gap:10px; padding: 8px 10px; border:1px solid #ddd; border-radius: 10px; }
+    .rangeWrap { display:flex; align-items:center; gap:10px; padding: 8px 10px; border:1px solid #ddd; border-radius: 10px; margin-top: 10px; }
     .rangeWrap span { min-width: 90px; font-size: 13px; color:#666; }
     .small { font-size: 13px; color:#666; }
   </style>
@@ -49,7 +51,9 @@
     </select>
   </div>
 
-  <div class="row">
+  <details>
+    <summary>Erweiterte Einstellungen (optional)</summary>
+
     <div class="rangeWrap">
       <span>Detection</span>
       <input id="detConf" type="range" min="0.3" max="0.95" step="0.01" value="0.60">
@@ -70,7 +74,11 @@
       <input id="smooth" type="range" min="0" max="0.9" step="0.05" value="0.65">
       <span id="smoothVal" class="small">0.65</span>
     </div>
-  </div>
+
+    <p class="hint">
+      Empfehlung für Schwimmen: lieber <b>0.6–0.85</b> statt 0.99, sonst flackert/verschwindet die Pose.
+    </p>
+  </details>
 
   <div class="row">
     <video id="video" playsinline autoplay muted style="background:#000"></video>
@@ -117,12 +125,34 @@
       el.addEventListener("input", ()=> out.textContent = Number(el.value).toFixed(2));
     }
 
-    // ---------- Output resolution (portrait, anonym overlay) ----------
+    // ---------- Output resolution ----------
     canvas.width = 720;
     canvas.height = 1280;
 
     // ---------- Background ----------
     const BG = "#bfe7ff";
+
+    // ---------- Fallback Pose connections (33 landmarks) ----------
+    // Das ist die klassische MediaPipe Pose Connection-Liste (auf Indizes).
+    // Wird genutzt, wenn PoseLandmarker.POSE_CONNECTIONS nicht verfügbar ist.
+    const FALLBACK_POSE_CONNECTIONS = [
+      [0,1],[1,2],[2,3],[3,7],
+      [0,4],[4,5],[5,6],[6,8],
+      [9,10],
+      [11,12],
+      [11,13],[13,15],[15,17],[15,19],[15,21],[17,19],
+      [12,14],[14,16],[16,18],[16,20],[16,22],[18,20],
+      [11,23],[12,24],[23,24],
+      [23,25],[25,27],[27,29],[29,31],
+      [24,26],[26,28],[28,30],[30,32],
+      [27,28]
+    ];
+
+    function getPoseConnectionsSafe() {
+      // In manchen Umgebungen ist POSE_CONNECTIONS nicht am Class-Objekt, daher fallback.
+      const c = PoseLandmarker?.POSE_CONNECTIONS;
+      return (Array.isArray(c) && c.length) ? c : FALLBACK_POSE_CONNECTIONS;
+    }
 
     // ---------- Mask rendering (true silhouette from segmentation mask) ----------
     const maskCanvas = document.createElement("canvas");
@@ -130,24 +160,35 @@
     maskCanvas.height = canvas.height;
     const maskCtx = maskCanvas.getContext("2d");
 
+    function segMaskToCanvas(segMask) {
+      // iOS Safari: MPImage nicht zuverlässig direkt drawImage-fähig.
+      // => getAsCanvas() nutzen.
+      if (!segMask) return null;
+      if (typeof segMask.getAsCanvas === "function") return segMask.getAsCanvas();
+      if (segMask.canvas) return segMask.canvas;
+      return null;
+    }
+
     function drawMaskSilhouette(segMask) {
       if (!toggleSilhouette.checked || !segMask) return;
 
-      // segMask ist MPImage -> drawImage möglich
+      const sc = segMaskToCanvas(segMask);
+      if (!sc) return;
+
       maskCtx.clearRect(0,0,maskCanvas.width,maskCanvas.height);
-      maskCtx.drawImage(segMask, 0, 0, maskCanvas.width, maskCanvas.height);
+      maskCtx.drawImage(sc, 0, 0, maskCanvas.width, maskCanvas.height);
 
       const img = maskCtx.getImageData(0,0,maskCanvas.width, maskCanvas.height);
       const d = img.data;
 
       // Threshold + Einfärben
       for (let i=0; i<d.length; i+=4) {
-        const m = d[i];          // intensity 0..255
+        const m = d[i]; // intensity
         if (m > 35) {
-          d[i]   = 20;           // R
-          d[i+1] = 70;           // G
-          d[i+2] = 120;          // B
-          d[i+3] = Math.min(255, m + 120); // Alpha
+          d[i]   = 20;
+          d[i+1] = 70;
+          d[i+2] = 120;
+          d[i+3] = Math.min(255, m + 120);
         } else {
           d[i+3] = 0;
         }
@@ -158,7 +199,7 @@
       ctx.drawImage(maskCanvas, 0, 0);
     }
 
-    // ---------- EMA smoothing for landmarks ----------
+    // ---------- EMA smoothing ----------
     let smoothed = null;
     function ema(lms) {
       const a = Number(smooth.value);
@@ -178,7 +219,7 @@
       return smoothed;
     }
 
-    // ---------- Timer / Slots (wie vorher, robust) ----------
+    // ---------- Timer / Slots ----------
     const glideTimes = [];
     let glideActive=false, glideStart=0, currentElapsed=0;
     let poseStableSince=null, poseLostSince=null;
@@ -291,7 +332,6 @@
         ctx.fillText(`Slot ${i+1}: ${t}`, x+14, y+112+i*18);
       }
 
-      // Debug-Zeile (sehr hilfreich)
       ctx.font="12px system-ui";
       ctx.fillText(debugText, x+14, y+h-14);
       ctx.restore();
@@ -304,7 +344,6 @@
     let isBackCamera = true;
     let stream = null;
 
-    // Heavy model file
     const POSE_TASK_URL =
       "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task";
 
@@ -350,16 +389,13 @@
       stream = await navigator.mediaDevices.getUserMedia(constraints);
       video.srcObject = stream;
 
-      // WICHTIG: auf Metadaten warten, sonst detectForVideo liefert gern "nichts"
       await new Promise((resolve) => {
         const done = () => resolve();
         if (video.readyState >= 1) return done();
         video.onloadedmetadata = done;
       });
-
       await video.play();
 
-      // Zusätzlich warten, bis Frames wirklich da sind
       await new Promise((resolve) => {
         const check = () => (video.videoWidth > 0 && video.videoHeight > 0) ? resolve() : requestAnimationFrame(check);
         check();
@@ -371,17 +407,24 @@
       video.srcObject = null;
     }
 
-    // ---------- Render loop ----------
+    // ---------- Drawing ----------
     function drawSkeleton(landmarks){
       if (!toggleSkeleton.checked || !landmarks || !drawingUtils) return;
+
+      const connections = getPoseConnectionsSafe();
+
       ctx.save();
       ctx.shadowBlur = 10;
       ctx.shadowColor = "rgba(0,0,0,0.65)";
-      drawingUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS, { lineWidth: 10, color: "#000000" });
+      // Guard: connections must be array of pairs
+      if (Array.isArray(connections) && connections.length) {
+        drawingUtils.drawConnectors(landmarks, connections, { lineWidth: 10, color: "#000000" });
+      }
       drawingUtils.drawLandmarks(landmarks, { radius: 4, color: "#000000" });
       ctx.restore();
     }
 
+    // ---------- Loop ----------
     async function loop() {
       if (!running || !landmarker) return;
 
@@ -390,7 +433,6 @@
         ctx.fillStyle = BG;
         ctx.fillRect(0,0,canvas.width,canvas.height);
 
-        // Wenn Video nicht ready -> Debug anzeigen und weiter
         if (video.videoWidth === 0 || video.videoHeight === 0) {
           drawOverlay("DEBUG: video not ready (videoWidth=0)");
           requestAnimationFrame(loop);
@@ -401,31 +443,31 @@
         const result = landmarker.detectForVideo(video, ts);
 
         const hasMask = !!(result?.segmentationMasks?.length);
-        const hasLandmarks = !!(result?.landmarks?.length);
+        const hasLandmarks = !!(result?.landmarks?.length && result.landmarks[0]?.length);
 
-        if (hasMask) drawMaskSilhouette(result.segmentationMasks[0]);
+        if (hasMask) {
+          // IMPORTANT: Safari-safe rendering
+          drawMaskSilhouette(result.segmentationMasks[0]);
+        }
 
         let lms = null;
         if (hasLandmarks) {
           lms = ema(result.landmarks[0]);
           drawSkeleton(lms);
           updateTimer(lms, ts);
-        } else {
-          // Timer in dem Fall nicht updaten
         }
 
-        drawOverlay(`DEBUG: frames ok | landmarks=${hasLandmarks?result.landmarks[0].length:0} | mask=${hasMask?1:0} | vw=${video.videoWidth} vh=${video.videoHeight}`);
+        drawOverlay(`DEBUG: landmarks=${hasLandmarks ? result.landmarks[0].length : 0} | mask=${hasMask ? 1 : 0} | vw=${video.videoWidth} vh=${video.videoHeight}`);
 
         requestAnimationFrame(loop);
       } catch (e) {
         console.error(e);
         setStatus("Loop-Fehler: " + (e?.message || String(e)));
-        // Zeige Fehler auch im Canvas
         ctx.fillStyle = BG;
         ctx.fillRect(0,0,canvas.width,canvas.height);
-        ctx.fillStyle = "rgba(0,0,0,0.7)";
-        ctx.font = "18px system-ui";
-        ctx.fillText("FEHLER: " + (e?.message || String(e)), 20, 40);
+        ctx.fillStyle = "rgba(0,0,0,0.8)";
+        ctx.font = "16px system-ui";
+        ctx.fillText("Loop-Fehler: " + (e?.message || String(e)), 20, 40);
       }
     }
 
