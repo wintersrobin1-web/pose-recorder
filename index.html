@@ -31,6 +31,9 @@
     .rangeWrap { display:flex; align-items:center; gap:10px; padding: 8px 10px; border:1px solid #ddd; border-radius: 10px; margin-top: 10px; flex-wrap: wrap; }
     .rangeWrap span { min-width: 170px; font-size: 13px; color:#666; }
     .small { font-size: 13px; color:#666; min-width: 64px; text-align:right; }
+    .foot { margin-top: 14px; max-width: 1100px; }
+    .tiplist details { margin-top: 10px; }
+    .tiplist summary { font-weight: 700; }
   </style>
 </head>
 
@@ -108,8 +111,8 @@
 
     <div class="rangeWrap">
       <span>Glättung (EMA)</span>
-      <input id="smooth" type="range" min="0" max="0.9" step="0.05" value="0.60">
-      <span id="smoothVal" class="small">0.60</span>
+      <input id="smooth" type="range" min="0" max="0.9" step="0.05" value="0.55">
+      <span id="smoothVal" class="small">0.55</span>
     </div>
 
     <div class="rangeWrap">
@@ -117,6 +120,10 @@
       <input id="neckTol" type="range" min="10" max="60" step="1" value="25">
       <span id="neckTolVal" class="small">25</span>
     </div>
+
+    <p class="hint">
+      Hinweis: Für 45° seitlich ist Occlusion normal. Der Timer nutzt deshalb einen Score + Hysterese (robuster Start/Stop).
+    </p>
   </details>
 
   <div class="row">
@@ -125,6 +132,49 @@
   </div>
 
   <p class="hint mono" id="status">Status: bereit</p>
+
+  <!-- Optional: Technik-Infos (statisch, aufklappbar) -->
+  <div class="foot tiplist">
+    <details>
+      <summary>Optionale Technik-Checkliste (Brust: Gleitphase)</summary>
+
+      <details>
+        <summary>Arme öffnen zu weit (zu viel Widerstand)</summary>
+        <p class="hint">
+          <b>Woran erkennbar (im Skelett):</b> Handgelenke/Unterarme gehen seitlich deutlich auseinander, Ellenbogen „fallen raus“.<br>
+          <b>Korrektur:</b> Zug- und Rückholweg enger, Ellenbogen eher „hoch“ führen, Hände vor dem Kopf wieder zusammenführen
+          (Streamline: „Pfeilform“). Fokus: kleinerer Querschnitt, weniger Bremsfläche.
+        </p>
+      </details>
+
+      <details>
+        <summary>Beinschlag unsymmetrisch („Schere“)</summary>
+        <p class="hint">
+          <b>Woran erkennbar (im Skelett):</b> Knie-/Knöchelbahnen links/rechts stark unterschiedlich, ein Bein drückt stärker nach außen.<br>
+          <b>Korrektur:</b> Knie enger unter dem Körper, Fersen symmetrisch zum Gesäß, dann Fußsohlen gleichzeitig nach außen/hinten „fassen“,
+          Abschluss mit gleichzeitigem Strecken und Fußspitzen.
+        </p>
+      </details>
+
+      <details>
+        <summary>Gleitphase zu kurz (zu frühes Anziehen / zu viel „Wuseln“)</summary>
+        <p class="hint">
+          <b>Woran erkennbar:</b> Körper wird nach dem Strecken sofort wieder klein, Beine/Arme bewegen direkt weiter.<br>
+          <b>Korrektur:</b> Nach dem Strecken 1–2 ruhige Momente halten („Druckphase – Strecken – Gleiten“).
+          Ziel: Geschwindigkeit in die Gleitlage „mitnehmen“, nicht sofort bremsen.
+        </p>
+      </details>
+
+      <details>
+        <summary>Kopf überstreckt (HWS rot)</summary>
+        <p class="hint">
+          <b>Woran erkennbar:</b> HWS-Achse wird rot, Kopf „schaut nach vorn“, Kinn weg vom Brustbein.<br>
+          <b>Korrektur:</b> Blick eher schräg nach unten/vorne, Nacken lang, „Doppelkinn“-Gefühl.
+          Neutraler Kopf verbessert Wasserlage und reduziert Widerstand.
+        </p>
+      </details>
+    </details>
+  </div>
 
   <script type="module">
     import { FilesetResolver, PoseLandmarker }
@@ -199,16 +249,13 @@
     function setupHiDPICanvas(cssW, cssH) {
       CSS_W = cssW; CSS_H = cssH;
       const dpr = Math.max(1, window.devicePixelRatio || 1);
-
       canvas.style.width = cssW + "px";
       canvas.style.height = cssH + "px";
       canvas.width = Math.round(cssW * dpr);
       canvas.height = Math.round(cssH * dpr);
-
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // draw in CSS pixels
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false;
     }
-
     function applyLayoutFromOrientation() {
       if (isPortraitUI()) setupHiDPICanvas(360, 640);
       else setupHiDPICanvas(640, 360);
@@ -245,15 +292,14 @@
       const c = Math.max(-1, Math.min(1, dot/(nu*nv)));
       return Math.acos(c) * 180/Math.PI;
     }
-
     function kneeAngle(hip, knee, ankle) {
       if (!hip || !knee || !ankle) return null;
       const u = { x: hip.x - knee.x, y: hip.y - knee.y };
       const v = { x: ankle.x - knee.x, y: ankle.y - knee.y };
-      return angleBetween(u, v); // 180 ~ straight
+      return angleBetween(u, v);
     }
 
-    // ---------- Video-to-canvas "contain" mapping (CSS space) ----------
+    // ---------- Video-to-canvas contain mapping (CSS space) ----------
     function mapLandmarksContain(rawLandmarks, vw, vh, cw, ch) {
       const scale = Math.min(cw / vw, ch / vh);
       const dispW = vw * scale;
@@ -270,12 +316,11 @@
       });
     }
 
-    // ---------- EMA smoothing in CSS-space ----------
+    // ---------- EMA smoothing in CSS space ----------
     let smoothedCss = null;
     function emaCss(cssPoints) {
       const a = Number(smooth.value);
       if (!cssPoints) return null;
-
       if (!smoothedCss || smoothedCss.length !== cssPoints.length) {
         smoothedCss = cssPoints.map(p => ({ ...p }));
         return smoothedCss;
@@ -284,17 +329,15 @@
         const p = cssPoints[i], s = smoothedCss[i];
         s._cx = a * s._cx + (1 - a) * p._cx;
         s._cy = a * s._cy + (1 - a) * p._cy;
-        s.z = a * (s.z ?? 0) + (1 - a) * (p.z ?? 0);
         if (typeof p.visibility === "number") s.visibility = p.visibility;
         if (typeof p.presence === "number") s.presence = p.presence;
       }
       return smoothedCss;
     }
 
-    // ---------- Skeleton drawing (CSS points) ----------
+    // ---------- Skeleton drawing ----------
     function drawSkeletonCssPoints(cssPoints) {
       if (!toggleSkeleton.checked || !cssPoints) return;
-
       const lw = Math.round(Number(skelLine.value));
       const r  = Math.round(Number(skelDot.value));
 
@@ -343,7 +386,6 @@
 
     function renderMaskToCanvas(segMask) {
       if (!segMask) return { max: 0, w: 0, h: 0 };
-
       const mw = segMask.width ?? 0;
       const mh = segMask.height ?? 0;
       if (!mw || !mh) return { max: 0, w: 0, h: 0 };
@@ -353,14 +395,12 @@
         maskSrcCanvas.height = mh;
       }
 
-      const threshold = Number(silThresh.value) / 100; // 0..1
-      const alpha = Number(silOpacity.value); // 0..1
+      const threshold = Number(silThresh.value) / 100;
+      const alpha = Number(silOpacity.value);
 
       let dataF = null, dataU = null;
       try { if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array(); } catch(_) {}
-      if (!dataF) {
-        try { if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array(); } catch(_) {}
-      }
+      if (!dataF) { try { if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array(); } catch(_) {} }
 
       const img = maskSrcCtx.createImageData(mw, mh);
       const d = img.data;
@@ -372,10 +412,7 @@
           if (v > maxv) maxv = v;
           const a = (v >= threshold) ? Math.round(255 * alpha) : 0;
           const o = i*4;
-          d[o]   = 255;  // yellow fill
-          d[o+1] = 215;
-          d[o+2] = 0;
-          d[o+3] = a;
+          d[o]   = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a;
         }
       } else if (dataU && dataU.length >= mw*mh) {
         for (let i = 0; i < mw*mh; i++) {
@@ -383,13 +420,8 @@
           if (v > maxv) maxv = v;
           const a = (v >= threshold) ? Math.round(255 * alpha) : 0;
           const o = i*4;
-          d[o]   = 255;
-          d[o+1] = 215;
-          d[o+2] = 0;
-          d[o+3] = a;
+          d[o]   = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a;
         }
-      } else {
-        maxv = 0;
       }
 
       maskSrcCtx.putImageData(img, 0, 0);
@@ -398,7 +430,6 @@
 
     function drawSilhouette(segMask) {
       if (!toggleSilhouette.checked || !segMask) return { max: 0 };
-
       const vw = video.videoWidth || 0;
       const vh = video.videoHeight || 0;
       if (!vw || !vh) return { max: 0 };
@@ -421,7 +452,6 @@
       const lh = rawNorm[23], rh = rawNorm[24];
       const le = rawNorm[7],  re = rawNorm[8];
       const nose = rawNorm[0];
-
       if (!ls || !rs || !lh || !rh) return { neckDeg: null, ok: null };
 
       const shoulder = mid2(ls, rs);
@@ -466,13 +496,13 @@
       return { neckDeg: deg, ok };
     }
 
-    // ---------- Timer / Slots (robuster für side45) ----------
+    // ---------- Timer / Slots (Score + Hysterese = früher + stabiler) ----------
     const glideTimes = [];
     let glideActive = false, glideStart = 0, currentElapsed = 0;
-    let poseStableSince = null, poseLostSince = null;
 
-    // extra: allow a few "bad" frames before stopping (grace)
-    let badFrameCount = 0;
+    let scoreEma = 0;
+    let scoreStableSince = null;
+    let scoreLowSince = null;
 
     const fmt = (ms)=> (ms/1000).toFixed(3) + " s";
 
@@ -481,144 +511,144 @@
       const le = raw[13], re = raw[14];
       const lw = raw[15], rw = raw[16];
       const nose = raw[0];
-
-      if (!ls || !rs) return false;
+      if (!ls || !rs) return 0;
 
       const shoulderY = (ls.y + rs.y) / 2;
       const headY = (nose?.y ?? (shoulderY - 0.10));
 
+      // weich: Wrist über Kopf ist "1.0", nur hoher Ellbogen ist "0.7"
       const elbowMargin = 0.04;
       const wristMargin = 0.02;
-
-      const leftElbowUp = le ? (le.y < shoulderY - elbowMargin) : false;
-      const rightElbowUp = re ? (re.y < shoulderY - elbowMargin) : false;
 
       const leftWristUp = lw ? (lw.y < headY + wristMargin) : false;
       const rightWristUp = rw ? (rw.y < headY + wristMargin) : false;
 
-      const leftOk = leftWristUp || (leftElbowUp && (!lw || lw.y < shoulderY - 0.02));
-      const rightOk = rightWristUp || (rightElbowUp && (!rw || rw.y < shoulderY - 0.02));
+      const leftElbowUp = le ? (le.y < shoulderY - elbowMargin) : false;
+      const rightElbowUp = re ? (re.y < shoulderY - elbowMargin) : false;
 
-      return leftOk || rightOk;
+      const leftScore = leftWristUp ? 1.0 : (leftElbowUp ? 0.7 : 0.0);
+      const rightScore = rightWristUp ? 1.0 : (rightElbowUp ? 0.7 : 0.0);
+
+      return Math.max(leftScore, rightScore);
     }
 
-    function legsStraightRobust(raw) {
+    function legsStraightScore(raw) {
       const lh = raw[23], rh = raw[24], lk = raw[25], rk = raw[26], la = raw[27], ra = raw[28];
       const aL = kneeAngle(lh, lk, la);
       const aR = kneeAngle(rh, rk, ra);
 
-      const thrBoth = 155;
-      const thrOne  = 165;
+      // Score 0..1: ab 150° gut, ab 170° sehr gut
+      const toScore = (ang) => {
+        if (ang == null) return 0;
+        if (ang <= 145) return 0;
+        if (ang >= 170) return 1;
+        return (ang - 145) / (170 - 145);
+      };
 
-      const okL = (aL != null) ? (aL >= thrBoth) : false;
-      const okR = (aR != null) ? (aR >= thrBoth) : false;
+      if (aL != null && aR != null) return Math.min(toScore(aL), toScore(aR)); // beide zählen
+      return Math.max(toScore(aL), toScore(aR)); // Occlusion: eins reicht
+    }
 
-      if (aL != null && aR != null) return okL && okR;
-      if (aL != null) return aL >= thrOne;
-      if (aR != null) return aR >= thrOne;
-      return false;
+    function bodyLongScore(raw) {
+      const ls = raw[11], rs = raw[12], lh = raw[23], rh = raw[24];
+      if (!ls || !rs || !lh || !rh) return 0;
+      const sh = { x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2 };
+      const hp = { x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2 };
+      const d = dist(sh, hp);
+      if (d <= 0.10) return 0;
+      if (d >= 0.14) return 1;
+      return (d - 0.10) / (0.14 - 0.10);
     }
 
     let lastTorso = null;
-    let torsoStillSince = null;
-
-    function torsoStable(raw, now) {
+    function stillnessScore(raw) {
       const ls = raw[11], rs = raw[12], lh = raw[23], rh = raw[24];
-      if (!ls || !rs || !lh || !rh) return false;
+      if (!ls || !rs || !lh || !rh) return 0;
 
       const sh = { x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2 };
       const hp = { x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2 };
       const torso = { x:(sh.x+hp.x)/2, y:(sh.y+hp.y)/2 };
 
       const p = filmingPreset.value;
-      const tol = (p === "side45") ? 0.012 : 0.010;
+      const tol = (p === "side45") ? 0.014 : 0.012;
 
-      if (!lastTorso) {
-        lastTorso = torso;
-        torsoStillSince = now;
-        return false;
-      }
-
+      if (!lastTorso) { lastTorso = torso; return 0.3; } // beim ersten Frame nicht blockieren
       const move = Math.hypot(torso.x - lastTorso.x, torso.y - lastTorso.y);
       lastTorso = torso;
 
-      if (move <= tol) {
-        if (torsoStillSince == null) torsoStillSince = now;
-      } else {
-        torsoStillSince = null;
-      }
-
-      const hold = (p === "side45") ? 220 : 180;
-      return torsoStillSince != null && (now - torsoStillSince >= hold);
+      // 1.0 = sehr ruhig, 0.0 = sehr unruhig
+      const s = 1 - Math.min(1, move / tol);
+      return Math.max(0, s);
     }
 
-    function inGlidePose(raw, now) {
-      const ls = raw[11], rs = raw[12], lh = raw[23], rh = raw[24];
-      if (!ls || !rs || !lh || !rh) return false;
+    function computeGlideScore(raw) {
+      // Gewichtung: Arme + Beine am wichtigsten, dann Körperlänge, dann Ruhe
+      const arms = armOverHeadRobust(raw);      // 0..1
+      const legs = legsStraightScore(raw);      // 0..1
+      const longB = bodyLongScore(raw);         // 0..1
+      const still = stillnessScore(raw);        // 0..1
 
-      const sh = { x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2 };
-      const hp = { x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2 };
-      const longBody = dist(sh, hp) > 0.11;
-
-      const armsOk = armOverHeadRobust(raw);
-      const legsOk = legsStraightRobust(raw);
-      const stillOk = torsoStable(raw, now);
-
-      return longBody && armsOk && legsOk && stillOk;
+      return (0.38*arms + 0.32*legs + 0.18*longB + 0.12*still);
     }
 
-    function updateTimer(raw, now) {
-      if (!toggleTimer.checked) {
-        glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0; badFrameCount=0; return;
+    function updateTimer(raw, now){
+      if(!toggleTimer.checked){
+        glideActive=false; currentElapsed=0;
+        scoreEma=0; scoreStableSince=null; scoreLowSince=null;
+        return;
       }
 
       const p = filmingPreset.value;
-      const startHold = (p==="stand") ? 220 : 420;
-      const stopHold  = (p==="stand") ? 180 : 380;
 
-      const ok = inGlidePose(raw, now);
+      // Schwellen (Hysterese):
+      // Start früher: Score>=startThr kurz stabil
+      // Stop später: Score<=stopThr länger niedrig
+      const startThr = (p === "side45") ? 0.72 : 0.75;
+      const stopThr  = (p === "side45") ? 0.55 : 0.58;
 
-      if (!glideActive) {
+      // Hold-Zeiten:
+      const startHoldMs = (p === "side45") ? 140 : 170; // deutlich früher als vorher
+      const stopHoldMs  = (p === "side45") ? 320 : 300;
+
+      // EMA für Score (glättet Occlusion-Spikes)
+      const alpha = (p === "side45") ? 0.65 : 0.60;
+      const sNow = computeGlideScore(raw);
+      scoreEma = alpha*scoreEma + (1-alpha)*sNow;
+
+      if(!glideActive){
         currentElapsed = 0;
-        badFrameCount = 0;
-        if (ok && glideTimes.length < 4) {
-          if (poseStableSince === null) poseStableSince = now;
-          if (now - poseStableSince >= startHold) {
+        if(scoreEma >= startThr && glideTimes.length < 4){
+          if(scoreStableSince == null) scoreStableSince = now;
+          if(now - scoreStableSince >= startHoldMs){
             glideActive = true;
             glideStart = now;
-            poseLostSince = null;
+            scoreLowSince = null;
           }
         } else {
-          poseStableSince = null;
+          scoreStableSince = null;
         }
         return;
       }
 
       currentElapsed = now - glideStart;
 
-      if (!ok) {
-        badFrameCount++;
-        const grace = (p === "side45") ? 6 : 4; // frames
-        if (badFrameCount < grace) return;
-
-        if (poseLostSince === null) poseLostSince = now;
-        if (now - poseLostSince >= stopHold) {
+      if(scoreEma <= stopThr){
+        if(scoreLowSince == null) scoreLowSince = now;
+        if(now - scoreLowSince >= stopHoldMs){
           glideActive = false;
-          poseStableSince = null;
-          poseLostSince = null;
-          badFrameCount = 0;
+          scoreStableSince = null;
+          scoreLowSince = null;
           glideTimes.push(now - glideStart);
-          if (glideTimes.length > 4) glideTimes.length = 4;
+          if(glideTimes.length > 4) glideTimes.length = 4;
           currentElapsed = 0;
         }
       } else {
-        badFrameCount = 0;
-        poseLostSince = null;
+        scoreLowSince = null;
       }
     }
 
-    function drawOverlay(debugText="") {
-      if (!toggleTimer.checked) return;
+    function drawOverlay(debugText=""){
+      if(!toggleTimer.checked) return;
 
       ctx.save();
       ctx.fillStyle="rgba(0,0,0,0.40)";
@@ -779,7 +809,7 @@
           updateTimer(raw, ts);
 
           drawOverlay(
-            `DEBUG: lm=${raw.length} mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} neck=${neck.neckDeg==null?"-":neck.neckDeg.toFixed(1)}° ui=${isPortraitUI()?"P":"L"}`
+            `DEBUG: lm=${raw.length} mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} score=${scoreEma.toFixed(2)} neck=${neck.neckDeg==null?"-":neck.neckDeg.toFixed(1)}° ui=${isPortraitUI()?"P":"L"}`
           );
         } else {
           drawOverlay(`DEBUG: lm=0 mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} ui=${isPortraitUI()?"P":"L"}`);
@@ -886,12 +916,12 @@
         await startCamera();
 
         smoothedCss = null;
-        poseStableSince = null;
-        poseLostSince = null;
-        badFrameCount = 0;
-        lastTorso = null;
-        torsoStillSince = null;
         emptyMaskFrames = 0;
+
+        // Timer state reset
+        glideActive=false; glideStart=0; currentElapsed=0;
+        scoreEma=0; scoreStableSince=null; scoreLowSince=null;
+        lastTorso=null;
 
         running=true;
         rafId = requestAnimationFrame(loop);
@@ -923,8 +953,8 @@
 
     btnReset.addEventListener("click", ()=>{
       glideTimes.length=0;
-      glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0;
-      badFrameCount=0;
+      glideActive=false; glideStart=0; currentElapsed=0;
+      scoreEma=0; scoreStableSince=null; scoreLowSince=null;
       setStatus("Slots zurückgesetzt.");
     });
   </script>
