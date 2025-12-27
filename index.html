@@ -29,7 +29,7 @@
   <h1>Brust – Gleitphase (anonym)</h1>
   <p class="hint">
     Output enthält nur Hintergrund + Silhouette (Segmentation Mask) + Skelett + Timer. Das Video links ist nur Input.
-    Canvas passt sich automatisch an Hoch-/Querformat an.
+    Die Ausrichtung (Hoch/Quer) wird automatisch angepasst.
   </p>
 
   <div class="row">
@@ -56,51 +56,47 @@
   <details>
     <summary>Erweiterte Einstellungen (optional)</summary>
 
-    <div class="rangeWrap" title="Deckkraft der Silhouette (Segmentation).">
+    <div class="rangeWrap">
       <span>Silhouette-Deckkraft</span>
       <input id="silOpacity" type="range" min="0" max="1" step="0.05" value="0.85">
       <span id="silOpacityVal" class="small">0.85</span>
     </div>
 
-    <div class="rangeWrap" title="Linienstärke des Skeletts (in px).">
+    <div class="rangeWrap">
       <span>Skelett-Linienstärke</span>
       <input id="skelLine" type="range" min="2" max="14" step="1" value="6">
       <span id="skelLineVal" class="small">6</span>
     </div>
 
-    <div class="rangeWrap" title="Punktgröße der Gelenke (Radius in px).">
+    <div class="rangeWrap">
       <span>Gelenkpunkte (Radius)</span>
       <input id="skelDot" type="range" min="1" max="8" step="1" value="3">
       <span id="skelDotVal" class="small">3</span>
     </div>
 
-    <div class="rangeWrap" title="Minimum pose detection confidence">
+    <div class="rangeWrap">
       <span>Detection (min)</span>
       <input id="detConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
       <span id="detVal" class="small">0.50</span>
     </div>
 
-    <div class="rangeWrap" title="Minimum pose presence confidence">
+    <div class="rangeWrap">
       <span>Presence (min)</span>
       <input id="presConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
       <span id="presVal" class="small">0.50</span>
     </div>
 
-    <div class="rangeWrap" title="Minimum tracking confidence">
+    <div class="rangeWrap">
       <span>Tracking (min)</span>
       <input id="trackConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
       <span id="trackVal" class="small">0.50</span>
     </div>
 
-    <div class="rangeWrap" title="EMA-Glättung der Landmarks (höher = ruhiger, aber träger)">
+    <div class="rangeWrap">
       <span>Glättung (EMA)</span>
       <input id="smooth" type="range" min="0" max="0.9" step="0.05" value="0.65">
       <span id="smoothVal" class="small">0.65</span>
     </div>
-
-    <p class="hint">
-      Hinweis: 0.50/0.50/0.50 ist ein guter Start. Für Schwimmen häufig stabiler als 0.99.
-    </p>
   </details>
 
   <div class="row">
@@ -165,31 +161,20 @@
     bindSlider(trackConf, trackVal);
     bindSlider(smooth, smoothVal, v => Number(v).toFixed(2));
 
-    // ---------- Orientation detection ----------
+    // ---------- Orientation helpers ----------
     function isPortraitUI() {
-      // iOS: window.orientation (deprecated, but works)
       const wo = window.orientation;
       if (typeof wo === "number") return (wo === 0 || wo === 180);
-
-      // screen.orientation (not always on iOS)
       const so = screen.orientation && screen.orientation.type;
       if (typeof so === "string") return so.includes("portrait");
-
-      // fallback: matchMedia
       if (window.matchMedia) return window.matchMedia("(orientation: portrait)").matches;
-
-      // final fallback: viewport ratio
       return window.innerHeight >= window.innerWidth;
     }
 
-    // ---------- HiDPI canvas setup ----------
-    let CSS_W = 360;
-    let CSS_H = 640;
-
+    // ---------- HiDPI canvas ----------
+    let CSS_W = 360, CSS_H = 640;
     function setupHiDPICanvas(cssW, cssH) {
-      CSS_W = cssW;
-      CSS_H = cssH;
-
+      CSS_W = cssW; CSS_H = cssH;
       const dpr = Math.max(1, window.devicePixelRatio || 1);
 
       canvas.style.width = cssW + "px";
@@ -201,49 +186,24 @@
       // draw in CSS pixels
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false;
-    }
 
-    // ---------- Oriented frame for detection (never rendered to output) ----------
-    const orientedFrame = document.createElement("canvas");
-    const ofx = orientedFrame.getContext("2d", { willReadFrequently: false });
-
-    function resizeOrientedFrame(cssW, cssH) {
-      // keep internal resolution aligned to output internal res for stable mapping
-      orientedFrame.width = canvas.width;
-      orientedFrame.height = canvas.height;
-      ofx.imageSmoothingEnabled = true; // ok for model input
+      maskCanvas.width = canvas.width;
+      maskCanvas.height = canvas.height;
     }
 
     function applyLayoutFromOrientation() {
-      const portrait = isPortraitUI();
-
-      // output size: portrait 360×640, landscape 640×360
-      if (portrait) {
-        setupHiDPICanvas(360, 640);
-      } else {
-        setupHiDPICanvas(640, 360);
-      }
-      resizeMaskCanvas();
-      resizeOrientedFrame(CSS_W, CSS_H);
-      setStatus("Ausrichtung: " + (portrait ? "Hochformat" : "Querformat"));
+      if (isPortraitUI()) setupHiDPICanvas(360, 640);
+      else setupHiDPICanvas(640, 360);
+      setStatus("Ausrichtung: " + (isPortraitUI() ? "Hochformat" : "Querformat"));
     }
 
     window.addEventListener("resize", applyLayoutFromOrientation);
     window.addEventListener("orientationchange", applyLayoutFromOrientation);
 
-    // ---------- Mask canvas (HiDPI internal) ----------
-    const maskCanvas = document.createElement("canvas");
-    const maskCtx = maskCanvas.getContext("2d", { willReadFrequently: true });
-
-    function resizeMaskCanvas() {
-      maskCanvas.width = canvas.width;
-      maskCanvas.height = canvas.height;
-    }
-
     // ---------- Background ----------
     const BG = "#bfe7ff";
 
-    // ---------- Safe pose connections fallback ----------
+    // ---------- Fallback connections ----------
     const FALLBACK_POSE_CONNECTIONS = [
       [0,1],[1,2],[2,3],[3,7],
       [0,4],[4,5],[5,6],[6,8],
@@ -256,13 +216,15 @@
       [24,26],[26,28],[28,30],[30,32],
       [27,28]
     ];
-
     function getPoseConnectionsSafe() {
       const c = PoseLandmarker?.POSE_CONNECTIONS;
       return (Array.isArray(c) && c.length) ? c : FALLBACK_POSE_CONNECTIONS;
     }
 
-    // ---------- Segmentation mask -> silhouette ----------
+    // ---------- Mask canvas ----------
+    const maskCanvas = document.createElement("canvas");
+    const maskCtx = maskCanvas.getContext("2d", { willReadFrequently: true });
+
     function segMaskToCanvas(segMask) {
       if (!segMask) return null;
       if (typeof segMask.getAsCanvas === "function") return segMask.getAsCanvas();
@@ -270,38 +232,72 @@
       return null;
     }
 
+    // ---------- Coordinate rotation for orientation ----------
+    // When UI portrait but the model effectively sees landscape video (common on iOS),
+    // we rotate outputs to match UI orientation.
+    function needRotateOutputs() {
+      const vw = video.videoWidth || 0;
+      const vh = video.videoHeight || 0;
+      if (!vw || !vh) return false;
+      const uiPortrait = isPortraitUI();
+      const videoLandscape = vw >= vh;
+      return uiPortrait && videoLandscape;
+    }
+
+    function rotateLandmarks90CW(normLandmarks) {
+      // (x,y) -> (y, 1-x)
+      return normLandmarks.map(p => ({
+        ...p,
+        x: p.y,
+        y: 1 - p.x
+      }));
+    }
+
+    // ---------- Silhouette drawing (with rotation if needed) ----------
     function drawMaskSilhouette(segMask) {
       if (!toggleSilhouette.checked || !segMask) return;
 
       const sc = segMaskToCanvas(segMask);
       if (!sc) return;
 
-      // Draw mask into hiDPI maskCanvas
+      // draw mask into maskCanvas (internal size)
       maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-      maskCtx.drawImage(sc, 0, 0, maskCanvas.width, maskCanvas.height);
+
+      const rotate = needRotateOutputs();
+
+      maskCtx.save();
+      if (rotate) {
+        // rotate 90° clockwise into maskCanvas
+        maskCtx.translate(maskCanvas.width, 0);
+        maskCtx.rotate(Math.PI / 2);
+        // after rotation, draw into swapped area
+        maskCtx.drawImage(sc, 0, 0, maskCanvas.height, maskCanvas.width);
+      } else {
+        maskCtx.drawImage(sc, 0, 0, maskCanvas.width, maskCanvas.height);
+      }
+      maskCtx.restore();
 
       const img = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
       const d = img.data;
 
-      const opacity = Number(silOpacity.value);     // 0..1
+      const opacity = Number(silOpacity.value);
       const alphaBase = Math.round(255 * opacity);
 
-      // Robust mask intensity extraction for Safari: max(R,G,B,A)
+      // Robust intensity: max(R,G,B,A)
       for (let i = 0; i < d.length; i += 4) {
-        const m = Math.max(d[i], d[i+1], d[i+2], d[i+3]); // 0..255
+        const m = Math.max(d[i], d[i+1], d[i+2], d[i+3]);
         if (m > 35) {
           d[i]   = 20;
           d[i+1] = 70;
           d[i+2] = 120;
-          // alpha depends on mask intensity + user opacity
-          d[i+3] = Math.min(255, Math.max(0, Math.round((m / 255) * alphaBase) + 40));
+          d[i+3] = Math.min(255, Math.max(0, Math.round((m/255)*alphaBase) + 40));
         } else {
           d[i+3] = 0;
         }
       }
       maskCtx.putImageData(img, 0, 0);
 
-      // draw silhouette into output (in CSS pixels)
+      // draw silhouette onto output (CSS pixels)
       ctx.drawImage(maskCanvas, 0, 0, CSS_W, CSS_H);
     }
 
@@ -316,24 +312,24 @@
       }
       for (let i=0; i<lms.length; i++) {
         const p = lms[i], s = smoothed[i];
-        s.x = a * s.x + (1 - a) * p.x;
-        s.y = a * s.y + (1 - a) * p.y;
-        s.z = a * (s.z ?? 0) + (1 - a) * (p.z ?? 0);
+        s.x = a*s.x + (1-a)*p.x;
+        s.y = a*s.y + (1-a)*p.y;
+        s.z = a*(s.z ?? 0) + (1-a)*(p.z ?? 0);
         if (typeof p.visibility === "number") s.visibility = p.visibility;
         if (typeof p.presence === "number") s.presence = p.presence;
       }
       return smoothed;
     }
 
-    // ---------- Timer / Slots ----------
+    // ---------- Timer / Slots (unchanged core) ----------
     const glideTimes = [];
-    let glideActive = false, glideStart = 0, currentElapsed = 0;
-    let poseStableSince = null, poseLostSince = null;
+    let glideActive=false, glideStart=0, currentElapsed=0;
+    let poseStableSince=null, poseLostSince=null;
 
     const dist = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
     const fmt = (ms)=> (ms/1000).toFixed(3) + " s";
 
-    function isStandOverhead(lms) {
+    function isStandOverhead(lms){
       const ls=lms[11], rs=lms[12], lw=lms[15], rw=lms[16], le=lms[13], re=lms[14];
       if(!ls||!rs||!lw||!rw||!le||!re) return false;
       const shoulderY=(ls.y+rs.y)/2;
@@ -347,37 +343,36 @@
       const ls=lms[11], rs=lms[12], lw=lms[15], rw=lms[16], lh=lms[23], rh=lms[24];
       if(!ls||!rs||!lh||!rh) return false;
 
-      const sh = {x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2};
-      const hp = {x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2};
-      if (dist(sh,hp) < 0.10) return false;
+      const sh={x:(ls.x+rs.x)/2,y:(ls.y+rs.y)/2};
+      const hp={x:(lh.x+rh.x)/2,y:(lh.y+rh.y)/2};
+      if(dist(sh,hp)<0.10) return false;
 
       let leftExt=false, rightExt=false;
-      if(ls && lw) leftExt = dist(ls,lw) > (preset==="back45" ? 0.23 : 0.26);
-      if(rs && rw) rightExt = dist(rs,rw) > (preset==="back45" ? 0.23 : 0.26);
+      if(ls&&lw) leftExt=dist(ls,lw)>(preset==="back45"?0.23:0.26);
+      if(rs&&rw) rightExt=dist(rs,rw)>(preset==="back45"?0.23:0.26);
       if(!leftExt && !rightExt) return false;
 
-      if(lw && rw){
-        const maxD = preset==="back45" ? 0.60 : 0.45;
-        if(dist(lw,rw) > maxD) return false;
+      if(lw&&rw){
+        const maxD=preset==="back45"?0.60:0.45;
+        if(dist(lw,rw)>maxD) return false;
       }
       return true;
     }
 
-    function inGlidePose(lms) {
-      const p = filmingPreset.value;
-      if (p==="stand") return isStandOverhead(lms);
-      if (p==="side45") return isGlideStreamlineRobust(lms, "side45");
-      return isGlideStreamlineRobust(lms, "back45");
+    function inGlidePose(lms){
+      const p=filmingPreset.value;
+      if(p==="stand") return isStandOverhead(lms);
+      if(p==="side45") return isGlideStreamlineRobust(lms,"side45");
+      return isGlideStreamlineRobust(lms,"back45");
     }
 
-    function updateTimer(lms, now) {
-      if(!toggleTimer.checked) { glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0; return; }
+    function updateTimer(lms, now){
+      if(!toggleTimer.checked){ glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0; return; }
+      const p=filmingPreset.value;
+      const startHold=(p==="stand")?220:500;
+      const stopHold=(p==="stand")?180:450;
 
-      const p = filmingPreset.value;
-      const startHold = (p==="stand") ? 220 : 500;
-      const stopHold  = (p==="stand") ? 180 : 450;
-
-      const ok = inGlidePose(lms);
+      const ok=inGlidePose(lms);
 
       if(!glideActive){
         currentElapsed=0;
@@ -403,7 +398,7 @@
       } else poseLostSince=null;
     }
 
-    function drawOverlay(debugText="") {
+    function drawOverlay(debugText=""){
       if(!toggleTimer.checked) return;
 
       ctx.save();
@@ -412,7 +407,7 @@
       ctx.lineWidth=2;
 
       const x=14,y=14,w=Math.min(640, CSS_W-28),h=200,r=14;
-      const rr = Math.min(r, w/2, h/2);
+      const rr=Math.min(r,w/2,h/2);
       ctx.beginPath();
       ctx.moveTo(x+rr,y);
       ctx.arcTo(x+w,y,x+w,y+h,rr);
@@ -429,32 +424,31 @@
       ctx.fillText(glideActive ? fmt(currentElapsed) : "0.000 s", x+14, y+48);
 
       ctx.font="600 14px system-ui";
-      const presetLabel = filmingPreset.value==="stand" ? "Stand-Test"
-        : (filmingPreset.value==="side45" ? "45° seitlich" : "45° von hinten");
+      const presetLabel=filmingPreset.value==="stand"?"Stand-Test":(filmingPreset.value==="side45"?"45° seitlich":"45° von hinten");
       ctx.fillText(`Brust – Gleitphase | Aufnahme: ${presetLabel}`, x+14, y+74);
 
       ctx.font="16px system-ui";
       for(let i=0;i<4;i++){
-        const t = glideTimes[i]!=null ? fmt(glideTimes[i]) : "—";
+        const t=glideTimes[i]!=null?fmt(glideTimes[i]):"—";
         ctx.fillText(`Slot ${i+1}: ${t}`, x+14, y+102+i*18);
       }
 
-      if (debugText) {
+      if(debugText){
         ctx.font="12px system-ui";
         ctx.fillText(debugText, x+14, y+h-12);
       }
       ctx.restore();
     }
 
-    // ---------- MediaPipe Tasks Vision ----------
-    let landmarker = null;
-    let drawingUtils = null;
-    let running = false;
+    // ---------- MediaPipe Tasks ----------
+    let landmarker=null;
+    let drawingUtils=null;
+    let running=false;
 
     const POSE_TASK_URL =
       "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task";
 
-    async function createLandmarker() {
+    async function createLandmarker(){
       setStatus("Lade Tasks-WASM …");
       const fileset = await FilesetResolver.forVisionTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
@@ -474,8 +468,8 @@
       drawingUtils = new DrawingUtils(ctx);
     }
 
-    function updateLandmarkerThresholds() {
-      if (!landmarker) return;
+    function updateLandmarkerThresholds(){
+      if(!landmarker) return;
       landmarker.setOptions({
         minPoseDetectionConfidence: Number(detConf.value),
         minPosePresenceConfidence: Number(presConf.value),
@@ -488,92 +482,42 @@
     trackConf.addEventListener("change", updateLandmarkerThresholds);
 
     // ---------- Camera ----------
-    let isBackCamera = true;
-    let stream = null;
+    let isBackCamera=true;
+    let stream=null;
 
-    async function startCamera() {
+    async function startCamera(){
       stopCamera();
-      const constraints = {
-        audio: false,
-        video: {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio:false,
+        video:{
           facingMode: isBackCamera ? "environment" : "user",
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+          width:{ideal:1280},
+          height:{ideal:720}
         }
-      };
-
-      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      });
       video.srcObject = stream;
 
-      await new Promise((resolve) => {
-        const done = () => resolve();
-        if (video.readyState >= 1) return done();
+      await new Promise((resolve)=>{
+        const done=()=>resolve();
+        if(video.readyState>=1) return done();
         video.onloadedmetadata = done;
       });
       await video.play();
 
-      await new Promise((resolve) => {
-        const check = () => (video.videoWidth > 0 && video.videoHeight > 0) ? resolve() : requestAnimationFrame(check);
+      await new Promise((resolve)=>{
+        const check=()=> (video.videoWidth>0 && video.videoHeight>0) ? resolve() : requestAnimationFrame(check);
         check();
       });
     }
 
-    function stopCamera() {
-      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-      video.srcObject = null;
+    function stopCamera(){
+      if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+      video.srcObject=null;
     }
 
-    // ---------- Oriented input drawing (for detection only) ----------
-    function drawVideoIntoOrientedFrame() {
-      const vw = video.videoWidth;
-      const vh = video.videoHeight;
-      if (!vw || !vh) return false;
-
-      const outW = orientedFrame.width;
-      const outH = orientedFrame.height;
-
-      // clear
-      ofx.setTransform(1,0,0,1,0,0);
-      ofx.clearRect(0,0,outW,outH);
-
-      // Determine if we need to rotate video to match UI orientation
-      const uiPortrait = isPortraitUI();
-      const videoIsLandscape = vw >= vh;
-      const needRotate90 = uiPortrait && videoIsLandscape;
-
-      if (needRotate90) {
-        // rotate 90° clockwise into orientedFrame
-        ofx.translate(outW, 0);
-        ofx.rotate(Math.PI / 2);
-
-        // after rotation, available area: height becomes width in rotated coords
-        const targetW = outH;
-        const targetH = outW;
-
-        const scale = Math.min(targetW / vw, targetH / vh);
-        const dw = vw * scale;
-        const dh = vh * scale;
-        const dx = (targetW - dw) / 2;
-        const dy = (targetH - dh) / 2;
-
-        ofx.drawImage(video, 0, 0, vw, vh, dx, dy, dw, dh);
-      } else {
-        // no rotation; contain fit
-        const scale = Math.min(outW / vw, outH / vh);
-        const dw = vw * scale;
-        const dh = vh * scale;
-        const dx = (outW - dw) / 2;
-        const dy = (outH - dh) / 2;
-
-        ofx.drawImage(video, 0, 0, vw, vh, dx, dy, dw, dh);
-      }
-      return true;
-    }
-
-    // ---------- Drawing skeleton ----------
-    function drawSkeleton(landmarks) {
-      if (!toggleSkeleton.checked || !landmarks || !drawingUtils) return;
-
+    // ---------- Skeleton drawing (crisp) ----------
+    function drawSkeleton(landmarksNorm){
+      if(!toggleSkeleton.checked || !landmarksNorm || !drawingUtils) return;
       const connections = getPoseConnectionsSafe();
 
       ctx.save();
@@ -583,52 +527,48 @@
       const lw = Math.round(Number(skelLine.value));
       const r  = Math.round(Number(skelDot.value));
 
-      if (Array.isArray(connections) && connections.length) {
-        drawingUtils.drawConnectors(landmarks, connections, { lineWidth: lw, color: "#000000" });
+      if(Array.isArray(connections) && connections.length){
+        drawingUtils.drawConnectors(landmarksNorm, connections, { lineWidth: lw, color: "#000000" });
       }
-      drawingUtils.drawLandmarks(landmarks, { radius: r, color: "#000000" });
+      drawingUtils.drawLandmarks(landmarksNorm, { radius: r, color: "#000000" });
 
       ctx.restore();
     }
 
     // ---------- Render loop ----------
-    function loop() {
-      if (!running || !landmarker) return;
+    function loop(){
+      if(!running || !landmarker) return;
 
-      try {
+      try{
         // clean background (anonym)
-        ctx.imageSmoothingEnabled = false;
         ctx.fillStyle = BG;
         ctx.fillRect(0, 0, CSS_W, CSS_H);
 
-        // draw oriented frame for detection
-        const okFrame = drawVideoIntoOrientedFrame();
-        if (!okFrame) {
-          drawOverlay("DEBUG: video not ready");
-          requestAnimationFrame(loop);
-          return;
-        }
-
         const ts = performance.now();
-        // IMPORTANT: detect on orientedFrame canvas (aligns mask+landmarks to our output orientation)
-        const result = landmarker.detectForVideo(orientedFrame, ts);
+        const result = landmarker.detectForVideo(video, ts);
 
         const hasMask = !!(result?.segmentationMasks?.length);
         const hasLandmarks = !!(result?.landmarks?.length && result.landmarks[0]?.length);
 
-        if (hasMask) drawMaskSilhouette(result.segmentationMasks[0]);
+        // silhouette
+        if(hasMask){
+          drawMaskSilhouette(result.segmentationMasks[0]);
+        }
 
+        // landmarks (rotate if needed)
         let lms = null;
-        if (hasLandmarks) {
-          lms = ema(result.landmarks[0]);
+        if(hasLandmarks){
+          const raw = result.landmarks[0];
+          const rotated = needRotateOutputs() ? rotateLandmarks90CW(raw) : raw;
+          lms = ema(rotated);
           drawSkeleton(lms);
           updateTimer(lms, ts);
         }
 
-        drawOverlay(`DEBUG: landmarks=${hasLandmarks ? result.landmarks[0].length : 0} | mask=${hasMask ? 1 : 0} | ui=${isPortraitUI() ? "P" : "L"}`);
+        drawOverlay(`DEBUG: lm=${hasLandmarks?result.landmarks[0].length:0} mask=${hasMask?1:0} rot=${needRotateOutputs()?1:0} ui=${isPortraitUI()?"P":"L"}`);
 
         requestAnimationFrame(loop);
-      } catch (e) {
+      } catch(e){
         console.error(e);
         setStatus("Loop-Fehler: " + (e?.message || String(e)));
         ctx.fillStyle = BG;
@@ -639,137 +579,120 @@
       }
     }
 
-    // ---------- Recording (Canvas -> Video) ----------
-    let recorder = null, recordedChunks = [], lastBlob = null;
+    // ---------- Recording ----------
+    let recorder=null, recordedChunks=[], lastBlob=null;
 
-    function pickMimeType() {
-      const candidates = [
+    function pickMimeType(){
+      const candidates=[
         'video/mp4;codecs="avc1.42E01E"',
         'video/mp4;codecs="avc1.4D401E"',
         "video/mp4",
         'video/webm;codecs="vp8"',
         "video/webm"
       ];
-      if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
-      for (const t of candidates) { try { if (MediaRecorder.isTypeSupported(t)) return t; } catch(_){} }
+      if(!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
+      for(const t of candidates){ try{ if(MediaRecorder.isTypeSupported(t)) return t; } catch(_){} }
       return "";
     }
 
-    function startRecordingCanvas() {
-      recordedChunks = [];
-      lastBlob = null;
-      btnShare.disabled = true;
+    function startRecordingCanvas(){
+      recordedChunks=[]; lastBlob=null; btnShare.disabled=true;
+      const s = canvas.captureStream(15);
+      const mt = pickMimeType();
+      try{ recorder=new MediaRecorder(s, mt?{mimeType:mt}:undefined); }
+      catch(_){ recorder=new MediaRecorder(s); }
 
-      const stream = canvas.captureStream(15);
-      const mimeType = pickMimeType();
-      try { recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined); }
-      catch(_) { recorder = new MediaRecorder(stream); }
-
-      setStatus("Aufnahme läuft… (" + (recorder.mimeType || mimeType || "default") + ")");
-
-      recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
-      recorder.onstop = () => {
-        const type = recorder.mimeType || mimeType || "video/webm";
-        lastBlob = new Blob(recordedChunks, { type });
+      setStatus("Aufnahme läuft… (" + (recorder.mimeType || mt || "default") + ")");
+      recorder.ondataavailable=(e)=>{ if(e.data && e.data.size>0) recordedChunks.push(e.data); };
+      recorder.onstop=()=>{
+        const type = recorder.mimeType || mt || "video/webm";
+        lastBlob = new Blob(recordedChunks,{type});
         btnShare.disabled = !lastBlob;
-        const pretty = lastBlob.type.includes("mp4") ? "MPEG-4 (MP4)" : (lastBlob.type.includes("webm") ? "WebM" : lastBlob.type);
-        setStatus("Aufnahme fertig (" + pretty + ").");
+        setStatus("Aufnahme fertig (" + (lastBlob.type.includes("mp4") ? "MP4" : "WebM") + ").");
       };
-
       recorder.start(200);
     }
 
-    function stopRecordingCanvas() {
-      if (recorder && recorder.state !== "inactive") recorder.stop();
-    }
+    function stopRecordingCanvas(){ if(recorder && recorder.state!=="inactive") recorder.stop(); }
 
-    async function shareOrDownload() {
-      if (!lastBlob) return;
+    async function shareOrDownload(){
+      if(!lastBlob) return;
+      const type=lastBlob.type||"";
+      const ext=type.includes("mp4")?"mp4":(type.includes("webm")?"webm":"bin");
+      const fileName=`gleitphase_brust_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`;
+      const file=new File([lastBlob],fileName,{type:lastBlob.type});
 
-      const type = lastBlob.type || "";
-      const ext = type.includes("mp4") ? "mp4" : (type.includes("webm") ? "webm" : "bin");
-      const fileName = `gleitphase_brust_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`;
-      const file = new File([lastBlob], fileName, { type: lastBlob.type });
-
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: "Brust – Gleitphase (anonym)" });
-        setStatus("Geteilt/gespeichert (" + ext.toUpperCase() + ").");
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        await navigator.share({files:[file], title:"Brust – Gleitphase (anonym)"});
+        setStatus("Geteilt/gespeichert ("+ext.toUpperCase()+").");
         return;
       }
-
-      const url = URL.createObjectURL(lastBlob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 2000);
-      setStatus("Download gestartet (" + ext.toUpperCase() + ").");
+      const url=URL.createObjectURL(lastBlob);
+      const a=document.createElement("a");
+      a.href=url; a.download=fileName;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),2000);
+      setStatus("Download gestartet ("+ext.toUpperCase()+").");
     }
 
     // ---------- Buttons ----------
-    btnInit.addEventListener("click", async () => {
-      try {
-        btnInit.disabled = true;
+    btnInit.addEventListener("click", async ()=>{
+      try{
+        btnInit.disabled=true;
         applyLayoutFromOrientation();
         setStatus("Initialisiere …");
-
         await createLandmarker();
         await startCamera();
 
-        running = true;
-        btnSwitch.disabled = false;
-        btnRec.disabled = false;
-        btnReset.disabled = false;
+        running=true;
+        btnSwitch.disabled=false;
+        btnRec.disabled=false;
+        btnReset.disabled=false;
 
         setStatus("bereit.");
         requestAnimationFrame(loop);
-      } catch (e) {
+      } catch(e){
         console.error(e);
         setStatus("Fehler: " + (e?.message || String(e)));
-        btnInit.disabled = false;
+        btnInit.disabled=false;
       }
     });
 
-    btnSwitch.addEventListener("click", async () => {
-      try {
-        btnSwitch.disabled = true;
-        isBackCamera = !isBackCamera;
+    btnSwitch.addEventListener("click", async ()=>{
+      try{
+        btnSwitch.disabled=true;
+        isBackCamera=!isBackCamera;
         await startCamera();
-        btnSwitch.disabled = false;
+        btnSwitch.disabled=false;
         setStatus("Kamera gewechselt.");
-      } catch (e) {
+      } catch(e){
         console.error(e);
         setStatus("Kamerawechsel-Fehler: " + (e?.message || String(e)));
-        btnSwitch.disabled = false;
+        btnSwitch.disabled=false;
       }
     });
 
-    btnRec.addEventListener("click", () => {
-      btnRec.disabled = true;
-      btnStop.disabled = false;
+    btnRec.addEventListener("click", ()=>{
+      btnRec.disabled=true;
+      btnStop.disabled=false;
       startRecordingCanvas();
     });
 
-    btnStop.addEventListener("click", () => {
-      btnStop.disabled = true;
+    btnStop.addEventListener("click", ()=>{
+      btnStop.disabled=true;
       stopRecordingCanvas();
-      btnRec.disabled = false;
+      btnRec.disabled=false;
     });
 
-    btnShare.addEventListener("click", () => shareOrDownload());
+    btnShare.addEventListener("click", ()=>shareOrDownload());
 
-    btnReset.addEventListener("click", () => {
-      glideTimes.length = 0;
-      glideActive = false;
-      poseStableSince = null;
-      poseLostSince = null;
-      currentElapsed = 0;
+    btnReset.addEventListener("click", ()=>{
+      glideTimes.length=0;
+      glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0;
       setStatus("Slots zurückgesetzt.");
     });
 
-    // initial layout
+    // Initial layout
     applyLayoutFromOrientation();
   </script>
 </body>
