@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Swim Pose Recorder (Silhouette + Gleit-Timer)</title>
+  <title>Swim Pose Recorder (MP4 via ffmpeg.wasm)</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
@@ -14,34 +14,39 @@
     label { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #ddd; border-radius: 10px; }
     .hint { color: #555; font-size: 14px; line-height: 1.4; max-width: 980px; }
     .small { font-size: 13px; color: #666; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
   </style>
 
-  <!-- MediaPipe (klassisch, ohne ES-Module) -->
+  <!-- MediaPipe (klassisch) -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+
+  <!-- ffmpeg.wasm (UMD) -->
+  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/ffmpeg.min.js"></script>
 </head>
 
 <body>
-  <h1>Swim Pose Recorder (Skelett + Silhouette + Timer)</h1>
+  <h1>Swim Pose Recorder (echtes MP4 über Konvertierung)</h1>
   <p class="hint">
-    Links: Live-Kamera (nur zur Erkennung). Rechts: Canvas (wird gespeichert) mit hellblauem Hintergrund, anonymem Körper-Umriss,
-    Skelett und Timer/Slots (werden ins Video gerendert).
+    iPhone/Safari nimmt oft nur WebM auf. Dieses Tool konvertiert danach im Browser zu MP4 (H.264).
+    Halte Clips kurz (5–10 s), sonst kann es auf iPhones langsam werden.
   </p>
 
   <div class="row">
     <button id="btnInit" class="primary">Kamera aktivieren (Rückkamera)</button>
     <button id="btnRec" disabled>Aufnahme starten</button>
     <button id="btnStop" disabled>Stop</button>
-    <button id="btnShare" disabled>Teilen/Speichern</button>
+    <button id="btnConvert" disabled>In MP4 umwandeln</button>
+    <button id="btnShareMp4" disabled>MP4 teilen/speichern</button>
     <button id="btnReset" disabled>Slots zurücksetzen</button>
   </div>
 
   <div class="row">
     <label><input type="checkbox" id="toggleSilhouette" checked /> Silhouette (anonym)</label>
-    <label><input type="checkbox" id="toggleSpine" checked /> Mittelachse („Wirbelsäule“)</label>
+    <label><input type="checkbox" id="toggleSpine" checked /> Mittelachse</label>
     <label><input type="checkbox" id="toggleTimer" checked /> Timer/Slots</label>
-    <span class="small">Aufnahme: 10–20 s Clips, seitlich/leicht von oben ist ok.</span>
+    <span class="small">Perspektive: seitlich/leicht von oben ist ok.</span>
   </div>
 
   <div class="row">
@@ -50,6 +55,7 @@
   </div>
 
   <p class="hint" id="status">Status: bereit</p>
+  <p class="hint mono" id="log"></p>
 
   <script>
     const video = document.getElementById("video");
@@ -59,101 +65,24 @@
     const btnInit = document.getElementById("btnInit");
     const btnRec = document.getElementById("btnRec");
     const btnStop = document.getElementById("btnStop");
-    const btnShare = document.getElementById("btnShare");
+    const btnConvert = document.getElementById("btnConvert");
+    const btnShareMp4 = document.getElementById("btnShareMp4");
     const btnReset = document.getElementById("btnReset");
+
     const statusEl = document.getElementById("status");
+    const logEl = document.getElementById("log");
 
     const toggleSilhouette = document.getElementById("toggleSilhouette");
     const toggleSpine = document.getElementById("toggleSpine");
     const toggleTimer = document.getElementById("toggleTimer");
 
     function setStatus(s) { statusEl.textContent = "Status: " + s; }
+    function setLog(s) { logEl.textContent = s || ""; }
 
-    // -----------------------------
-    // Canvas Styling
-    // -----------------------------
-    const BG = "#bfe7ff";          // hellblau
-    const SIL = "rgba(20, 70, 120, 0.35)"; // Silhouette-Füllung (kontrastreich)
+    // ---------- Canvas Look ----------
+    const BG = "#bfe7ff";
+    const SIL = "rgba(20, 70, 120, 0.35)";
     const SIL_EDGE = "rgba(20, 70, 120, 0.65)";
-
-    // -----------------------------
-    // Recording (Canvas -> Video)
-    // -----------------------------
-    let recorder = null;
-    let recordedChunks = [];
-    let lastBlob = null;
-
-    function pickMimeType() {
-      // iOS ist wählerisch; WebM ist oft die einzige sichere MediaRecorder-Option.
-      const candidates = ["video/webm;codecs=vp8", "video/webm", "video/mp4"];
-      if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
-      for (const t of candidates) if (MediaRecorder.isTypeSupported(t)) return t;
-      return "";
-    }
-
-    function startRecording() {
-      recordedChunks = [];
-      lastBlob = null;
-      btnShare.disabled = true;
-
-      const fps = 15;
-      const stream = canvas.captureStream(fps);
-      const mimeType = pickMimeType();
-      const options = mimeType ? { mimeType } : undefined;
-
-      recorder = new MediaRecorder(stream, options);
-      recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
-      recorder.onstop = () => {
-        const type = (recorder && recorder.mimeType) ? recorder.mimeType : "video/webm";
-        lastBlob = new Blob(recordedChunks, { type });
-        btnShare.disabled = !lastBlob;
-        setStatus("Aufnahme fertig. Hinweis: iOS kann WebM teils nicht direkt in Fotos/Dateien abspielen (Teilen/AirDrop/Shortcut-Konvertierung klappt meist).");
-      };
-
-      recorder.start(200);
-      setStatus("Aufnahme läuft…");
-    }
-
-    function stopRecording() {
-      if (recorder && recorder.state !== "inactive") recorder.stop();
-    }
-
-    async function shareOrDownload() {
-      if (!lastBlob) return;
-
-      const ext = lastBlob.type.includes("mp4") ? "mp4" : "webm";
-      const fileName = `pose_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`;
-      const file = new File([lastBlob], fileName, { type: lastBlob.type });
-
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: "Pose-Aufnahme" });
-        setStatus("Geteilt/gespeichert.");
-        return;
-      }
-
-      const url = URL.createObjectURL(lastBlob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 2000);
-      setStatus("Download gestartet.");
-    }
-
-    // -----------------------------
-    // Pose + Rendering
-    // -----------------------------
-    let pose = null;
-    let cam = null;
-
-    function resizeCanvasToVideo() {
-      canvas.width = video.videoWidth || 1280;
-      canvas.height = video.videoHeight || 720;
-    }
-
-    function midPoint(a, b) { return { x: (a.x+b.x)/2, y: (a.y+b.y)/2 }; }
 
     function drawBackground() {
       ctx.save();
@@ -162,226 +91,45 @@
       ctx.restore();
     }
 
-    // Anonyme Silhouette aus Landmarken (Polygon) – robust, ohne SegmentationMask
-    function drawSilhouetteFromLandmarks(landmarks) {
-      if (!toggleSilhouette.checked) return;
+    // ---------- Timer / Slots ----------
+    const glideTimes = [];
+    let glideActive = false, glideStart = 0, currentElapsed = 0;
+    let poseStableSince = null, poseLostSince = null;
 
-      // Wir bauen ein einfaches „Körperpolygon“:
-      // Kopf/Schulterlinie -> rechter Arm -> rechter Rumpf -> rechtes Bein -> linker Fuß -> linkes Bein -> linker Rumpf -> linker Arm -> zurück
-      // Indizes (MediaPipe Pose):
-      // 0 nose
-      // 11/12 shoulders, 13/14 elbows, 15/16 wrists
-      // 23/24 hips, 25/26 knees, 27/28 ankles
-      const n  = landmarks[0];
-      const ls = landmarks[11], rs = landmarks[12];
-      const le = landmarks[13], re = landmarks[14];
-      const lw = landmarks[15], rw = landmarks[16];
-      const lh = landmarks[23], rh = landmarks[24];
-      const lk = landmarks[25], rk = landmarks[26];
-      const la = landmarks[27], ra = landmarks[28];
+    function formatMs(ms) { return (ms / 1000).toFixed(3) + " s"; }
 
-      // Wenn Beine im Wasser nicht erkannt werden, reicht Oberkörper: wir prüfen minimal
-      if (!ls || !rs || !lh || !rh) return;
-
-      const pts = [];
-
-      // Kopfpunkt (optional)
-      if (n) pts.push(n);
-
-      // Oben: linke Schulter -> rechte Schulter
-      pts.push(ls, rs);
-
-      // rechter Arm: Ellbogen/Wrist wenn vorhanden, sonst Schulter
-      if (re) pts.push(re);
-      if (rw) pts.push(rw);
-
-      // rechte Rumpfseite: Hüfte
-      pts.push(rh);
-
-      // rechtes Bein runter (wenn vorhanden)
-      if (rk) pts.push(rk);
-      if (ra) pts.push(ra);
-
-      // linker Fuß/Bein hoch (wenn vorhanden)
-      if (la) pts.push(la);
-      if (lk) pts.push(lk);
-
-      // linke Hüfte
-      pts.push(lh);
-
-      // linker Arm zurück (wenn vorhanden)
-      if (lw) pts.push(lw);
-      if (le) pts.push(le);
-
-      // in Pixel umrechnen
-      const pix = pts
-        .filter(Boolean)
-        .map(p => ({ x: p.x * canvas.width, y: p.y * canvas.height }));
-
-      if (pix.length < 4) return;
-
-      ctx.save();
-      ctx.fillStyle = SIL;
-      ctx.strokeStyle = SIL_EDGE;
-      ctx.lineWidth = 6;
-      ctx.lineJoin = "round";
-
-      ctx.beginPath();
-      ctx.moveTo(pix[0].x, pix[0].y);
-      for (let i = 1; i < pix.length; i++) ctx.lineTo(pix[i].x, pix[i].y);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.restore();
-    }
-
-    function drawMidSpine(landmarks) {
-      if (!toggleSpine.checked) return;
-      const ls = landmarks[11], rs = landmarks[12], lh = landmarks[23], rh = landmarks[24];
-      if (!ls || !rs || !lh || !rh) return;
-
-      const ms = midPoint(ls, rs);
-      const mh = midPoint(lh, rh);
-
-      const x1 = ms.x * canvas.width, y1 = ms.y * canvas.height;
-      const x2 = mh.x * canvas.width, y2 = mh.y * canvas.height;
-
-      ctx.save();
-      ctx.lineWidth = 14;
-      ctx.lineCap = "round";
-      ctx.shadowBlur = 10;
-      ctx.shadowColor = "rgba(0,0,0,0.65)";
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    // -----------------------------
-    // Gleit-Timer (4 Slots)
-    // -----------------------------
-    const glideTimes = [];       // bis zu 4 Zeiten in ms
-    let glideActive = false;
-    let glideStart = 0;
-    let currentElapsed = 0;
-
-    // Entprellung
-    let poseStableSince = null;
-    let poseLostSince = null;
-
-    function formatMs(ms) {
-      return (ms / 1000).toFixed(3) + " s";
-    }
-
-    // Streamline-Erkennung (robust für „seitlich von oben“ + „im Stehen testen“):
-    // - beide Handgelenke über Schultern
-    // - Ellenbogen über Schultern (ungefähr gestreckt/oben)
-    // - Handgelenke relativ nah beieinander (optional, aber nicht zu strikt)
-    function isStreamline(landmarks) {
-      const ls = landmarks[11], rs = landmarks[12];
-      const le = landmarks[13], re = landmarks[14];
-      const lw = landmarks[15], rw = landmarks[16];
+    function isStreamline(lms) {
+      const ls = lms[11], rs = lms[12], le = lms[13], re = lms[14], lw = lms[15], rw = lms[16];
       if (!ls || !rs || !le || !re || !lw || !rw) return false;
-
       const shoulderY = (ls.y + rs.y) / 2;
-
       const wristsUp = (lw.y < shoulderY - 0.03) && (rw.y < shoulderY - 0.03);
       const elbowsUp = (le.y < shoulderY + 0.02) && (re.y < shoulderY + 0.02);
-
-      const wristDist = Math.abs(lw.x - rw.x); // 0..1
-      const wristsReasonablyClose = wristDist < 0.35; // weniger streng als zuvor
-
-      return wristsUp && elbowsUp && wristsReasonablyClose;
+      const wristsClose = Math.abs(lw.x - rw.x) < 0.35;
+      return wristsUp && elbowsUp && wristsClose;
     }
 
-    function updateTimer(landmarks, now) {
-      if (!toggleTimer.checked) {
-        glideActive = false;
-        poseStableSince = null;
-        poseLostSince = null;
-        currentElapsed = 0;
-        return;
-      }
-
-      const inPose = isStreamline(landmarks);
+    function updateTimer(lms, now) {
+      if (!toggleTimer.checked) { glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0; return; }
+      const inPose = isStreamline(lms);
 
       if (!glideActive) {
         currentElapsed = 0;
-
         if (inPose && glideTimes.length < 4) {
           if (poseStableSince === null) poseStableSince = now;
-          // Pose muss 200ms stabil sein
-          if (now - poseStableSince >= 200) {
-            glideActive = true;
-            glideStart = now;
-            poseLostSince = null;
-          }
-        } else {
-          poseStableSince = null;
-        }
+          if (now - poseStableSince >= 200) { glideActive=true; glideStart=now; poseLostSince=null; }
+        } else poseStableSince = null;
         return;
       }
-
-      // aktiv
       currentElapsed = now - glideStart;
 
       if (!inPose) {
         if (poseLostSince === null) poseLostSince = now;
-        // Pose muss 160ms weg sein, dann stoppen
         if (now - poseLostSince >= 160) {
-          glideActive = false;
-          poseStableSince = null;
-          poseLostSince = null;
-          const dur = now - glideStart;
-          glideTimes.push(dur);
-          if (glideTimes.length > 4) glideTimes.length = 4;
-          currentElapsed = 0;
+          glideActive=false; poseStableSince=null; poseLostSince=null;
+          const dur = now - glideStart; glideTimes.push(dur); if (glideTimes.length>4) glideTimes.length=4;
+          currentElapsed=0;
         }
-      } else {
-        poseLostSince = null;
-      }
-    }
-
-    function drawTimerOverlay(landmarks) {
-      if (!toggleTimer.checked) return;
-
-      const inPose = landmarks ? isStreamline(landmarks) : false;
-
-      // Overlay Box (sehr sichtbar)
-      ctx.save();
-      ctx.fillStyle = "rgba(0,0,0,0.45)";
-      ctx.strokeStyle = "rgba(255,255,255,0.65)";
-      ctx.lineWidth = 2;
-      const x = 14, y = 14, w = 360, h = 170;
-      roundRect(ctx, x, y, w, h, 14);
-      ctx.fill();
-      ctx.stroke();
-
-      ctx.fillStyle = "white";
-      ctx.shadowBlur = 8;
-      ctx.shadowColor = "rgba(0,0,0,0.7)";
-
-      // Timer
-      ctx.font = "700 40px system-ui";
-      const main = glideActive ? formatMs(currentElapsed) : "0.000 s";
-      ctx.fillText(main, x + 14, y + 48);
-
-      // Debug/Status (hilft beim Einrichten)
-      ctx.font = "600 18px system-ui";
-      const st = glideActive ? "Gleitphase: läuft"
-               : (glideTimes.length >= 4 ? "Slots voll (4/4)" : (inPose ? "Streamline erkannt (Start in 0.2s)" : "Warte: Hände über Kopf"));
-      ctx.fillText(st, x + 14, y + 76);
-
-      // Slots
-      ctx.font = "18px system-ui";
-      for (let i = 0; i < 4; i++) {
-        const t = glideTimes[i] != null ? formatMs(glideTimes[i]) : "—";
-        ctx.fillText(`Slot ${i+1}: ${t}`, x + 14, y + 104 + i * 18);
-      }
-
-      ctx.restore();
+      } else poseLostSince = null;
     }
 
     function roundRect(ctx, x, y, w, h, r) {
@@ -395,107 +143,262 @@
       ctx.closePath();
     }
 
-    function drawOutput(results) {
-      drawBackground();
+    function drawTimerOverlay(lms) {
+      if (!toggleTimer.checked) return;
+      const inPose = lms ? isStreamline(lms) : false;
 
-      if (!results || !results.poseLandmarks) {
-        // Timer-Overlay trotzdem zeigen (damit du es sicher siehst)
+      ctx.save();
+      ctx.fillStyle = "rgba(0,0,0,0.45)";
+      ctx.strokeStyle = "rgba(255,255,255,0.65)";
+      ctx.lineWidth = 2;
+      const x=14,y=14,w=380,h=170;
+      roundRect(ctx,x,y,w,h,14); ctx.fill(); ctx.stroke();
+
+      ctx.fillStyle = "white";
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = "rgba(0,0,0,0.7)";
+
+      ctx.font = "700 40px system-ui";
+      ctx.fillText(glideActive ? formatMs(currentElapsed) : "0.000 s", x+14, y+48);
+
+      ctx.font = "600 18px system-ui";
+      const st = glideActive ? "Gleitphase: läuft"
+        : (glideTimes.length >= 4 ? "Slots voll (4/4)" : (inPose ? "Streamline erkannt (Start in 0.2s)" : "Warte: Hände über Kopf"));
+      ctx.fillText(st, x+14, y+76);
+
+      ctx.font = "18px system-ui";
+      for (let i=0;i<4;i++){
+        const t = glideTimes[i]!=null ? formatMs(glideTimes[i]) : "—";
+        ctx.fillText(`Slot ${i+1}: ${t}`, x+14, y+104+i*18);
+      }
+      ctx.restore();
+    }
+
+    function midPoint(a,b){ return {x:(a.x+b.x)/2,y:(a.y+b.y)/2}; }
+
+    function drawMidSpine(lms){
+      if (!toggleSpine.checked) return;
+      const ls=lms[11], rs=lms[12], lh=lms[23], rh=lms[24];
+      if(!ls||!rs||!lh||!rh) return;
+      const ms=midPoint(ls,rs), mh=midPoint(lh,rh);
+      const x1=ms.x*canvas.width,y1=ms.y*canvas.height,x2=mh.x*canvas.width,y2=mh.y*canvas.height;
+      ctx.save();
+      ctx.lineWidth=14; ctx.lineCap="round";
+      ctx.shadowBlur=10; ctx.shadowColor="rgba(0,0,0,0.65)";
+      ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawSilhouetteFromLandmarks(lms){
+      if(!toggleSilhouette.checked) return;
+      const n=lms[0], ls=lms[11], rs=lms[12], le=lms[13], re=lms[14], lw=lms[15], rw=lms[16],
+            lh=lms[23], rh=lms[24], lk=lms[25], rk=lms[26], la=lms[27], ra=lms[28];
+      if(!ls||!rs||!lh||!rh) return;
+      const pts=[];
+      if(n) pts.push(n);
+      pts.push(ls,rs);
+      if(re) pts.push(re); if(rw) pts.push(rw);
+      pts.push(rh);
+      if(rk) pts.push(rk); if(ra) pts.push(ra);
+      if(la) pts.push(la); if(lk) pts.push(lk);
+      pts.push(lh);
+      if(lw) pts.push(lw); if(le) pts.push(le);
+
+      const pix=pts.filter(Boolean).map(p=>({x:p.x*canvas.width,y:p.y*canvas.height}));
+      if(pix.length<4) return;
+      ctx.save();
+      ctx.fillStyle=SIL; ctx.strokeStyle=SIL_EDGE; ctx.lineWidth=6; ctx.lineJoin="round";
+      ctx.beginPath(); ctx.moveTo(pix[0].x,pix[0].y);
+      for(let i=1;i<pix.length;i++) ctx.lineTo(pix[i].x,pix[i].y);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
+
+    // ---------- MediaPipe ----------
+    let pose=null, cam=null;
+    function resizeCanvasToVideo(){
+      canvas.width = video.videoWidth || 1280;
+      canvas.height = video.videoHeight || 720;
+    }
+
+    function drawOutput(results){
+      drawBackground();
+      if(!results || !results.poseLandmarks){
         drawTimerOverlay(null);
         return;
       }
+      const lms=results.poseLandmarks;
 
-      const lms = results.poseLandmarks;
-
-      // Silhouette (aus Landmarken)
       drawSilhouetteFromLandmarks(lms);
 
-      // Skelett (dick + gut sichtbar)
-      const drawConnectorsFn = window.drawConnectors;
-      const drawLandmarksFn = window.drawLandmarks;
-      const connections = window.POSE_CONNECTIONS;
-      if (drawConnectorsFn && drawLandmarksFn && connections) {
+      const drawConnectorsFn=window.drawConnectors;
+      const drawLandmarksFn=window.drawLandmarks;
+      const connections=window.POSE_CONNECTIONS;
+
+      if(drawConnectorsFn && drawLandmarksFn && connections){
         ctx.save();
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = "rgba(0,0,0,0.65)";
-        drawConnectorsFn(ctx, lms, connections, { lineWidth: 14 });
-        drawLandmarksFn(ctx, lms, { radius: 8 });
+        ctx.shadowBlur=10; ctx.shadowColor="rgba(0,0,0,0.65)";
+        drawConnectorsFn(ctx,lms,connections,{lineWidth:14});
+        drawLandmarksFn(ctx,lms,{radius:8});
         ctx.restore();
       }
 
-      // Mittelachse
       drawMidSpine(lms);
 
-      // Timer-Update + Overlay (wird ins Video gerendert)
-      const now = performance.now();
-      updateTimer(lms, now);
+      const now=performance.now();
+      updateTimer(lms,now);
       drawTimerOverlay(lms);
     }
 
-    async function initAll() {
-      btnInit.disabled = true;
+    async function initAll(){
+      btnInit.disabled=true;
       setStatus("initialisiere…");
 
-      pose = new Pose({
-        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-      });
-
+      pose = new Pose({ locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}` });
       pose.setOptions({
         modelComplexity: 1,
         smoothLandmarks: true,
-        // segmentation deaktiviert, da wir Silhouette stabil aus Landmarken zeichnen
         enableSegmentation: false,
         selfieMode: false,
         minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5
       });
-
       pose.onResults(drawOutput);
 
-      cam = new Camera(video, {
-        onFrame: async () => { await pose.send({ image: video }); },
-        width: 1280,
-        height: 720,
+      cam = new Camera(video,{
+        onFrame: async ()=>{ await pose.send({image:video}); },
+        width: 1280, height: 720,
         facingMode: "environment"
       });
-
       await cam.start();
       resizeCanvasToVideo();
 
-      btnRec.disabled = false;
-      btnReset.disabled = false;
-      setStatus("bereit (Rückkamera + Canvas-Overlay aktiv).");
+      btnRec.disabled=false;
+      btnReset.disabled=false;
+      setStatus("bereit.");
     }
 
-    // UI wiring
-    btnInit.addEventListener("click", async () => {
-      try { await initAll(); }
-      catch (err) {
-        console.error(err);
-        setStatus("Fehler: " + (err && err.message ? err.message : String(err)));
-        btnInit.disabled = false;
+    // ---------- Recording (WebM) ----------
+    let recorder=null, recordedChunks=[], webmBlob=null, mp4Blob=null;
+
+    function pickWebm(){
+      if(!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
+      const c=['video/webm;codecs=vp8','video/webm'];
+      for(const t of c) if(MediaRecorder.isTypeSupported(t)) return t;
+      return "";
+    }
+
+    function startRecording(){
+      recordedChunks=[]; webmBlob=null; mp4Blob=null;
+      btnConvert.disabled=true;
+      btnShareMp4.disabled=true;
+
+      const stream = canvas.captureStream(15);
+      const mt = pickWebm();
+      recorder = new MediaRecorder(stream, mt?{mimeType:mt}:undefined);
+      recorder.ondataavailable=(e)=>{ if(e.data && e.data.size>0) recordedChunks.push(e.data); };
+      recorder.onstop=()=>{
+        webmBlob = new Blob(recordedChunks,{type:recorder.mimeType || "video/webm"});
+        btnConvert.disabled=false;
+        setStatus("Aufnahme fertig (WebM). Jetzt: In MP4 umwandeln.");
+      };
+      recorder.start(200);
+      setStatus("Aufnahme läuft…");
+    }
+
+    function stopRecording(){
+      if(recorder && recorder.state!=="inactive") recorder.stop();
+    }
+
+    // ---------- Convert WebM -> MP4 with ffmpeg.wasm ----------
+    let ffmpegLoaded=false;
+    const { createFFmpeg, fetchFile } = FFmpeg; // from ffmpeg.min.js
+    const ffmpeg = createFFmpeg({
+      log: true,
+      // Core wird automatisch nachgeladen; wenn du es lieber selbst hosten willst: corePath setzen.
+    });
+
+    async function ensureFfmpeg(){
+      if(ffmpegLoaded) return;
+      setStatus("Lade MP4-Konverter (ffmpeg)…");
+      setLog("Erst-Download kann groß sein.");
+      ffmpeg.setLogger(({ message }) => {
+        // sehr kurze Ausgabe, damit iPhone nicht überläuft
+        if (message && (message.includes("frame=") || message.includes("time="))) {
+          setLog(message.slice(0, 140));
+        }
+      });
+      await ffmpeg.load();
+      ffmpegLoaded=true;
+      setLog("");
+    }
+
+    async function convertToMp4(){
+      if(!webmBlob) return;
+      btnConvert.disabled=true;
+
+      await ensureFfmpeg();
+      setStatus("Konvertiere zu MP4… (bitte warten, 5–10s Clips empfohlen)");
+
+      // Dateien ins virtuelle FS schreiben
+      ffmpeg.FS('writeFile','in.webm', await fetchFile(webmBlob));
+
+      // MP4 H.264, yuv420p, faststart, 15 fps, gerade Pixelmaße (H.264 braucht oft gerade Werte)
+      // scale:trunc(iw/2)*2:trunc(ih/2)*2 erzwingt gerade Breite/Höhe
+      await ffmpeg.run(
+        '-i','in.webm',
+        '-vf','scale=trunc(iw/2)*2:trunc(ih/2)*2',
+        '-r','15',
+        '-c:v','libx264',
+        '-pix_fmt','yuv420p',
+        '-movflags','+faststart',
+        'out.mp4'
+      );
+
+      const data = ffmpeg.FS('readFile','out.mp4');
+      mp4Blob = new Blob([data.buffer], { type: 'video/mp4' });
+
+      // Cleanup
+      try { ffmpeg.FS('unlink','in.webm'); } catch(e){}
+      try { ffmpeg.FS('unlink','out.mp4'); } catch(e){}
+
+      btnShareMp4.disabled=false;
+      setStatus("MP4 fertig. Jetzt MP4 teilen/speichern.");
+    }
+
+    async function shareMp4(){
+      if(!mp4Blob) return;
+      const fileName = `pose_${new Date().toISOString().replace(/[:.]/g,"-")}.mp4`;
+      const file = new File([mp4Blob], fileName, { type: 'video/mp4' });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: "Pose MP4" });
+        setStatus("MP4 geteilt/gespeichert.");
+        return;
       }
-    });
 
-    btnRec.addEventListener("click", () => {
-      btnRec.disabled = true;
-      btnStop.disabled = false;
-      startRecording();
-    });
+      const url = URL.createObjectURL(mp4Blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),2000);
+      setStatus("MP4 Download gestartet.");
+    }
 
-    btnStop.addEventListener("click", () => {
-      btnStop.disabled = true;
-      stopRecording();
-      btnRec.disabled = false;
-    });
+    // ---------- UI ----------
+    btnInit.addEventListener("click", async()=>{ try{ await initAll(); } catch(e){ console.error(e); setStatus("Fehler: "+(e.message||String(e))); btnInit.disabled=false; } });
 
-    btnShare.addEventListener("click", () => shareOrDownload());
+    btnRec.addEventListener("click", ()=>{ btnRec.disabled=true; btnStop.disabled=false; startRecording(); });
+    btnStop.addEventListener("click", ()=>{ btnStop.disabled=true; stopRecording(); btnRec.disabled=false; });
 
-    btnReset.addEventListener("click", () => {
-      glideTimes.length = 0;
-      glideActive = false;
-      poseStableSince = null;
-      poseLostSince = null;
-      currentElapsed = 0;
+    btnConvert.addEventListener("click", ()=> convertToMp4().catch(e=>{ console.error(e); setStatus("Konvertierungsfehler: "+(e.message||String(e))); btnConvert.disabled=false; }));
+    btnShareMp4.addEventListener("click", ()=> shareMp4().catch(e=>{ console.error(e); setStatus("Teilen-Fehler: "+(e.message||String(e))); }));
+
+    btnReset.addEventListener("click", ()=>{
+      glideTimes.length=0; glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0;
       setStatus("Slots zurückgesetzt.");
     });
   </script>
