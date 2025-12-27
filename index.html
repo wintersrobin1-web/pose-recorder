@@ -65,9 +65,9 @@
 
     <div class="rangeWrap">
       <span>Silhouette-Schwelle (Mask)</span>
-      <!-- 0..255 ist robuster, default niedrig, damit sofort sichtbar -->
-      <input id="silThresh" type="range" min="0" max="255" step="1" value="10">
-      <span id="silThreshVal" class="small">10</span>
+      <!-- niedrig default, weil manche Geräte Maskenwerte 0..3 liefern -->
+      <input id="silThresh" type="range" min="0" max="255" step="1" value="2">
+      <span id="silThreshVal" class="small">2</span>
     </div>
 
     <div class="rangeWrap">
@@ -109,7 +109,7 @@
     </div>
 
     <p class="hint">
-      Silhouette wie im Google-Demo: Gelb, ca. 40% Deckkraft. Falls zu schwach: Schwelle auf 0–8 senken oder Deckkraft erhöhen.
+      Silhouette: Gelb, standardmäßig an, ca. 40% Deckkraft. Wenn du sie „kräftiger“ willst: Deckkraft hoch oder Schwelle runter.
     </p>
   </details>
 
@@ -190,7 +190,6 @@
 
     let CSS_W = 360, CSS_H = 640;
 
-    // internal maskCanvas (HiDPI)
     const maskCanvas = document.createElement("canvas");
     const maskCtx = maskCanvas.getContext("2d", { willReadFrequently: true });
 
@@ -204,11 +203,9 @@
       canvas.width = Math.round(cssW * dpr);
       canvas.height = Math.round(cssH * dpr);
 
-      // draw in CSS pixels
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false;
 
-      // maskCanvas internal size = output internal size
       maskCanvas.width = canvas.width;
       maskCanvas.height = canvas.height;
     }
@@ -225,7 +222,7 @@
     // ---------- Background ----------
     const BG = "#bfe7ff";
 
-    // ---------- Pose connections (33 landmarks) ----------
+    // ---------- Pose connections ----------
     const POSE_CONNECTIONS = [
       [0,1],[1,2],[2,3],[3,7],
       [0,4],[4,5],[5,6],[6,8],
@@ -239,7 +236,7 @@
       [27,28]
     ];
 
-    // ---------- Video-to-canvas "contain" mapping ----------
+    // ---------- contain mapping into CSS pixel coords ----------
     function mapLandmarksContain(rawLandmarks, vw, vh, cw, ch) {
       const scale = Math.min(cw / vw, ch / vh);
       const dispW = vw * scale;
@@ -256,7 +253,14 @@
       });
     }
 
-    // Same contain mapping but for drawing the mask into maskCanvas (internal pixels)
+    // ---------- Mask drawing helpers ----------
+    function segMaskToCanvas(segMask) {
+      if (!segMask) return null;
+      if (typeof segMask.getAsCanvas === "function") return segMask.getAsCanvas();
+      if (segMask.canvas) return segMask.canvas;
+      return null;
+    }
+
     function drawMaskContainIntoMaskCanvas(sc, vw, vh) {
       const dpr = Math.max(1, window.devicePixelRatio || 1);
       const cw = CSS_W, ch = CSS_H;
@@ -276,15 +280,9 @@
       );
     }
 
-    // ---------- Segmentation mask helpers ----------
-    function segMaskToCanvas(segMask) {
-      if (!segMask) return null;
-      if (typeof segMask.getAsCanvas === "function") return segMask.getAsCanvas();
-      if (segMask.canvas) return segMask.canvas;
-      return null;
-    }
+    // Debug: maskMax für Overlay
+    let lastMaskMax = 0;
 
-    // --- Silhouette: gelb, ~40% Deckkraft, robust über Alpha/RGBA ---
     function drawMaskSilhouette(segMask) {
       if (!toggleSilhouette.checked || !segMask) return;
 
@@ -295,30 +293,47 @@
       const vh = video.videoHeight || 0;
       if (!vw || !vh) return;
 
-      // Maske in internal maskCanvas zeichnen (same contain mapping wie Skelett)
       drawMaskContainIntoMaskCanvas(sc, vw, vh);
 
       const img = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
       const d = img.data;
 
-      const opacity = Number(silOpacity.value);         // 0..1 (default 0.40)
-      const thresh  = Math.round(Number(silThresh.value)); // 0..255 (default 10)
+      // 1) Max bestimmen (subsample), um 0..3 vs 0..255 zu erkennen
+      let maxM = 0;
+      const step = 16 * 4; // grob sampeln
+      for (let i = 0; i < d.length; i += step) {
+        const a = d[i+3];
+        const m = Math.max(a, d[i], d[i+1], d[i+2]);
+        if (m > maxM) maxM = m;
+      }
+      lastMaskMax = maxM;
 
-      // Ziel-Farbe: gelb
+      // 2) Adaptive Skalierung: wenn max <= 3 → wir behandeln Werte als ~0..1/0..3 und skalieren hoch
+      const scaleUp = (maxM <= 3) ? 255 : 1;
+
+      const opacity = Number(silOpacity.value);             // 0..1
+      const thresh  = Math.round(Number(silThresh.value));  // 0..255
+      const alphaCap = Math.round(opacity * 255);
+
+      // Farbe: gelb
       const R = 255, G = 212, B = 0;
 
+      // 3) Render: Gamma/Boost, damit Umriss klarer wird
+      //    mNorm in 0..1, alpha = alphaCap * (mNorm^0.55) * 1.15 (clamped)
       for (let i = 0; i < d.length; i += 4) {
-        // Viele Backends packen die Maskenintensität primär in Alpha.
         const a = d[i+3];
-        const m = Math.max(a, d[i], d[i+1], d[i+2]); // robust
+        const mRaw = Math.max(a, d[i], d[i+1], d[i+2]);
+        const mScaled = Math.min(255, mRaw * scaleUp);
 
-        if (m > thresh) {
+        if (mScaled > thresh) {
+          const mNorm = mScaled / 255;
+          const boosted = Math.min(1, Math.pow(mNorm, 0.55) * 1.15);
+          const outA = Math.max(1, Math.round(alphaCap * boosted));
+
           d[i]   = R;
           d[i+1] = G;
           d[i+2] = B;
-
-          // Alpha proportional zur Maskenstärke, mit Ziel-Deckkraft
-          d[i+3] = Math.min(255, Math.round((m / 255) * (opacity * 255)));
+          d[i+3] = outA;
         } else {
           d[i+3] = 0;
         }
@@ -326,7 +341,7 @@
 
       maskCtx.putImageData(img, 0, 0);
 
-      // Silhouette auf Output (CSS-Pixel-Koordinaten)
+      // auf Output in CSS-Pixeln
       ctx.drawImage(maskCanvas, 0, 0, CSS_W, CSS_H);
     }
 
@@ -368,23 +383,40 @@
       return wristsUp && elbowsUp && wristsClose;
     }
 
+    // --- ROBUSTER: Arm-Extension über Wrist ODER (Fallback) Ellbogen ---
+    function armReach(shoulder, elbow, wrist){
+      if(!shoulder) return 0;
+      // Wrist bevorzugt, sonst Ellbogen als Ersatz (typisch wenn Arm verdeckt)
+      if(wrist) return dist(shoulder, wrist);
+      if(elbow) return dist(shoulder, elbow) * 1.25;
+      return 0;
+    }
+
     function isGlideStreamlineRobust(lms, preset){
-      const ls=lms[11], rs=lms[12], lw=lms[15], rw=lms[16], lh=lms[23], rh=lms[24];
+      const ls=lms[11], rs=lms[12], le=lms[13], re=lms[14], lw=lms[15], rw=lms[16], lh=lms[23], rh=lms[24];
       if(!ls||!rs||!lh||!rh) return false;
 
       const sh={x:(ls.x+rs.x)/2,y:(ls.y+rs.y)/2};
       const hp={x:(lh.x+rh.x)/2,y:(lh.y+rh.y)/2};
       if(dist(sh,hp)<0.10) return false;
 
-      let leftExt=false, rightExt=false;
-      if(ls&&lw) leftExt=dist(ls,lw)>(preset==="back45"?0.23:0.26);
-      if(rs&&rw) rightExt=dist(rs,rw)>(preset==="back45"?0.23:0.26);
+      const leftReach  = armReach(ls, le, lw);
+      const rightReach = armReach(rs, re, rw);
+
+      // Schwellen etwas toleranter für side45 (weil verdeckt)
+      const base = (preset==="side45") ? 0.21 : (preset==="back45" ? 0.22 : 0.24);
+      const leftExt  = leftReach  > base;
+      const rightExt = rightReach > base;
+
+      // Ein Arm reicht (weil der hintere oft fehlt)
       if(!leftExt && !rightExt) return false;
 
-      if(lw&&rw){
-        const maxD=preset==="back45"?0.60:0.45;
-        if(dist(lw,rw)>maxD) return false;
+      // Handzusammenführung nur prüfen, wenn beide Wrists vorhanden
+      if(lw && rw){
+        const maxD = preset==="back45" ? 0.65 : 0.55;
+        if(dist(lw,rw) > maxD) return false;
       }
+
       return true;
     }
 
@@ -609,7 +641,10 @@
           updateTimer(raw, ts);
         }
 
-        drawOverlay(`DEBUG: lm=${hasLandmarks?result.landmarks[0].length:0} mask=${hasMask?1:0} ui=${isPortraitUI()?"P":"L"} v=${video.videoWidth}x${video.videoHeight} c=${CSS_W}x${CSS_H}`);
+        drawOverlay(
+          `DEBUG: lm=${hasLandmarks?result.landmarks[0].length:0} mask=${hasMask?1:0} maskMax=${lastMaskMax} ui=${isPortraitUI()?"P":"L"} v=${video.videoWidth}x${video.videoHeight} c=${CSS_W}x${CSS_H}`
+        );
+
         rafId = requestAnimationFrame(loop);
       } catch(e){
         console.error(e);
