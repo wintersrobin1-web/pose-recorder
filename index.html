@@ -1,169 +1,211 @@
 <!doctype html>
 <html lang="de">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Pose – stabile Referenz</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Brust – Gleitphase | anonym (Mask + Skelett)</title>
 
 <style>
-body { font-family: system-ui; margin: 16px; }
-.row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
-video, canvas { width: 360px; border-radius: 12px; border: 1px solid #ccc; }
-button { padding: 10px 14px; border-radius: 10px; }
-pre { background:#f5f5f5; padding:8px; border-radius:8px; }
+body { font-family: system-ui, sans-serif; margin:16px; }
+.row { display:flex; gap:12px; flex-wrap:wrap; align-items:center; margin:12px 0; }
+video, canvas {
+  width:360px;
+  max-width:100%;
+  border:1px solid #ddd;
+  border-radius:10px;
+}
+button, select, input[type="range"] {
+  padding:9px 12px;
+  border-radius:10px;
+  border:1px solid #ccc;
+  background:#fff;
+}
+label {
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  padding:8px 10px;
+  border:1px solid #ddd;
+  border-radius:10px;
+}
+details {
+  border:1px solid #ddd;
+  border-radius:10px;
+  padding:10px 12px;
+}
+summary { font-weight:600; cursor:pointer; }
+.hint { color:#555; font-size:14px; }
+.mono { font-family: ui-monospace, monospace; }
+.rangeWrap {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-top:8px;
+}
+.rangeWrap span { min-width:90px; font-size:13px; color:#666; }
+.small { font-size:13px; color:#666; }
 </style>
 </head>
 
 <body>
 
-<h3>Pose – stabile Referenz</h3>
+<h2>Brust – Gleitphase (anonym)</h2>
 
 <div class="row">
-  <button id="btnInit">Start</button>
+  <button id="btnInit">Kamera aktivieren</button>
   <button id="btnSwitch" disabled>Kamera wechseln</button>
+  <button id="btnRec" disabled>Aufnahme</button>
+  <button id="btnStop" disabled>Stop</button>
+  <button id="btnShare" disabled>Teilen</button>
+  <button id="btnReset" disabled>Reset</button>
 </div>
 
 <div class="row">
-  <video id="video" autoplay muted playsinline></video>
+  <label><input type="checkbox" id="toggleSkeleton" checked>Skelett</label>
+  <label><input type="checkbox" id="toggleSilhouette" checked>Silhouette</label>
+  <label><input type="checkbox" id="toggleTimer" checked>Timer</label>
+</div>
+
+<details>
+<summary>Erweiterte Einstellungen</summary>
+
+<div class="rangeWrap">
+  <span>Detection</span>
+  <input id="detConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
+  <span id="detVal" class="small">0.50</span>
+</div>
+
+<div class="rangeWrap">
+  <span>Presence</span>
+  <input id="presConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
+  <span id="presVal" class="small">0.50</span>
+</div>
+
+<div class="rangeWrap">
+  <span>Tracking</span>
+  <input id="trackConf" type="range" min="0.3" max="0.95" step="0.01" value="0.55">
+  <span id="trackVal" class="small">0.55</span>
+</div>
+
+<div class="rangeWrap">
+  <span>Glättung</span>
+  <input id="smooth" type="range" min="0" max="0.9" step="0.05" value="0.60">
+  <span id="smoothVal" class="small">0.60</span>
+</div>
+
+<p class="hint">
+Empfohlen für Schwimmen: <b>0.5–0.6</b>.  
+99 % ist zu streng → Pose verschwindet.
+</p>
+</details>
+
+<div class="row">
+  <video id="video" playsinline autoplay muted style="background:#000"></video>
   <canvas id="canvas"></canvas>
 </div>
 
-<pre id="debug">bereit</pre>
+<p class="mono" id="status">Status: bereit</p>
 
 <script type="module">
-import {
-  FilesetResolver,
-  PoseLandmarker,
-  DrawingUtils
-} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+import { FilesetResolver, PoseLandmarker, DrawingUtils }
+from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
-// ---------- DOM ----------
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
-const debug = document.getElementById("debug");
 
-const btnInit = document.getElementById("btnInit");
-const btnSwitch = document.getElementById("btnSwitch");
+const detConf = document.getElementById("detConf");
+const presConf = document.getElementById("presConf");
+const trackConf = document.getElementById("trackConf");
+const smooth = document.getElementById("smooth");
 
-// ---------- State ----------
-let landmarker = null;
-let drawingUtils = null;
-let stream = null;
-let running = false;
-let isBack = true;
+const detVal = document.getElementById("detVal");
+const presVal = document.getElementById("presVal");
+const trackVal = document.getElementById("trackVal");
+const smoothVal = document.getElementById("smoothVal");
 
-// ---------- POSE CONNECTIONS (SICHER!) ----------
-const POSE_CONNECTIONS = [
-  [11,13],[13,15],
-  [12,14],[14,16],
-  [11,12],
-  [23,24],
-  [11,23],[12,24],
-  [23,25],[25,27],
-  [24,26],[26,28]
-];
+const statusEl = document.getElementById("status");
+const setStatus = t => statusEl.textContent = "Status: " + t;
 
-// ---------- Helpers ----------
-function syncCanvas() {
-  canvas.width  = video.videoWidth;
-  canvas.height = video.videoHeight;
+// ---------- Slider Anzeige ----------
+function initSliderDisplays(){
+  detVal.textContent = Number(detConf.value).toFixed(2);
+  presVal.textContent = Number(presConf.value).toFixed(2);
+  trackVal.textContent = Number(trackConf.value).toFixed(2);
+  smoothVal.textContent = Number(smooth.value).toFixed(2);
 }
+initSliderDisplays();
+[detConf,presConf,trackConf,smooth].forEach(el=>{
+  el.addEventListener("input", initSliderDisplays);
+});
 
-function log(msg) {
-  debug.textContent = msg;
+// ---------- Canvas Orientierung ----------
+function applyCanvasOrientation(){
+  const portrait = window.innerHeight >= window.innerWidth;
+  canvas.width  = portrait ? 720 : 1280;
+  canvas.height = portrait ? 1280 : 720;
 }
+window.addEventListener("resize", applyCanvasOrientation);
+window.addEventListener("orientationchange", applyCanvasOrientation);
+applyCanvasOrientation();
 
 // ---------- MediaPipe ----------
-async function createLandmarker() {
+let landmarker=null, drawingUtils=null;
+
+async function createLandmarker(){
   const fs = await FilesetResolver.forVisionTasks(
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
   );
-
-  landmarker = await PoseLandmarker.createFromOptions(fs, {
-    baseOptions: {
+  landmarker = await PoseLandmarker.createFromOptions(fs,{
+    baseOptions:{
       modelAssetPath:
-        "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task"
+      "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task"
     },
-    runningMode: "VIDEO",
-    numPoses: 1
+    runningMode:"VIDEO",
+    numPoses:1,
+    outputSegmentationMasks:true,
+    minPoseDetectionConfidence:Number(detConf.value),
+    minPosePresenceConfidence:Number(presConf.value),
+    minTrackingConfidence:Number(trackConf.value)
   });
-
   drawingUtils = new DrawingUtils(ctx);
 }
 
-// ---------- Camera ----------
-async function startCamera() {
-  if (stream) stream.getTracks().forEach(t => t.stop());
+// ---------- Kamera ----------
+let stream=null, isBack=true, running=false;
 
+async function startCamera(){
+  if(stream) stream.getTracks().forEach(t=>t.stop());
   stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: isBack ? "environment" : "user" },
-    audio: false
+    video:{facingMode:isBack?"environment":"user"},
+    audio:false
   });
-
-  video.srcObject = stream;
+  video.srcObject=stream;
   await video.play();
-
-  await new Promise(r => {
-    const check = () =>
-      video.videoWidth ? r() : requestAnimationFrame(check);
-    check();
-  });
-
-  syncCanvas();
 }
 
-// ---------- Loop ----------
-function loop() {
-  if (!running) return;
-
-  ctx.fillStyle = "#bfe7ff";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+function loop(){
+  if(!running || !landmarker) return;
+  ctx.fillStyle="#bfe7ff";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
 
   const res = landmarker.detectForVideo(video, performance.now());
-
-  if (res.landmarks?.length) {
-    const lm = res.landmarks[0];
-
-    drawingUtils.drawConnectors(lm, POSE_CONNECTIONS, {
-      color: "#000",
-      lineWidth: 4
-    });
-    drawingUtils.drawLandmarks(lm, {
-      color: "#000",
-      radius: 3
-    });
-
-    log(`Landmarks: ${lm.length}`);
-  } else {
-    log("keine Pose erkannt");
+  if(res.landmarks?.length){
+    drawingUtils.drawLandmarks(res.landmarks[0],{radius:4,color:"#000"});
   }
-
   requestAnimationFrame(loop);
 }
 
-// ---------- UI ----------
-btnInit.onclick = async () => {
-  btnInit.disabled = true;
-  log("initialisiere…");
-
+// ---------- Start ----------
+document.getElementById("btnInit").onclick=async()=>{
+  setStatus("initialisiere…");
   await createLandmarker();
   await startCamera();
-
-  running = true;
-  btnSwitch.disabled = false;
+  running=true;
   loop();
-};
-
-btnSwitch.onclick = async () => {
-  running = false;
-  isBack = !isBack;
-
-  await startCamera();
-
-  running = true;
-  loop();
+  setStatus("läuft");
 };
 </script>
+
 </body>
 </html>
