@@ -169,9 +169,9 @@
       await new Promise((res) => { video.onloadedmetadata = () => res(); });
       resizeCanvasToVideo();
 
-      pose = new Pose.Pose({
-        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-      });
+      pose = new Pose({
+  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+});
 
       // Modell-Komplexität reduzieren -> stabiler auf iPhone
       pose.setOptions({
