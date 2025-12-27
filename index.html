@@ -5,11 +5,20 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Bewegungsanalyse Recorder | Timer: Brust – Gleitphase</title>
   <style>
+    :root { --bg: #bfe7ff; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
+    .header {
+      background: var(--bg);
+      border: 1px solid #d6ecff;
+      border-radius: 14px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+    .header h1 { margin: 0; font-size: 20px; }
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
     video, canvas { max-width: 100%; border: 1px solid #ddd; border-radius: 10px; }
     video { width: 360px; height: auto; background:#000; }
-    canvas { width: 360px; height: auto; }
+    canvas { width: 360px; height: auto; background: var(--bg); }
     button { padding: 10px 14px; border-radius: 10px; border: 1px solid #ccc; background: #fff; }
     button.primary { border-color: #111; }
     button:disabled { opacity: 0.5; }
@@ -26,11 +35,9 @@
 </head>
 
 <body>
-  <h1>Bewegungsanalyse Recorder</h1>
-  <p class="hint">
-    Output (Canvas/Videoaufnahme) enthält Hintergrund + optional Silhouette (Segmentierung) + Skelett + optional Timer (Brust – Gleitphase).
-    Das Video links ist nur Input. Hochkant/Querformat werden automatisch im Canvas übernommen.
-  </p>
+  <div class="header">
+    <h1>Bewegungsanalyse Recorder</h1>
+  </div>
 
   <div class="row">
     <button id="btnInit" class="primary">Kamera aktivieren</button>
@@ -43,40 +50,40 @@
 
   <div class="row">
     <label><input type="checkbox" id="toggleSkeleton" checked /> Skelett</label>
-    <label><input type="checkbox" id="toggleSilhouette" checked /> Segmentierung (Silhouette)</label>
+    <label><input type="checkbox" id="toggleSilhouette" checked /> Segmentierung</label>
     <label><input type="checkbox" id="toggleNeck" checked /> HWS-Achse</label>
     <label><input type="checkbox" id="toggleTimer" checked /> Timer Brust – Gleitphase</label>
 
     <select id="filmingPreset" title="Aufnahmeposition">
-      <option value="stand" selected>Test am Beckenrand (im Stand)</option>
-      <option value="side45">45° schräg seitlich</option>
-      <option value="back45">45° von hinten (Startblock)</option>
+      <option value="stand" selected>Stand (Beckenrand)</option>
+      <option value="side45">45° seitlich</option>
+      <option value="back45">45° von hinten</option>
     </select>
   </div>
 
   <details>
-    <summary>Erweiterte Einstellungen (optional)</summary>
+    <summary>Erweiterte Einstellungen</summary>
 
     <div class="rangeWrap">
-      <span>Silhouette-Deckkraft</span>
+      <span>Segmentierung – Deckkraft</span>
       <input id="silOpacity" type="range" min="0" max="1" step="0.05" value="0.40">
       <span id="silOpacityVal" class="small">0.40</span>
     </div>
 
     <div class="rangeWrap">
-      <span>Silhouette-Schwelle</span>
+      <span>Segmentierung – Schwelle</span>
       <input id="silThresh" type="range" min="0" max="100" step="1" value="12">
       <span id="silThreshVal" class="small">12</span>
     </div>
 
     <div class="rangeWrap">
-      <span>Skelett-Linienstärke</span>
+      <span>Skelett – Linienstärke</span>
       <input id="skelLine" type="range" min="1" max="10" step="1" value="3">
       <span id="skelLineVal" class="small">3</span>
     </div>
 
     <div class="rangeWrap">
-      <span>Gelenkpunkte (Radius)</span>
+      <span>Skelett – Punkt-Radius</span>
       <input id="skelDot" type="range" min="1" max="10" step="1" value="4">
       <span id="skelDotVal" class="small">4</span>
     </div>
@@ -106,14 +113,10 @@
     </div>
 
     <div class="rangeWrap">
-      <span>HWS-Toleranz (°)</span>
+      <span>HWS – Toleranz (°)</span>
       <input id="neckTol" type="range" min="10" max="60" step="1" value="25">
       <span id="neckTolVal" class="small">25</span>
     </div>
-
-    <p class="hint">
-      Silhouette: Gelb mit 40% Deckkraft. Falls die Maske auf iOS leer wirkt, wird sie hier aus dem Mask-Array gerendert (robuster als getAsCanvas()).
-    </p>
   </details>
 
   <div class="row">
@@ -202,8 +205,7 @@
       canvas.width = Math.round(cssW * dpr);
       canvas.height = Math.round(cssH * dpr);
 
-      // draw in CSS pixels
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // draw in CSS pixels
       ctx.imageSmoothingEnabled = false;
     }
 
@@ -219,7 +221,7 @@
     // ---------- Background ----------
     const BG = "#bfe7ff";
 
-    // ---------- Pose connections (OHNE ankle-ankle Linie) ----------
+    // ---------- Pose connections (NO ankle-ankle) ----------
     const POSE_CONNECTIONS = [
       [0,1],[1,2],[2,3],[3,7],
       [0,4],[4,5],[5,6],[6,8],
@@ -230,8 +232,26 @@
       [11,23],[12,24],[23,24],
       [23,25],[25,27],[27,29],[29,31],
       [24,26],[26,28],[28,30],[30,32]
-      // bewusst KEIN [27,28]
     ];
+
+    // ---------- Helpers ----------
+    const dist = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
+    function mid2(a, b) { return { x:(a.x+b.x)/2, y:(a.y+b.y)/2 }; }
+
+    function angleBetween(u, v) {
+      const dot = u.x*v.x + u.y*v.y;
+      const nu = Math.hypot(u.x,u.y), nv = Math.hypot(v.x,v.y);
+      if (!nu || !nv) return 0;
+      const c = Math.max(-1, Math.min(1, dot/(nu*nv)));
+      return Math.acos(c) * 180/Math.PI;
+    }
+
+    function kneeAngle(hip, knee, ankle) {
+      if (!hip || !knee || !ankle) return null;
+      const u = { x: hip.x - knee.x, y: hip.y - knee.y };
+      const v = { x: ankle.x - knee.x, y: ankle.y - knee.y };
+      return angleBetween(u, v); // 180 ~ straight
+    }
 
     // ---------- Video-to-canvas "contain" mapping (CSS space) ----------
     function mapLandmarksContain(rawLandmarks, vw, vh, cw, ch) {
@@ -307,11 +327,10 @@
       ctx.restore();
     }
 
-    // ---------- Segmentierung (ROBUST: Mask as Float32/Uint8 Array -> RGBA) ----------
-    const maskSrcCanvas = document.createElement("canvas"); // mask native resolution
+    // ---------- Segmentierung (Mask array -> RGBA) ----------
+    const maskSrcCanvas = document.createElement("canvas");
     const maskSrcCtx = maskSrcCanvas.getContext("2d", { willReadFrequently: false });
 
-    // helper: draw maskSrcCanvas into output with contain mapping (wie Video)
     function drawMaskContainFromSource(srcCanvas, vw, vh) {
       const cw = CSS_W, ch = CSS_H;
       const scale = Math.min(cw / vw, ch / vh);
@@ -319,11 +338,9 @@
       const dispH = vh * scale;
       const offX = (cw - dispW) / 2;
       const offY = (ch - dispH) / 2;
-
       ctx.drawImage(srcCanvas, offX, offY, dispW, dispH);
     }
 
-    // build RGBA mask image in native mask resolution
     function renderMaskToCanvas(segMask) {
       if (!segMask) return { max: 0, w: 0, h: 0 };
 
@@ -339,30 +356,23 @@
       const threshold = Number(silThresh.value) / 100; // 0..1
       const alpha = Number(silOpacity.value); // 0..1
 
-      // Prefer Float32 (0..1), fallback Uint8 (0..255).
       let dataF = null, dataU = null;
-      try {
-        if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array();
-      } catch(_) {}
+      try { if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array(); } catch(_) {}
       if (!dataF) {
-        try {
-          if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array();
-        } catch(_) {}
+        try { if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array(); } catch(_) {}
       }
 
       const img = maskSrcCtx.createImageData(mw, mh);
       const d = img.data;
-
       let maxv = 0;
 
       if (dataF && dataF.length >= mw*mh) {
         for (let i = 0; i < mw*mh; i++) {
-          const v = dataF[i]; // 0..1
+          const v = dataF[i];
           if (v > maxv) maxv = v;
           const a = (v >= threshold) ? Math.round(255 * alpha) : 0;
           const o = i*4;
-          // gelb (unkenntlich, aber Form)
-          d[o]   = 255;
+          d[o]   = 255;  // yellow fill
           d[o+1] = 215;
           d[o+2] = 0;
           d[o+3] = a;
@@ -379,7 +389,6 @@
           d[o+3] = a;
         }
       } else {
-        // nothing usable
         maxv = 0;
       }
 
@@ -404,16 +413,7 @@
       return info;
     }
 
-    // ---------- HWS-Achse (Neck) ----------
-    function mid2(a, b) { return { x:(a.x+b.x)/2, y:(a.y+b.y)/2 }; }
-    function angleBetween(u, v) {
-      const dot = u.x*v.x + u.y*v.y;
-      const nu = Math.hypot(u.x,u.y), nv = Math.hypot(v.x,v.y);
-      if (!nu || !nv) return 0;
-      const c = Math.max(-1, Math.min(1, dot/(nu*nv)));
-      return Math.acos(c) * 180/Math.PI;
-    }
-
+    // ---------- HWS-Achse ----------
     function drawNeckAxis(rawNorm, cssPoints) {
       if (!toggleNeck.checked || !rawNorm || !cssPoints) return { neckDeg: null, ok: null };
 
@@ -427,17 +427,14 @@
       const shoulder = mid2(ls, rs);
       const hip = mid2(lh, rh);
 
-      // head reference: midpoint ears if present, else nose
       let head = null;
       if (le && re) head = mid2(le, re);
       else if (nose) head = nose;
       else return { neckDeg: null, ok: null };
 
-      // vectors in normalized space
       const torso = { x: shoulder.x - hip.x, y: shoulder.y - hip.y };
       const neck  = { x: head.x - shoulder.x, y: head.y - shoulder.y };
 
-      // compare direction: make both point "upwards" by flipping if needed
       const torsoUp = (torso.y < 0) ? torso : { x:-torso.x, y:-torso.y };
       const neckUp  = (neck.y  < 0) ? neck  : { x:-neck.x,  y:-neck.y  };
 
@@ -445,7 +442,6 @@
       const tol = Number(neckTol.value);
       const ok = deg <= tol;
 
-      // draw in CSS space: from mid-shoulder to head
       const cssLs = cssPoints[11], cssRs = cssPoints[12];
       const cssLe = cssPoints[7],  cssRe = cssPoints[8];
       const cssN  = cssPoints[0];
@@ -470,89 +466,121 @@
       return { neckDeg: deg, ok };
     }
 
-    // ---------- Timer / Slots (Brust – Gleitphase) ----------
+    // ---------- Timer / Slots (robuster für side45) ----------
     const glideTimes = [];
     let glideActive = false, glideStart = 0, currentElapsed = 0;
     let poseStableSince = null, poseLostSince = null;
 
-    const dist = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
+    // extra: allow a few "bad" frames before stopping (grace)
+    let badFrameCount = 0;
+
     const fmt = (ms)=> (ms/1000).toFixed(3) + " s";
 
-    function kneeAngle(hip, knee, ankle) {
-      if (!hip || !knee || !ankle) return null;
-      const u = { x: hip.x - knee.x, y: hip.y - knee.y };
-      const v = { x: ankle.x - knee.x, y: ankle.y - knee.y };
-      return angleBetween(u, v); // degrees, 180 ~ straight
-    }
+    function armOverHeadRobust(raw) {
+      const ls = raw[11], rs = raw[12];
+      const le = raw[13], re = raw[14];
+      const lw = raw[15], rw = raw[16];
+      const nose = raw[0];
 
-    function oneArmStreamline(raw) {
-      const ls = raw[11], rs = raw[12], le = raw[13], re = raw[14], lw = raw[15], rw = raw[16], nose = raw[0];
       if (!ls || !rs) return false;
 
-      const headY = (nose?.y ?? Math.min(ls.y, rs.y) - 0.02);
+      const shoulderY = (ls.y + rs.y) / 2;
+      const headY = (nose?.y ?? (shoulderY - 0.10));
 
-      // left arm ok?
-      let leftOk = false;
-      if (ls && (lw || le)) {
-        const elbowUp = le ? (le.y < ls.y + 0.03) : true;
-        const wristUp = lw ? (lw.y < headY + 0.01) : false;
-        // allow occluded wrist: accept elbow-only if clearly up
-        leftOk = elbowUp && (wristUp || (le && le.y < headY + 0.06));
-      }
+      const elbowMargin = 0.04;
+      const wristMargin = 0.02;
 
-      // right arm ok?
-      let rightOk = false;
-      if (rs && (rw || re)) {
-        const elbowUp = re ? (re.y < rs.y + 0.03) : true;
-        const wristUp = rw ? (rw.y < headY + 0.01) : false;
-        rightOk = elbowUp && (wristUp || (re && re.y < headY + 0.06));
-      }
+      const leftElbowUp = le ? (le.y < shoulderY - elbowMargin) : false;
+      const rightElbowUp = re ? (re.y < shoulderY - elbowMargin) : false;
+
+      const leftWristUp = lw ? (lw.y < headY + wristMargin) : false;
+      const rightWristUp = rw ? (rw.y < headY + wristMargin) : false;
+
+      const leftOk = leftWristUp || (leftElbowUp && (!lw || lw.y < shoulderY - 0.02));
+      const rightOk = rightWristUp || (rightElbowUp && (!rw || rw.y < shoulderY - 0.02));
 
       return leftOk || rightOk;
     }
 
-    function legsStraight(raw) {
+    function legsStraightRobust(raw) {
       const lh = raw[23], rh = raw[24], lk = raw[25], rk = raw[26], la = raw[27], ra = raw[28];
       const aL = kneeAngle(lh, lk, la);
       const aR = kneeAngle(rh, rk, ra);
 
-      // allow one leg missing: require at least one valid and "straight enough",
-      // better if both valid.
-      const thr = 160; // deg
-      const okL = (aL != null) ? (aL >= thr) : false;
-      const okR = (aR != null) ? (aR >= thr) : false;
+      const thrBoth = 155;
+      const thrOne  = 165;
 
-      return okL || okR;
+      const okL = (aL != null) ? (aL >= thrBoth) : false;
+      const okR = (aR != null) ? (aR >= thrBoth) : false;
+
+      if (aL != null && aR != null) return okL && okR;
+      if (aL != null) return aL >= thrOne;
+      if (aR != null) return aR >= thrOne;
+      return false;
     }
 
-    function bodyLong(raw) {
+    let lastTorso = null;
+    let torsoStillSince = null;
+
+    function torsoStable(raw, now) {
       const ls = raw[11], rs = raw[12], lh = raw[23], rh = raw[24];
       if (!ls || !rs || !lh || !rh) return false;
+
       const sh = { x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2 };
       const hp = { x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2 };
-      // in streamline, shoulder-hip distance should be meaningful (not collapsed)
-      return dist(sh, hp) > 0.10;
+      const torso = { x:(sh.x+hp.x)/2, y:(sh.y+hp.y)/2 };
+
+      const p = filmingPreset.value;
+      const tol = (p === "side45") ? 0.012 : 0.010;
+
+      if (!lastTorso) {
+        lastTorso = torso;
+        torsoStillSince = now;
+        return false;
+      }
+
+      const move = Math.hypot(torso.x - lastTorso.x, torso.y - lastTorso.y);
+      lastTorso = torso;
+
+      if (move <= tol) {
+        if (torsoStillSince == null) torsoStillSince = now;
+      } else {
+        torsoStillSince = null;
+      }
+
+      const hold = (p === "side45") ? 220 : 180;
+      return torsoStillSince != null && (now - torsoStillSince >= hold);
     }
 
-    function inGlidePose(raw) {
-      // general rule: long body + (one arm overhead) + (legs straight)
-      // preset can tweak hold times only; posture itself remains robust.
-      return bodyLong(raw) && oneArmStreamline(raw) && legsStraight(raw);
+    function inGlidePose(raw, now) {
+      const ls = raw[11], rs = raw[12], lh = raw[23], rh = raw[24];
+      if (!ls || !rs || !lh || !rh) return false;
+
+      const sh = { x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2 };
+      const hp = { x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2 };
+      const longBody = dist(sh, hp) > 0.11;
+
+      const armsOk = armOverHeadRobust(raw);
+      const legsOk = legsStraightRobust(raw);
+      const stillOk = torsoStable(raw, now);
+
+      return longBody && armsOk && legsOk && stillOk;
     }
 
     function updateTimer(raw, now) {
       if (!toggleTimer.checked) {
-        glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0; return;
+        glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0; badFrameCount=0; return;
       }
 
       const p = filmingPreset.value;
-      const startHold = (p==="stand") ? 220 : 420; // etwas schneller starten
+      const startHold = (p==="stand") ? 220 : 420;
       const stopHold  = (p==="stand") ? 180 : 380;
 
-      const ok = inGlidePose(raw);
+      const ok = inGlidePose(raw, now);
 
       if (!glideActive) {
         currentElapsed = 0;
+        badFrameCount = 0;
         if (ok && glideTimes.length < 4) {
           if (poseStableSince === null) poseStableSince = now;
           if (now - poseStableSince >= startHold) {
@@ -569,16 +597,22 @@
       currentElapsed = now - glideStart;
 
       if (!ok) {
+        badFrameCount++;
+        const grace = (p === "side45") ? 6 : 4; // frames
+        if (badFrameCount < grace) return;
+
         if (poseLostSince === null) poseLostSince = now;
         if (now - poseLostSince >= stopHold) {
           glideActive = false;
           poseStableSince = null;
           poseLostSince = null;
+          badFrameCount = 0;
           glideTimes.push(now - glideStart);
           if (glideTimes.length > 4) glideTimes.length = 4;
           currentElapsed = 0;
         }
       } else {
+        badFrameCount = 0;
         poseLostSince = null;
       }
     }
@@ -591,7 +625,6 @@
       ctx.strokeStyle="rgba(255,255,255,0.55)";
       ctx.lineWidth=2;
 
-      // kleiner als vorher:
       const x=12, y=12, w=Math.min(420, CSS_W-24), h=140, r=14;
       const rr=Math.min(r,w/2,h/2);
 
@@ -722,21 +755,18 @@
         const hasMask = !!(result?.segmentationMasks?.length);
         const hasLandmarks = !!(result?.landmarks?.length && result.landmarks[0]?.length);
 
-        // silhouette
         let maskInfo = { max: 0 };
         if (hasMask) {
           maskInfo = drawSilhouette(result.segmentationMasks[0]);
           if (maskInfo.max <= 0.001) emptyMaskFrames++;
           else emptyMaskFrames = 0;
 
-          // if mask stays empty for long on iOS, auto-disable to avoid user confusion
           if (emptyMaskFrames > 45) {
             toggleSilhouette.checked = false;
-            setStatus("Hinweis: Segmentierung liefert auf diesem Gerät leere Werte → deaktiviert.");
+            setStatus("Hinweis: Segmentierung liefert leere Werte → deaktiviert.");
           }
         }
 
-        // skeleton + neck + timer
         if(hasLandmarks){
           const raw = result.landmarks[0];
           const vw = video.videoWidth, vh = video.videoHeight;
@@ -744,10 +774,8 @@
           const cssPoints = emaCss(mapLandmarksContain(raw, vw, vh, CSS_W, CSS_H));
           drawSkeletonCssPoints(cssPoints);
 
-          // HWS axis: uses both raw + cssPoints
           const neck = drawNeckAxis(raw, cssPoints);
 
-          // timer
           updateTimer(raw, ts);
 
           drawOverlay(
@@ -851,18 +879,18 @@
     btnSwitch.addEventListener("click", async ()=>{
       try{
         btnSwitch.disabled=true;
-
-        // sauber pausieren
         running=false;
         if(rafId) cancelAnimationFrame(rafId);
 
         isBackCamera=!isBackCamera;
         await startCamera();
 
-        // resets
         smoothedCss = null;
         poseStableSince = null;
         poseLostSince = null;
+        badFrameCount = 0;
+        lastTorso = null;
+        torsoStillSince = null;
         emptyMaskFrames = 0;
 
         running=true;
@@ -896,6 +924,7 @@
     btnReset.addEventListener("click", ()=>{
       glideTimes.length=0;
       glideActive=false; poseStableSince=null; poseLostSince=null; currentElapsed=0;
+      badFrameCount=0;
       setStatus("Slots zurückgesetzt.");
     });
   </script>
