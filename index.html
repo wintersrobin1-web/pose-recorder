@@ -34,6 +34,28 @@
     .foot { margin-top: 14px; max-width: 1100px; }
     .tiplist details { margin-top: 10px; }
     .tiplist summary { font-weight: 700; }
+
+    .hintBox {
+      display: none;
+      margin-top: 14px;
+      border: 1px solid #d6d6d6;
+      border-radius: 12px;
+      padding: 12px 14px;
+      background: #fff;
+      max-width: 1100px;
+    }
+    .hintBox h3 { margin: 0 0 8px 0; font-size: 16px; }
+    .hintBox ul { margin: 8px 0 0 18px; padding: 0; }
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid #ddd;
+      font-size: 12px;
+      color: #444;
+      background: #fafafa;
+      margin-left: 6px;
+    }
   </style>
 </head>
 
@@ -55,7 +77,9 @@
     <label><input type="checkbox" id="toggleSkeleton" checked /> Skelett</label>
     <label><input type="checkbox" id="toggleSilhouette" checked /> Segmentierung</label>
     <label><input type="checkbox" id="toggleNeck" checked /> HWS-Achse</label>
+    <label><input type="checkbox" id="toggleLegCheck" checked /> Knie/Beine-Check</label>
     <label><input type="checkbox" id="toggleTimer" checked /> Timer Brust – Gleitphase</label>
+    <label><input type="checkbox" id="toggleHintBox" checked /> Hinweisbox nach Stop</label>
 
     <select id="filmingPreset" title="Aufnahmeposition">
       <option value="stand" selected>Stand (Beckenrand)</option>
@@ -122,7 +146,8 @@
     </div>
 
     <p class="hint">
-      Hinweis: Bei 45° seitlich ist Occlusion normal. Der Timer nutzt Score + Bewegungs-Stop (Knie beugen / Arme absenken) und eine Hysterese.
+      Hinweis: Die Checks sind bewusst auf Merkmale begrenzt, die mit 2D-Skelettanalyse aus der Aufnahmeperspektive in der Regel robust beurteilbar sind
+      (das deckt nicht alle wichtigen Brust-Technikmerkmale ab).
     </p>
   </details>
 
@@ -136,34 +161,35 @@
   <div class="foot tiplist">
     <details>
       <summary>Technik-Checkliste (Brust: Gleitphase)</summary>
+      <p class="hint">
+        Diese Liste ist <b>nicht vollständig</b>. Aufgeführt sind vor allem Merkmale, die man mit der <b>Skelettanalyse</b> aus den typischen Aufnahmewinkeln
+        (Stand / 45° seitlich / 45° hinten) vergleichsweise zuverlässig prüfen kann.
+      </p>
 
       <details>
-        <summary>Arme öffnen zu weit (Widerstand steigt)</summary>
+        <summary>Knie öffnen zu weit („Schere“ / Bremsfläche)</summary>
         <p class="hint">
-          <b>Faustregel „zu weit“:</b> In der Zug-/Öffnungsphase sollten die Hände <b>nicht deutlich breiter als schulterbreit</b> werden.
-          Grober Richtwert: Abstand Hand–Hand <b>&gt; 1,3× Schulterbreite</b> ist meist „zu weit“. (Schulterbreite = Abstand Landmark 11–12.)<br><br>
-          <b>Ideale Sequenz (vereinfacht):</b> Hände öffnen bis etwa schulterbreit, <b>Ellenbogen beugen</b> (nicht „gerade nach außen drücken“),
-          dann Hände zügig <b>vor die Brust</b> zusammenführen und <b>sofort nach vorn in Streamline</b> strecken.<br><br>
-          <b>Typischer Fehler:</b> Hände gehen sehr weit nach außen, Ellenbogen „fallen raus“ → große Bremsfläche.
+          <b>Faustregel:</b> Knieöffnung ungefähr im Bereich <b>Schulterbreite</b>.<br>
+          In der Analyse wird die <b>Kniebreite</b> (Abstand Knie–Knie) zur <b>Schulterbreite</b> (Abstand Schulter–Schulter) ins Verhältnis gesetzt.<br>
+          <b>Richtwert:</b> Kniebreite <b>&gt; 1,55× Schulterbreite</b> gilt hier als deutlich zu weit.
         </p>
       </details>
 
       <details>
-        <summary>Beinschlag unsymmetrisch („Schere“)</summary>
+        <summary>Beinschlag unsymmetrisch (links/rechts)</summary>
         <p class="hint">
-          <b>Woran erkennbar (im Skelett):</b> Knie-/Knöchelbahnen links/rechts stark unterschiedlich, ein Bein drückt stärker nach außen.<br>
-          <b>Korrektur:</b> Knie enger unter dem Körper, Fersen symmetrisch zum Gesäß, dann Fußsohlen gleichzeitig nach außen/hinten „fassen“,
-          Abschluss mit gleichzeitigem Strecken und Fußspitzen.
+          <b>Woran erkennbar:</b> deutlich unterschiedliche Kniebeugung links vs. rechts (Knie-Winkel).<br>
+          <b>Richtwert:</b> Differenz <b>&gt; 25–30°</b> über mehrere Frames ist auffällig.<br>
+          <b>Tipp:</b> Knie enger unter dem Körper, Fersen symmetrisch anziehen, dann gleichzeitig schließen/strecken.
         </p>
       </details>
 
       <details>
-        <summary>Gleitphase zu kurz (zu frühes Anziehen / zu viel „Wuseln“)</summary>
+        <summary>Beine in der Gleitphase nicht gestreckt</summary>
         <p class="hint">
-          <b>Richtwerte (sehr grob):</b> häufig ca. <b>0,8–1,5 s</b> (Technikfokus/Anfänger) bis <b>1,5–2,5 s</b> (guter Abstoß/fortgeschritten).
-          Stärker hängt es von Abstoßgeschwindigkeit, Wasserlage und Distanz ab.<br><br>
-          <b>Korrektur:</b> Nach dem Strecken kurz stabil halten („Druckphase – Strecken – Gleiten“). Ziel: Geschwindigkeit in die Gleitlage „mitnehmen“,
-          nicht sofort wieder bremsen.
+          <b>Woran erkennbar:</b> Knie-Winkel bleibt deutlich unter „gestreckt“.<br>
+          <b>Richtwert:</b> <b>&lt; 155°</b> gilt als klar angewinkelt (in der Gleitphase meist bremsend).<br>
+          <b>Tipp:</b> Nach Abschluss des Beinschlags bewusst vollständig strecken und kurz stabil halten.
         </p>
       </details>
 
@@ -172,10 +198,32 @@
         <p class="hint">
           <b>Woran erkennbar:</b> HWS-Achse wird rot, Kopf „schaut nach vorn“, Kinn weg vom Brustbein.<br>
           <b>Korrektur:</b> Blick eher schräg nach unten/vorne, Nacken lang, „Doppelkinn“-Gefühl.
-          Neutraler Kopf verbessert Wasserlage und reduziert Widerstand.
+        </p>
+      </details>
+
+      <details>
+        <summary>Gleitphase zu kurz</summary>
+        <p class="hint">
+          <b>Richtwerte (sehr grob):</b> häufig ca. <b>0,8–1,5 s</b> (Technikfokus/Anfänger) bis <b>1,5–2,5 s</b> (guter Abstoß/fortgeschritten).<br>
+          <b>Tipp:</b> Nach dem Strecken kurz stabil halten („Druck – Strecken – Gleiten“), nicht sofort wieder bremsen.
+        </p>
+      </details>
+
+      <details>
+        <summary>Arme öffnen zu weit (Widerstand steigt)</summary>
+        <p class="hint">
+          <b>Faustregel „zu weit“:</b> Hände in der Zug-/Öffnungsphase nicht deutlich breiter als schulterbreit.
+          Grob: Hand–Hand <b>&gt; 1,3× Schulterbreite</b> ist häufig zu breit.<br>
+          <b>Tipp:</b> Hände bis etwa schulterbreit öffnen, Ellenbogen beugen, Hände vor die Brust und direkt wieder nach vorn strecken.
         </p>
       </details>
     </details>
+  </div>
+
+  <div id="hintBox" class="hintBox">
+    <h3>Hinweise aus der Aufnahme <span id="hintMeta" class="pill"></span></h3>
+    <div class="hint" id="hintText"></div>
+    <ul id="hintList"></ul>
   </div>
 
   <script type="module">
@@ -197,7 +245,9 @@
     const toggleSkeleton = document.getElementById("toggleSkeleton");
     const toggleSilhouette = document.getElementById("toggleSilhouette");
     const toggleNeck = document.getElementById("toggleNeck");
+    const toggleLegCheck = document.getElementById("toggleLegCheck");
     const toggleTimer = document.getElementById("toggleTimer");
+    const toggleHintBox = document.getElementById("toggleHintBox");
     const filmingPreset = document.getElementById("filmingPreset");
 
     const silOpacity = document.getElementById("silOpacity");
@@ -220,6 +270,11 @@
     const trackVal = document.getElementById("trackVal");
     const smoothVal = document.getElementById("smoothVal");
     const neckTolVal = document.getElementById("neckTolVal");
+
+    const hintBox = document.getElementById("hintBox");
+    const hintList = document.getElementById("hintList");
+    const hintText = document.getElementById("hintText");
+    const hintMeta = document.getElementById("hintMeta");
 
     const statusEl = document.getElementById("status");
     const setStatus = (s) => statusEl.textContent = "Status: " + s;
@@ -285,7 +340,9 @@
 
     // ---------- Helpers ----------
     const dist = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
+    const distPx = (a,b)=>Math.hypot(a._cx-b._cx, a._cy-b._cy);
     function mid2(a, b) { return { x:(a.x+b.x)/2, y:(a.y+b.y)/2 }; }
+    function mid2px(a, b) { return { _cx:(a._cx+b._cx)/2, _cy:(a._cy+b._cy)/2 }; }
 
     function angleBetween(u, v) {
       const dot = u.x*v.x + u.y*v.y;
@@ -478,10 +535,10 @@
       const cssLe = cssPoints[7],  cssRe = cssPoints[8];
       const cssN  = cssPoints[0];
 
-      const cssShoulder = (cssLs && cssRs) ? { _cx:(cssLs._cx+cssRs._cx)/2, _cy:(cssLs._cy+cssRs._cy)/2 } : null;
+      const cssShoulder = (cssLs && cssRs) ? mid2px(cssLs, cssRs) : null;
       let cssHead = null;
-      if (cssLe && cssRe) cssHead = { _cx:(cssLe._cx+cssRe._cx)/2, _cy:(cssLe._cy+cssRe._cy)/2 };
-      else if (cssN) cssHead = { _cx:cssN._cx, _cy:cssN._cy };
+      if (cssLe && cssRe) cssHead = mid2px(cssLe, cssRe);
+      else if (cssN) cssHead = { _cx: cssN._cx, _cy: cssN._cy };
 
       if (cssShoulder && cssHead) {
         ctx.save();
@@ -496,6 +553,67 @@
       }
 
       return { neckDeg: deg, ok };
+    }
+
+    // ---------- Knie/Bein-Check: farbcodierte Linien ----------
+    function colorForRatio(r) {
+      // r = kneeWidth/shoulderWidth
+      if (r <= 1.35) return "rgba(0,170,0,0.95)";
+      if (r <= 1.55) return "rgba(255,140,0,0.95)";
+      return "rgba(220,0,0,0.95)";
+    }
+    function colorForDiff(d) {
+      if (d <= 15) return "rgba(0,170,0,0.95)";
+      if (d <= 25) return "rgba(255,140,0,0.95)";
+      return "rgba(220,0,0,0.95)";
+    }
+
+    function drawLegChecks(raw, cssPoints) {
+      if (!toggleLegCheck.checked || !raw || !cssPoints) return { kneeRatio: null, kneeDiff: null, kneeAngles: [null,null] };
+
+      const kL = cssPoints[25], kR = cssPoints[26];
+      const sL = cssPoints[11], sR = cssPoints[12];
+      if (!kL || !kR || !sL || !sR) return { kneeRatio: null, kneeDiff: null, kneeAngles: [null,null] };
+
+      const shoulderW = distPx(sL, sR);
+      const kneeW = distPx(kL, kR);
+      const kneeRatio = (shoulderW > 1) ? (kneeW / shoulderW) : null;
+
+      // Knee angles (normalized landmarks)
+      const lh = raw[23], rh = raw[24], lk = raw[25], rk = raw[26], la = raw[27], ra = raw[28];
+      const aL = kneeAngle(lh, lk, la);
+      const aR = kneeAngle(rh, rk, ra);
+      const diff = (aL != null && aR != null) ? Math.abs(aL - aR) : null;
+
+      // draw knee width line
+      if (kneeRatio != null) {
+        ctx.save();
+        ctx.lineCap = "round";
+        ctx.lineWidth = 7;
+        ctx.strokeStyle = colorForRatio(kneeRatio);
+        ctx.beginPath();
+        ctx.moveTo(kL._cx, kL._cy);
+        ctx.lineTo(kR._cx, kR._cy);
+        ctx.stroke();
+
+        // small label
+        ctx.font = "12px system-ui";
+        ctx.fillStyle = "rgba(0,0,0,0.85)";
+        const mid = { _cx:(kL._cx+kR._cx)/2, _cy:(kL._cy+kR._cy)/2 };
+        ctx.fillText(`Knie/Schulter: ${kneeRatio.toFixed(2)}×`, mid._cx + 8, mid._cy - 8);
+        ctx.restore();
+      }
+
+      // draw asymmetry label if both angles exist
+      if (diff != null) {
+        ctx.save();
+        ctx.font = "12px system-ui";
+        ctx.fillStyle = colorForDiff(diff);
+        ctx.fillText(`ΔKnie: ${diff.toFixed(0)}°`, 12, CSS_H - 12);
+        ctx.restore();
+      }
+
+      return { kneeRatio, kneeDiff: diff, kneeAngles: [aL, aR] };
     }
 
     // ---------- Timer / Slots ----------
@@ -588,7 +706,7 @@
       return (0.38*arms + 0.32*legs + 0.18*longB + 0.12*still);
     }
 
-    // >>> UPDATED: robust stop by movement (knees bend / arms drop) + hard max safety stop
+    // robust stop by movement (knees bend / arms drop) + hard max safety stop
     function updateTimer(raw, now){
       if(!toggleTimer.checked){
         glideActive=false; currentElapsed=0;
@@ -602,12 +720,12 @@
       const startThr = (p === "side45") ? 0.72 : 0.75;
       const stopThr  = (p === "side45") ? 0.55 : 0.58;
 
-      const startHoldMs = (p === "side45") ? 140 : 170;
-      const stopHoldMs  = (p === "side45") ? 280 : 260;
+      const startHoldMs = (p === "side45") ? 130 : 160;  // früher starten
+      const stopHoldMs  = (p === "side45") ? 220 : 230;  // schneller stoppen
 
       const hardMaxMs = (p === "stand") ? 5000 : 6500;
 
-      const alpha = (p === "side45") ? 0.65 : 0.60;
+      const alpha = (p === "side45") ? 0.62 : 0.60;
       const sNow = computeGlideScore(raw);
       scoreEma = alpha*scoreEma + (1-alpha)*sNow;
 
@@ -617,11 +735,11 @@
       const aR = kneeAngle(rh, rk, ra);
 
       // Knie deutlich beugen -> Ende Gleitphase
-      const kneesBend = ((aL != null && aL < 155) || (aR != null && aR < 155));
+      const kneesBend = ((aL != null && aL < 158) || (aR != null && aR < 158));
 
       // Arme verlassen Überkopf-Position
       const armScore = armOverHeadRobust(raw);
-      const armsDropped = armScore < 0.45;
+      const armsDropped = armScore < 0.48;
 
       const movementStop = kneesBend || armsDropped;
 
@@ -657,7 +775,7 @@
       // Stop by movement (prioritized)
       if(movementStop){
         if(scoreLowSince == null) scoreLowSince = now;
-        if(now - scoreLowSince >= 120){
+        if(now - scoreLowSince >= 90){
           glideActive = false;
           scoreStableSince = null;
           scoreLowSince = null;
@@ -727,6 +845,172 @@
         ctx.fillText(debugText, x+12, y+h-10);
       }
       ctx.restore();
+    }
+
+    // ---------- Recording + Analyse (Hinweisbox) ----------
+    let recorder=null, recordedChunks=[], lastBlob=null;
+    let isRecording = false;
+
+    const recStats = {
+      frames: 0,
+      kneeWide: 0,
+      kneeAsym: 0,
+      legsBent: 0,
+      headOver: 0,
+      avgKneeRatioSum: 0,
+      avgKneeRatioN: 0
+    };
+
+    function resetRecStats() {
+      recStats.frames = 0;
+      recStats.kneeWide = 0;
+      recStats.kneeAsym = 0;
+      recStats.legsBent = 0;
+      recStats.headOver = 0;
+      recStats.avgKneeRatioSum = 0;
+      recStats.avgKneeRatioN = 0;
+    }
+
+    function pickMimeType(){
+      const candidates=[
+        'video/mp4;codecs="avc1.42E01E"',
+        'video/mp4;codecs="avc1.4D401E"',
+        "video/mp4",
+        'video/webm;codecs="vp8"',
+        "video/webm"
+      ];
+      if(!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
+      for(const t of candidates){ try{ if(MediaRecorder.isTypeSupported(t)) return t; } catch(_){} }
+      return "";
+    }
+
+    function showHintBoxFromStats() {
+      hintBox.style.display = "none";
+      hintList.innerHTML = "";
+      hintText.textContent = "";
+      hintMeta.textContent = "";
+
+      if (!toggleHintBox.checked) return;
+      if (recStats.frames < 25) return; // zu wenig Daten
+
+      const p = (n)=> n / Math.max(1, recStats.frames);
+
+      // Schwellwerte: "eindeutig über mehrere Frames"
+      const thr = 0.22; // 22% der Frames
+      const issues = [];
+
+      if (p(recStats.kneeWide) >= thr) {
+        issues.push({
+          key: "kneeWide",
+          score: p(recStats.kneeWide),
+          title: "Knie öffnen zu weit",
+          tip: "Knie enger (≈ schulterbreit) anziehen – „Schere“ vermeiden."
+        });
+      }
+      if (p(recStats.kneeAsym) >= thr) {
+        issues.push({
+          key: "kneeAsym",
+          score: p(recStats.kneeAsym),
+          title: "Beinschlag unsymmetrisch",
+          tip: "Beide Knie ähnlich beugen/strecken – Bewegung links/rechts angleichen."
+        });
+      }
+      if (p(recStats.legsBent) >= thr) {
+        issues.push({
+          key: "legsBent",
+          score: p(recStats.legsBent),
+          title: "Beine nicht gestreckt in der Gleitphase",
+          tip: "Nach dem Beinschlag vollständig strecken – kurz stabil gleiten."
+        });
+      }
+      if (p(recStats.headOver) >= thr) {
+        issues.push({
+          key: "headOver",
+          score: p(recStats.headOver),
+          title: "Kopf überstreckt (HWS)",
+          tip: "Nacken lang, Blick eher schräg nach unten/vorne (neutral)."
+        });
+      }
+
+      // Zusätzlich: sehr kurze Gleitzeiten (Slots), falls vorhanden
+      const shortGlides = glideTimes.filter(t => (t/1000) < 0.8).length;
+      if (glideTimes.length > 0 && shortGlides >= 1) {
+        issues.push({
+          key: "shortGlide",
+          score: 0.30,
+          title: "Gleitphase sehr kurz",
+          tip: "Länger gleiten: nach dem Strecken ruhig halten, bevor die nächste Phase startet."
+        });
+      }
+
+      issues.sort((a,b)=> b.score - a.score);
+      const top = issues.slice(0,3);
+
+      if (top.length === 0) return;
+
+      const avgRatio = (recStats.avgKneeRatioN > 0)
+        ? (recStats.avgKneeRatioSum / recStats.avgKneeRatioN)
+        : null;
+
+      hintMeta.textContent = `${recStats.frames} Frames` + (avgRatio ? ` • Ø Knie/Schulter ${avgRatio.toFixed(2)}×` : "");
+
+      hintText.textContent = "In dieser Aufnahme waren folgende Punkte über mehrere Frames deutlich auffällig:";
+      for (const it of top) {
+        const li = document.createElement("li");
+        li.innerHTML = `<b>${it.title}</b> – ${it.tip}`;
+        hintList.appendChild(li);
+      }
+
+      hintBox.style.display = "block";
+      hintBox.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function startRecordingCanvas(){
+      recordedChunks=[]; lastBlob=null; btnShare.disabled=true;
+
+      resetRecStats();
+      isRecording = true;
+
+      const s = canvas.captureStream(15);
+      const mt = pickMimeType();
+      try{ recorder=new MediaRecorder(s, mt?{mimeType:mt}:undefined); }
+      catch(_){ recorder=new MediaRecorder(s); }
+
+      setStatus("Aufnahme läuft… (" + (recorder.mimeType || mt || "default") + ")");
+      recorder.ondataavailable=(e)=>{ if(e.data && e.data.size>0) recordedChunks.push(e.data); };
+      recorder.onstop=()=>{
+        isRecording = false;
+        const type = recorder.mimeType || mt || "video/webm";
+        lastBlob = new Blob(recordedChunks,{type});
+        btnShare.disabled = !lastBlob;
+        setStatus("Aufnahme fertig (" + (lastBlob.type.includes("mp4") ? "MP4" : "WebM") + ").");
+
+        // Hinweisbox nach Stop (bis zu 3 klare Punkte)
+        showHintBoxFromStats();
+      };
+      recorder.start(200);
+    }
+
+    function stopRecordingCanvas(){ if(recorder && recorder.state!=="inactive") recorder.stop(); }
+
+    async function shareOrDownload(){
+      if(!lastBlob) return;
+      const type=lastBlob.type||"";
+      const ext=type.includes("mp4")?"mp4":(type.includes("webm")?"webm":"bin");
+      const fileName=`bewegungsanalyse_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`;
+      const file=new File([lastBlob],fileName,{type:lastBlob.type});
+
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        await navigator.share({files:[file], title:"Bewegungsanalyse Recorder"});
+        setStatus("Geteilt/gespeichert ("+ext.toUpperCase()+").");
+        return;
+      }
+      const url=URL.createObjectURL(lastBlob);
+      const a=document.createElement("a");
+      a.href=url; a.download=fileName;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),2000);
+      setStatus("Download gestartet ("+ext.toUpperCase()+").");
     }
 
     // ---------- MediaPipe Tasks ----------
@@ -841,14 +1125,43 @@
           const vw = video.videoWidth, vh = video.videoHeight;
 
           const cssPoints = emaCss(mapLandmarksContain(raw, vw, vh, CSS_W, CSS_H));
+
+          // Visuals
           drawSkeletonCssPoints(cssPoints);
-
           const neck = drawNeckAxis(raw, cssPoints);
+          const legs = drawLegChecks(raw, cssPoints);
 
+          // Timer
           updateTimer(raw, ts);
 
+          // Stats collection during recording (for hint box)
+          if (isRecording) {
+            recStats.frames++;
+
+            // knee ratio
+            if (legs.kneeRatio != null) {
+              recStats.avgKneeRatioSum += legs.kneeRatio;
+              recStats.avgKneeRatioN++;
+              if (legs.kneeRatio > 1.55) recStats.kneeWide++;
+            }
+
+            // knee asymmetry
+            if (legs.kneeDiff != null && legs.kneeDiff > 25) recStats.kneeAsym++;
+
+            // legs bent (during glide timer only → more meaningful)
+            const [aL, aR] = legs.kneeAngles || [null,null];
+            const bent = ((aL != null && aL < 155) || (aR != null && aR < 155));
+            if (toggleTimer.checked && glideActive && bent) recStats.legsBent++;
+
+            // head over (during glide timer only)
+            if (toggleTimer.checked && glideActive && neck.neckDeg != null) {
+              const tol = Number(neckTol.value);
+              if (neck.neckDeg > (tol + 5)) recStats.headOver++;
+            }
+          }
+
           drawOverlay(
-            `DEBUG: lm=${raw.length} mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} score=${scoreEma.toFixed(2)} neck=${neck.neckDeg==null?"-":neck.neckDeg.toFixed(1)}° ui=${isPortraitUI()?"P":"L"}`
+            `DEBUG: lm=${raw.length} mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} score=${scoreEma.toFixed(2)} ui=${isPortraitUI()?"P":"L"}`
           );
         } else {
           drawOverlay(`DEBUG: lm=0 mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} ui=${isPortraitUI()?"P":"L"}`);
@@ -866,62 +1179,6 @@
       }
     }
 
-    // ---------- Recording ----------
-    let recorder=null, recordedChunks=[], lastBlob=null;
-
-    function pickMimeType(){
-      const candidates=[
-        'video/mp4;codecs="avc1.42E01E"',
-        'video/mp4;codecs="avc1.4D401E"',
-        "video/mp4",
-        'video/webm;codecs="vp8"',
-        "video/webm"
-      ];
-      if(!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
-      for(const t of candidates){ try{ if(MediaRecorder.isTypeSupported(t)) return t; } catch(_){} }
-      return "";
-    }
-
-    function startRecordingCanvas(){
-      recordedChunks=[]; lastBlob=null; btnShare.disabled=true;
-      const s = canvas.captureStream(15);
-      const mt = pickMimeType();
-      try{ recorder=new MediaRecorder(s, mt?{mimeType:mt}:undefined); }
-      catch(_){ recorder=new MediaRecorder(s); }
-
-      setStatus("Aufnahme läuft… (" + (recorder.mimeType || mt || "default") + ")");
-      recorder.ondataavailable=(e)=>{ if(e.data && e.data.size>0) recordedChunks.push(e.data); };
-      recorder.onstop=()=>{
-        const type = recorder.mimeType || mt || "video/webm";
-        lastBlob = new Blob(recordedChunks,{type});
-        btnShare.disabled = !lastBlob;
-        setStatus("Aufnahme fertig (" + (lastBlob.type.includes("mp4") ? "MP4" : "WebM") + ").");
-      };
-      recorder.start(200);
-    }
-
-    function stopRecordingCanvas(){ if(recorder && recorder.state!=="inactive") recorder.stop(); }
-
-    async function shareOrDownload(){
-      if(!lastBlob) return;
-      const type=lastBlob.type||"";
-      const ext=type.includes("mp4")?"mp4":(type.includes("webm")?"webm":"bin");
-      const fileName=`bewegungsanalyse_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`;
-      const file=new File([lastBlob],fileName,{type:lastBlob.type});
-
-      if(navigator.canShare && navigator.canShare({files:[file]})){
-        await navigator.share({files:[file], title:"Bewegungsanalyse Recorder"});
-        setStatus("Geteilt/gespeichert ("+ext.toUpperCase()+").");
-        return;
-      }
-      const url=URL.createObjectURL(lastBlob);
-      const a=document.createElement("a");
-      a.href=url; a.download=fileName;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(()=>URL.revokeObjectURL(url),2000);
-      setStatus("Download gestartet ("+ext.toUpperCase()+").");
-    }
-
     // ---------- Buttons ----------
     btnInit.addEventListener("click", async ()=>{
       try{
@@ -935,6 +1192,8 @@
         btnSwitch.disabled=false;
         btnRec.disabled=false;
         btnReset.disabled=false;
+
+        hintBox.style.display = "none";
 
         setStatus("bereit.");
         rafId = requestAnimationFrame(loop);
@@ -962,6 +1221,8 @@
         scoreEma=0; scoreStableSince=null; scoreLowSince=null;
         lastTorso=null;
 
+        hintBox.style.display = "none";
+
         running=true;
         rafId = requestAnimationFrame(loop);
 
@@ -979,6 +1240,7 @@
     btnRec.addEventListener("click", ()=>{
       btnRec.disabled=true;
       btnStop.disabled=false;
+      hintBox.style.display = "none";
       startRecordingCanvas();
     });
 
@@ -995,6 +1257,7 @@
       glideActive=false; glideStart=0; currentElapsed=0;
       scoreEma=0; scoreStableSince=null; scoreLowSince=null;
       setStatus("Slots zurückgesetzt.");
+      hintBox.style.display = "none";
     });
   </script>
 </body>
