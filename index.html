@@ -114,7 +114,6 @@
     </p>
   </div>
 
-  <!-- hidden input video by default -->
   <video id="video" class="videoHidden" playsinline autoplay muted></video>
 
   <div class="stack">
@@ -126,7 +125,6 @@
       </div>
     </div>
 
-    <!-- Anzeige + Erweiterte Settings: default collapsed -->
     <details id="displayBox">
       <summary>Anzeige (allgemein)</summary>
       <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
@@ -209,7 +207,6 @@
       </details>
     </details>
 
-    <!-- Brust tools directly under Anzeige -->
     <details id="breastTools">
       <summary>Brustschwimmen-Tools (spezifisch)</summary>
 
@@ -270,7 +267,6 @@
       </details>
     </details>
 
-    <!-- Aufnahme always above canvas -->
     <div class="block">
       <div class="blockTitle">Aufnahme</div>
       <div class="btnRow">
@@ -281,7 +277,6 @@
       </div>
     </div>
 
-    <!-- Canvas -->
     <div>
       <canvas id="canvas"></canvas>
     </div>
@@ -385,8 +380,12 @@
       ctx.imageSmoothingEnabled = false;
     }
     function applyLayoutFromOrientation() {
-      if (isPortraitUI()) setupHiDPICanvas(360, 640);
-      else setupHiDPICanvas(640, 360);
+      if (isPortraitUI()) {
+        setupHiDPICanvas(360, 640);
+      } else {
+        // Größer im Querformat (16:9)
+        setupHiDPICanvas(720, 405);
+      }
       setStatus("Ausrichtung: " + (isPortraitUI() ? "Hochformat" : "Querformat"));
     }
     window.addEventListener("resize", applyLayoutFromOrientation);
@@ -396,16 +395,15 @@
     const BG = "#bfe7ff";
 
     // Pose connections:
-    // - Keep hand "3-finger" lines from wrist to pinky/index/thumb
-    // - Remove pinky<->index cross line (17-19 and 18-20) which looked wrong.
+    // - Keep wrist->(pinky/index/thumb) lines
+    // - Remove pinky<->index cross line
     const POSE_CONNECTIONS = [
       [0,1],[1,2],[2,3],[3,7],
       [0,4],[4,5],[5,6],[6,8],
       [9,10],
       [11,12],
-      [11,13],[13,15],[15,17],[15,19],[15,21], // keep wrist->3 hand points
-      [12,14],[14,16],[16,18],[16,20],[16,22], // keep wrist->3 hand points
-      // removed: [17,19] and [18,20]
+      [11,13],[13,15],[15,17],[15,19],[15,21],
+      [12,14],[14,16],[16,18],[16,20],[16,22],
       [11,23],[12,24],[23,24],
       [23,25],[25,27],[27,29],[29,31],
       [24,26],[26,28],[28,30],[30,32]
@@ -569,44 +567,71 @@
       return info;
     }
 
-    // HWS axis
+    // -------- HWS AXIS (FIX FOR side45) --------
+    // Problem: head-point from ear-midpoint can behave counterintuitively in side views.
+    // Fix: use nose primarily, and avoid "flip-to-up" logic for side45.
+    function chooseHeadPoint(raw) {
+      // Prefer nose; fallback: ears midpoint; fallback: eyes midpoint.
+      const nose = raw[0];
+      const le = raw[7], re = raw[8];
+      const lEye = raw[2], rEye = raw[5];
+
+      if (nose) return nose;
+      if (le && re) return { x:(le.x+re.x)/2, y:(le.y+re.y)/2 };
+      if (lEye && rEye) return { x:(lEye.x+rEye.x)/2, y:(lEye.y+rEye.y)/2 };
+      return null;
+    }
+
     function drawNeckAxis(rawNorm, cssPoints) {
       if (!toggleNeck.checked || !rawNorm || !cssPoints) return { neckDeg: null, ok: null };
 
       const ls = rawNorm[11], rs = rawNorm[12];
       const lh = rawNorm[23], rh = rawNorm[24];
-      const le = rawNorm[7],  re = rawNorm[8];
-      const nose = rawNorm[0];
       if (!ls || !rs || !lh || !rh) return { neckDeg: null, ok: null };
 
       const shoulder = mid2(ls, rs);
       const hip = mid2(lh, rh);
 
-      let head = null;
-      if (le && re) head = mid2(le, re);
-      else if (nose) head = nose;
-      else return { neckDeg: null, ok: null };
+      const head = chooseHeadPoint(rawNorm);
+      if (!head) return { neckDeg: null, ok: null };
 
+      // torso vector (hip -> shoulder)
       const torso = { x: shoulder.x - hip.x, y: shoulder.y - hip.y };
+      // neck vector (shoulder -> head)
       const neck  = { x: head.x - shoulder.x, y: head.y - shoulder.y };
 
-      const torsoUp = (torso.y < 0) ? torso : { x:-torso.x, y:-torso.y };
-      const neckUp  = (neck.y  < 0) ? neck  : { x:-neck.x,  y:-neck.y  };
+      // For side45: do NOT "flip to up", because perspective can invert the heuristic.
+      // For others: keep the old normalization to reduce sign-instability.
+      const preset = filmingPreset.value;
+      let torsoN = torso, neckN = neck;
 
-      const deg = angleBetween(torsoUp, neckUp);
+      if (preset !== "side45") {
+        // normalize to "upwards" direction (mostly for front/back-ish)
+        torsoN = (torso.y < 0) ? torso : { x:-torso.x, y:-torso.y };
+        neckN  = (neck.y  < 0) ? neck  : { x:-neck.x,  y:-neck.y  };
+      }
+
+      const deg = angleBetween(torsoN, neckN);
       const tol = Number(neckTol.value);
       const ok = deg <= tol;
 
+      // draw on css
       const cssLs = cssPoints[11], cssRs = cssPoints[12];
-      const cssLe = cssPoints[7],  cssRe = cssPoints[8];
-      const cssN  = cssPoints[0];
+      if (!cssLs || !cssRs) return { neckDeg: deg, ok };
 
-      const cssShoulder = (cssLs && cssRs) ? mid2px(cssLs, cssRs) : null;
+      const cssShoulder = mid2px(cssLs, cssRs);
+
+      // head css point: prefer css nose (0), fallback ears midpoint
       let cssHead = null;
-      if (cssLe && cssRe) cssHead = mid2px(cssLe, cssRe);
-      else if (cssN) cssHead = { _cx: cssN._cx, _cy: cssN._cy };
+      const cssNose = cssPoints[0];
+      const cssLe = cssPoints[7], cssRe = cssPoints[8];
+      const cssLEye = cssPoints[2], cssREye = cssPoints[5];
 
-      if (cssShoulder && cssHead) {
+      if (cssNose) cssHead = { _cx: cssNose._cx, _cy: cssNose._cy };
+      else if (cssLe && cssRe) cssHead = mid2px(cssLe, cssRe);
+      else if (cssLEye && cssREye) cssHead = mid2px(cssLEye, cssREye);
+
+      if (cssHead) {
         ctx.save();
         ctx.lineCap = "round";
         ctx.lineWidth = 6;
@@ -621,7 +646,7 @@
       return { neckDeg: deg, ok };
     }
 
-    // Knee/leg checks: ONLY draw the dashed measurement line, no text, no Δ-angle display
+    // Knee/leg checks (dashed measurement line only)
     function colorForRatio(r) {
       if (r <= 1.35) return "rgba(0,170,0,0.95)";
       if (r <= 1.55) return "rgba(255,140,0,0.95)";
@@ -647,8 +672,8 @@
       if (kneeRatio != null) {
         ctx.save();
         ctx.lineCap = "round";
-        ctx.lineWidth = 3;          // thin
-        ctx.setLineDash([7, 6]);    // dashed => measurement, not skeleton
+        ctx.lineWidth = 3;
+        ctx.setLineDash([7, 6]); // dashed => measurement
         ctx.strokeStyle = colorForRatio(kneeRatio);
         ctx.beginPath();
         ctx.moveTo(kL._cx, kL._cy);
@@ -661,7 +686,7 @@
       return { kneeRatio, kneeDiff: diff, kneeAngles: [aL, aR] };
     }
 
-    // Timer logic (unchanged)
+    // Timer logic
     let glideActive = false, glideStart = 0, currentElapsed = 0;
     let scoreEma = 0, scoreStableSince = null, scoreLowSince = null;
     let lastTorso = null;
@@ -833,15 +858,21 @@
       }
     }
 
+    // Overlay (adjusted for landscape: wider and flatter)
     function drawOverlay(debugText=""){
       if(!toggleTimer.checked) return;
+
+      const isPortrait = CSS_H > CSS_W;
 
       ctx.save();
       ctx.fillStyle="rgba(0,0,0,0.40)";
       ctx.strokeStyle="rgba(255,255,255,0.55)";
       ctx.lineWidth=2;
 
-      const x=12, y=12, w=Math.min(420, CSS_W-24), h=140, r=14;
+      const x=12, y=12;
+      const w = isPortrait ? Math.min(420, CSS_W-24) : Math.min(600, CSS_W-24);
+      const h = isPortrait ? 140 : 96;
+      const r=14;
       const rr=Math.min(r,w/2,h/2);
 
       ctx.beginPath();
@@ -856,17 +887,20 @@
       ctx.fillStyle="white";
       ctx.shadowBlur=0;
 
-      ctx.font="700 28px system-ui";
-      ctx.fillText(glideActive ? fmt(currentElapsed) : "0.000 s", x+12, y+36);
+      ctx.font = isPortrait ? "700 28px system-ui" : "700 24px system-ui";
+      ctx.fillText(glideActive ? fmt(currentElapsed) : "0.000 s", x+12, y+(isPortrait?36:30));
 
       ctx.font="600 12px system-ui";
       const presetLabel = filmingPreset.value==="stand" ? "Stand" : (filmingPreset.value==="side45" ? "45° seitlich" : "45° hinten");
-      ctx.fillText(`Timer Brust – Gleitphase | Aufnahme: ${presetLabel}`, x+12, y+56);
+      ctx.fillText(`Timer Brust – Gleitphase | Aufnahme: ${presetLabel}`, x+12, y+(isPortrait?56:48));
 
+      // Slots: in landscape slightly tighter
       ctx.font="14px system-ui";
+      const baseY = y + (isPortrait ? 80 : 68);
+      const step = isPortrait ? 16 : 14;
       for (let i=0;i<4;i++){
         const t = glideTimes[i]!=null ? fmt(glideTimes[i]) : "—";
-        ctx.fillText(`Slot ${i+1}: ${t}`, x+12, y+80+i*16);
+        ctx.fillText(`Slot ${i+1}: ${t}`, x+12, baseY + i*step);
       }
 
       if (debugText) {
@@ -876,7 +910,7 @@
       ctx.restore();
     }
 
-    // Recording + tips (unchanged)
+    // Recording + tips (unchanged, compact)
     let recorder=null, recordedChunks=[], lastBlob=null;
     let isRecording = false;
 
@@ -984,7 +1018,7 @@
       setStatus("Download gestartet ("+ext.toUpperCase()+").");
     }
 
-    // MediaPipe Tasks
+    // MediaPipe
     let landmarker = null;
     let running = false;
     let rafId = null;
@@ -1097,12 +1131,12 @@
           const cssPoints = emaCss(mapLandmarksContain(raw, vw, vh, CSS_W, CSS_H));
 
           drawSkeletonCssPoints(cssPoints);
+
           const neck = drawNeckAxis(raw, cssPoints);
           const legs = drawLegChecks(raw, cssPoints);
 
           updateTimer(raw, ts);
 
-          // stats for hints
           if (isRecording) {
             recStats.frames++;
 
