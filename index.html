@@ -8,6 +8,8 @@
     :root { --bg: #bfe7ff; }
 
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .hint { color: #555; font-size: 14px; line-height: 1.4; max-width: 1100px; }
 
     .header {
       background: var(--bg);
@@ -25,31 +27,13 @@
       max-width: 980px;
     }
 
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
-    .hint { color: #555; font-size: 14px; line-height: 1.4; max-width: 1100px; }
+    .stack { display: grid; grid-template-columns: 1fr; gap: 12px; max-width: 1100px; }
 
-    /* Responsive layout: portrait => controls above canvas; landscape => side-by-side */
-    .layout {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 12px;
-      align-items: start;
-    }
-
-    @media (orientation: landscape) and (min-width: 700px) {
-      .layout {
-        grid-template-columns: 360px 1fr;
-        gap: 14px;
-      }
-    }
-
-    /* Cards */
     .block {
       border: 1px solid #ddd;
       border-radius: 12px;
       padding: 10px 12px;
       background: #fff;
-      max-width: 1100px;
     }
     .blockTitle {
       font-weight: 800;
@@ -133,178 +117,171 @@
   <!-- hidden input video by default -->
   <video id="video" class="videoHidden" playsinline autoplay muted></video>
 
-  <div class="layout">
-    <!-- LEFT / TOP: Controls -->
-    <div>
-      <div class="block">
-        <div class="blockTitle">Kamera</div>
-        <div class="btnRow">
-          <button id="btnInit" class="primary wide">Kamera aktivieren</button>
-          <button id="btnSwitch" disabled class="wide">Kamera wechseln (Rück)</button>
-        </div>
+  <div class="stack">
+    <div class="block">
+      <div class="blockTitle">Kamera</div>
+      <div class="btnRow">
+        <button id="btnInit" class="primary wide">Kamera aktivieren</button>
+        <button id="btnSwitch" disabled class="wide">Kamera wechseln (Rück)</button>
       </div>
-
-      <!-- Anzeige + Erweiterte Settings: default collapsed -->
-      <details id="displayBox">
-        <summary>Anzeige (allgemein)</summary>
-        <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
-          <label><input type="checkbox" id="toggleSkeleton" checked /> Skelett</label>
-          <label><input type="checkbox" id="toggleSilhouette" checked /> Segmentierung</label>
-          <label><input type="checkbox" id="toggleHintBox" checked /> Techniktipps nach Stop</label>
-
-          <select id="filmingPreset" title="Aufnahmeposition">
-            <option value="stand" selected>Stand</option>
-            <option value="side45">45° seitlich</option>
-            <option value="back45">45° hinten</option>
-          </select>
-        </div>
-
-        <details id="advancedBox" style="margin-top:10px;">
-          <summary>Erweiterte Einstellungen</summary>
-
-          <div class="rangeWrap">
-            <span>Input-Video anzeigen</span>
-            <label style="border:none; padding:0; border-radius:0;">
-              <input type="checkbox" id="showInputVideo" />
-              <span class="small">anzeigen</span>
-            </label>
-            <span class="hint" style="max-width:none;">(Optional – Output bleibt anonym.)</span>
-          </div>
-
-          <div class="rangeWrap">
-            <span>Segmentierung – Deckkraft</span>
-            <input id="silOpacity" type="range" min="0" max="1" step="0.05" value="0.40">
-            <span id="silOpacityVal" class="small">0.40</span>
-          </div>
-
-          <div class="rangeWrap">
-            <span>Segmentierung – Schwelle</span>
-            <input id="silThresh" type="range" min="0" max="100" step="1" value="70">
-            <span id="silThreshVal" class="small">70</span>
-          </div>
-
-          <div class="rangeWrap">
-            <span>Skelett – Linienstärke</span>
-            <input id="skelLine" type="range" min="1" max="10" step="1" value="3">
-            <span id="skelLineVal" class="small">3</span>
-          </div>
-
-          <div class="rangeWrap">
-            <span>Skelett – Punkt-Radius</span>
-            <input id="skelDot" type="range" min="1" max="10" step="1" value="4">
-            <span id="skelDotVal" class="small">4</span>
-          </div>
-
-          <div class="rangeWrap">
-            <span>Detection (min)</span>
-            <input id="detConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
-            <span id="detVal" class="small">0.50</span>
-          </div>
-
-          <div class="rangeWrap">
-            <span>Presence (min)</span>
-            <input id="presConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
-            <span id="presVal" class="small">0.50</span>
-          </div>
-
-          <div class="rangeWrap">
-            <span>Tracking (min)</span>
-            <input id="trackConf" type="range" min="0.3" max="0.95" step="0.01" value="0.55">
-            <span id="trackVal" class="small">0.55</span>
-          </div>
-
-          <div class="rangeWrap">
-            <span>Glättung (EMA)</span>
-            <input id="smooth" type="range" min="0" max="0.9" step="0.05" value="0.55">
-            <span id="smoothVal" class="small">0.55</span>
-          </div>
-
-          <div class="rangeWrap">
-            <span>HWS – Toleranz (°)</span>
-            <input id="neckTol" type="range" min="10" max="60" step="1" value="25">
-            <span id="neckTolVal" class="small">25</span>
-          </div>
-
-          <p class="hint">
-            Hinweis: Checks sind auf Merkmale begrenzt, die mit 2D-Skelettanalyse aus typischen Perspektiven oft robust beurteilbar sind.
-          </p>
-        </details>
-      </details>
-
-      <!-- Aufnahme: compact and near canvas (portrait: above canvas, landscape: left column) -->
-      <div class="block" style="margin-top:12px;">
-        <div class="blockTitle">Aufnahme</div>
-        <div class="btnRow">
-          <button id="btnRec" disabled class="wide">Aufnahme starten</button>
-          <button id="btnStop" disabled>Stop</button>
-          <button id="btnShare" disabled>Teilen/Speichern</button>
-          <button id="btnReset" disabled class="wide">Slots zurücksetzen</button>
-        </div>
-      </div>
-
-      <!-- Brust tools collapsed by default -->
-      <details id="breastTools" style="margin-top:12px;">
-        <summary>Brustschwimmen-Tools (spezifisch)</summary>
-
-        <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
-          <label><input type="checkbox" id="toggleNeck" checked /> HWS-Achse (Brust)</label>
-          <label><input type="checkbox" id="toggleLegCheck" checked /> Knie/Beine-Check (Brust)</label>
-          <label><input type="checkbox" id="toggleTimer" checked /> Timer Brust – Gleitphase</label>
-        </div>
-
-        <div id="tipsBox" class="tipsBox">
-          <h3>Techniktipps Brustschwimmen <span id="hintMeta" class="pill"></span></h3>
-          <div class="hint" id="hintText"></div>
-          <ul id="hintList"></ul>
-        </div>
-
-        <details style="margin-top:10px;">
-          <summary>Technik-Checkliste (Brust: Gleitphase)</summary>
-          <p class="hint">
-            Diese Liste ist <b>nicht vollständig</b>. Aufgeführt sind vor allem Merkmale, die man mit der <b>Skelettanalyse</b> aus typischen Aufnahmewinkeln
-            vergleichsweise zuverlässig prüfen kann.
-          </p>
-
-          <details>
-            <summary>Knie öffnen zu weit („Schere“ / Bremsfläche)</summary>
-            <p class="hint">
-              <b>Faustregel:</b> Knieöffnung ungefähr im Bereich <b>Schulterbreite</b>.<br>
-              Analyse: Verhältnis <b>Kniebreite/Schulterbreite</b>. Richtwert: <b>&gt; 1,55×</b> auffällig.
-            </p>
-          </details>
-
-          <details>
-            <summary>Beinschlag unsymmetrisch</summary>
-            <p class="hint">
-              Analyse: Differenz der Knie-Winkel links/rechts. Richtwert: <b>&gt; 25–30°</b> über mehrere Frames auffällig.
-            </p>
-          </details>
-
-          <details>
-            <summary>Kopf überstreckt (HWS rot)</summary>
-            <p class="hint">
-              Korrektur: Nacken lang, Blick eher schräg nach unten/vorne, „Doppelkinn“-Gefühl.
-            </p>
-          </details>
-
-          <details>
-            <summary>Arme öffnen zu weit</summary>
-            <p class="hint">
-              Faustregel: Hände nicht deutlich breiter als schulterbreit öffnen; dann Ellenbogen beugen, Hände vor Brust und direkt wieder nach vorn strecken.
-            </p>
-          </details>
-
-          <details>
-            <summary>Gleitphase zu kurz</summary>
-            <p class="hint">
-              Sehr grob: häufig ca. <b>0,8–1,5 s</b> (Technikfokus/Anfänger) bis <b>1,5–2,5 s</b> (guter Abstoß/fortgeschritten).
-            </p>
-          </details>
-        </details>
-      </details>
     </div>
 
-    <!-- RIGHT / BOTTOM: Canvas -->
+    <!-- Anzeige + Erweiterte Settings: default collapsed -->
+    <details id="displayBox">
+      <summary>Anzeige (allgemein)</summary>
+      <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
+        <label><input type="checkbox" id="toggleSkeleton" checked /> Skelett</label>
+        <label><input type="checkbox" id="toggleSilhouette" checked /> Segmentierung</label>
+        <label><input type="checkbox" id="toggleHintBox" checked /> Techniktipps nach Stop</label>
+
+        <select id="filmingPreset" title="Aufnahmeposition">
+          <option value="stand" selected>Stand</option>
+          <option value="side45">45° seitlich</option>
+          <option value="back45">45° hinten</option>
+        </select>
+      </div>
+
+      <details id="advancedBox" style="margin-top:10px;">
+        <summary>Erweiterte Einstellungen</summary>
+
+        <div class="rangeWrap">
+          <span>Input-Video anzeigen</span>
+          <label style="border:none; padding:0; border-radius:0;">
+            <input type="checkbox" id="showInputVideo" />
+            <span class="small">anzeigen</span>
+          </label>
+          <span class="hint" style="max-width:none;">(Optional – Output bleibt anonym.)</span>
+        </div>
+
+        <div class="rangeWrap">
+          <span>Segmentierung – Deckkraft</span>
+          <input id="silOpacity" type="range" min="0" max="1" step="0.05" value="0.40">
+          <span id="silOpacityVal" class="small">0.40</span>
+        </div>
+
+        <div class="rangeWrap">
+          <span>Segmentierung – Schwelle</span>
+          <input id="silThresh" type="range" min="0" max="100" step="1" value="70">
+          <span id="silThreshVal" class="small">70</span>
+        </div>
+
+        <div class="rangeWrap">
+          <span>Skelett – Linienstärke</span>
+          <input id="skelLine" type="range" min="1" max="10" step="1" value="3">
+          <span id="skelLineVal" class="small">3</span>
+        </div>
+
+        <div class="rangeWrap">
+          <span>Skelett – Punkt-Radius</span>
+          <input id="skelDot" type="range" min="1" max="10" step="1" value="4">
+          <span id="skelDotVal" class="small">4</span>
+        </div>
+
+        <div class="rangeWrap">
+          <span>Detection (min)</span>
+          <input id="detConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
+          <span id="detVal" class="small">0.50</span>
+        </div>
+
+        <div class="rangeWrap">
+          <span>Presence (min)</span>
+          <input id="presConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
+          <span id="presVal" class="small">0.50</span>
+        </div>
+
+        <div class="rangeWrap">
+          <span>Tracking (min)</span>
+          <input id="trackConf" type="range" min="0.3" max="0.95" step="0.01" value="0.55">
+          <span id="trackVal" class="small">0.55</span>
+        </div>
+
+        <div class="rangeWrap">
+          <span>Glättung (EMA)</span>
+          <input id="smooth" type="range" min="0" max="0.9" step="0.05" value="0.55">
+          <span id="smoothVal" class="small">0.55</span>
+        </div>
+
+        <div class="rangeWrap">
+          <span>HWS – Toleranz (°)</span>
+          <input id="neckTol" type="range" min="10" max="60" step="1" value="25">
+          <span id="neckTolVal" class="small">25</span>
+        </div>
+      </details>
+    </details>
+
+    <!-- Brust tools directly under Anzeige -->
+    <details id="breastTools">
+      <summary>Brustschwimmen-Tools (spezifisch)</summary>
+
+      <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
+        <label><input type="checkbox" id="toggleNeck" checked /> HWS-Achse (Brust)</label>
+        <label><input type="checkbox" id="toggleLegCheck" checked /> Knie/Beine-Check (Brust)</label>
+        <label><input type="checkbox" id="toggleTimer" checked /> Timer Brust – Gleitphase</label>
+      </div>
+
+      <div id="tipsBox" class="tipsBox">
+        <h3>Techniktipps Brustschwimmen <span id="hintMeta" class="pill"></span></h3>
+        <div class="hint" id="hintText"></div>
+        <ul id="hintList"></ul>
+      </div>
+
+      <details style="margin-top:10px;">
+        <summary>Technik-Checkliste (Brust: Gleitphase)</summary>
+        <p class="hint">
+          Diese Liste ist <b>nicht vollständig</b>. Aufgeführt sind vor allem Merkmale, die man mit der <b>Skelettanalyse</b> aus typischen Aufnahmewinkeln
+          vergleichsweise zuverlässig prüfen kann.
+        </p>
+
+        <details>
+          <summary>Knie öffnen zu weit („Schere“ / Bremsfläche)</summary>
+          <p class="hint">
+            <b>Faustregel:</b> Knieöffnung ungefähr im Bereich <b>Schulterbreite</b>.<br>
+            Richtwert (intern): Kniebreite/Schulterbreite <b>&gt; 1,55×</b> über mehrere Frames auffällig.
+          </p>
+        </details>
+
+        <details>
+          <summary>Beinschlag unsymmetrisch</summary>
+          <p class="hint">
+            Richtwert (intern): Differenz der Knie-Winkel links/rechts <b>&gt; 25–30°</b> über mehrere Frames auffällig.
+          </p>
+        </details>
+
+        <details>
+          <summary>Kopf überstreckt (HWS rot)</summary>
+          <p class="hint">
+            Korrektur: Nacken lang, Blick eher schräg nach unten/vorne, „Doppelkinn“-Gefühl.
+          </p>
+        </details>
+
+        <details>
+          <summary>Arme öffnen zu weit</summary>
+          <p class="hint">
+            Faustregel: Hände nicht deutlich breiter als schulterbreit öffnen; dann Ellenbogen beugen, Hände vor Brust und direkt wieder nach vorn strecken.
+          </p>
+        </details>
+
+        <details>
+          <summary>Gleitphase zu kurz</summary>
+          <p class="hint">
+            Sehr grob: häufig ca. <b>0,8–1,5 s</b> (Technikfokus/Anfänger) bis <b>1,5–2,5 s</b> (guter Abstoß/fortgeschritten).
+          </p>
+        </details>
+      </details>
+    </details>
+
+    <!-- Aufnahme always above canvas -->
+    <div class="block">
+      <div class="blockTitle">Aufnahme</div>
+      <div class="btnRow">
+        <button id="btnRec" disabled class="wide">Aufnahme starten</button>
+        <button id="btnStop" disabled>Stop</button>
+        <button id="btnShare" disabled>Teilen/Speichern</button>
+        <button id="btnReset" disabled class="wide">Slots zurücksetzen</button>
+      </div>
+    </div>
+
+    <!-- Canvas -->
     <div>
       <canvas id="canvas"></canvas>
     </div>
@@ -418,15 +395,17 @@
 
     const BG = "#bfe7ff";
 
-    // Pose connections WITHOUT hand/finger connections (removes “finger lines” look)
-    // Keep core body + arms to wrist, but NOT wrist->pinky/index/thumb.
+    // Pose connections:
+    // - Keep hand "3-finger" lines from wrist to pinky/index/thumb
+    // - Remove pinky<->index cross line (17-19 and 18-20) which looked wrong.
     const POSE_CONNECTIONS = [
       [0,1],[1,2],[2,3],[3,7],
       [0,4],[4,5],[5,6],[6,8],
       [9,10],
       [11,12],
-      [11,13],[13,15],          // left arm to wrist
-      [12,14],[14,16],          // right arm to wrist
+      [11,13],[13,15],[15,17],[15,19],[15,21], // keep wrist->3 hand points
+      [12,14],[14,16],[16,18],[16,20],[16,22], // keep wrist->3 hand points
+      // removed: [17,19] and [18,20]
       [11,23],[12,24],[23,24],
       [23,25],[25,27],[27,29],[29,31],
       [24,26],[26,28],[28,30],[30,32]
@@ -642,15 +621,10 @@
       return { neckDeg: deg, ok };
     }
 
-    // Knee/leg checks: renamed + thin dashed measurement line
+    // Knee/leg checks: ONLY draw the dashed measurement line, no text, no Δ-angle display
     function colorForRatio(r) {
       if (r <= 1.35) return "rgba(0,170,0,0.95)";
       if (r <= 1.55) return "rgba(255,140,0,0.95)";
-      return "rgba(220,0,0,0.95)";
-    }
-    function colorForDiff(d) {
-      if (d <= 15) return "rgba(0,170,0,0.95)";
-      if (d <= 25) return "rgba(255,140,0,0.95)";
       return "rgba(220,0,0,0.95)";
     }
 
@@ -673,35 +647,21 @@
       if (kneeRatio != null) {
         ctx.save();
         ctx.lineCap = "round";
-        ctx.lineWidth = 3; // thinner than skeleton
-        ctx.setLineDash([7, 6]); // dashed => measurement, not skeleton
+        ctx.lineWidth = 3;          // thin
+        ctx.setLineDash([7, 6]);    // dashed => measurement, not skeleton
         ctx.strokeStyle = colorForRatio(kneeRatio);
-
         ctx.beginPath();
         ctx.moveTo(kL._cx, kL._cy);
         ctx.lineTo(kR._cx, kR._cy);
         ctx.stroke();
-
         ctx.setLineDash([]);
-        ctx.font = "12px system-ui";
-        ctx.fillStyle = "rgba(0,0,0,0.85)";
-        const mid = { _cx:(kL._cx+kR._cx)/2, _cy:(kL._cy+kR._cy)/2 };
-        ctx.fillText(`Kniebreite/Schulterbreite: ${kneeRatio.toFixed(2)}×`, mid._cx + 8, mid._cy - 8);
-        ctx.restore();
-      }
-
-      if (diff != null) {
-        ctx.save();
-        ctx.font = "12px system-ui";
-        ctx.fillStyle = colorForDiff(diff);
-        ctx.fillText(`ΔKnie-Winkel: ${diff.toFixed(0)}°`, 12, CSS_H - 12);
         ctx.restore();
       }
 
       return { kneeRatio, kneeDiff: diff, kneeAngles: [aL, aR] };
     }
 
-    // Timer (as before)
+    // Timer logic (unchanged)
     let glideActive = false, glideStart = 0, currentElapsed = 0;
     let scoreEma = 0, scoreStableSince = null, scoreLowSince = null;
     let lastTorso = null;
@@ -916,7 +876,7 @@
       ctx.restore();
     }
 
-    // Recording + tips
+    // Recording + tips (unchanged)
     let recorder=null, recordedChunks=[], lastBlob=null;
     let isRecording = false;
 
@@ -1142,6 +1102,7 @@
 
           updateTimer(raw, ts);
 
+          // stats for hints
           if (isRecording) {
             recStats.frames++;
 
