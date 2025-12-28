@@ -196,8 +196,8 @@
 
         <div class="rangeWrap">
           <span>HWS – Neutral-Offset (°)</span>
-          <input id="neckNeutral" type="range" min="-10" max="25" step="1" value="8">
-          <span id="neckNeutralVal" class="small">8</span>
+          <input id="neckNeutral" type="range" min="-10" max="25" step="1" value="12">
+          <span id="neckNeutralVal" class="small">12</span>
         </div>
 
         <div class="rangeWrap">
@@ -208,14 +208,14 @@
 
         <div class="rangeWrap">
           <span>HWS – Glättung (EMA)</span>
-          <input id="neckEma" type="range" min="0.60" max="0.90" step="0.01" value="0.78">
-          <span id="neckEmaVal" class="small">0.78</span>
+          <input id="neckEma" type="range" min="0.60" max="0.90" step="0.01" value="0.82">
+          <span id="neckEmaVal" class="small">0.82</span>
         </div>
 
         <div class="rangeWrap">
           <span>HWS – Hold (ms)</span>
-          <input id="neckHold" type="range" min="80" max="350" step="10" value="180">
-          <span id="neckHoldVal" class="small">180</span>
+          <input id="neckHold" type="range" min="80" max="350" step="10" value="200">
+          <span id="neckHoldVal" class="small">200</span>
         </div>
 
       </details>
@@ -247,7 +247,7 @@
         </details>
         <details>
           <summary>Kopf (HWS) – neutral vs. Flexion/Extension</summary>
-          <p class="hint">Grün: im Neutralband. Rot: Kopf deutlich nach unten (Flexion) oder deutlich nach hinten (Überstreckung).</p>
+          <p class="hint">Grün: im Neutralband. Rot: Kopf deutlich nach vorn/unten (Flexion) oder deutlich nach hinten (Überstreckung).</p>
         </details>
         <details>
           <summary>Gleitphase zu kurz</summary>
@@ -617,7 +617,7 @@
       return 1;
     }
 
-    // --- HWS state (signed + EMA + hold + optional auto-neutral in stand/profile)
+    // --- HWS state (PROFILE: compare neck vector to vertical; NON-PROFILE: torso-relative)
     let neckAngleEma = null;
     let neckState = "unknown"; // "green" | "redFlex" | "redExt" | "amber" | "unknown"
     let neckSince = 0;
@@ -633,48 +633,62 @@
     }
 
     function drawNeckAxis(rawNorm, cssPoints, nowTs) {
-      if (!toggleNeck.checked || !rawNorm || !cssPoints) return { neckDeg: null, state: "unknown", profile:false, facing:1, neutral: null, d: null };
+      if (!toggleNeck.checked || !rawNorm || !cssPoints) {
+        return { neckDeg: null, state: "unknown", neutral: null, d: null, profile:false, facing:1 };
+      }
 
       const ls = rawNorm[11], rs = rawNorm[12];
       const lh = rawNorm[23], rh = rawNorm[24];
-      if (!ls || !rs || !lh || !rh) return { neckDeg: null, state: "unknown", profile:false, facing:1, neutral: null, d: null };
+      if (!ls || !rs || !lh || !rh) {
+        return { neckDeg: null, state: "unknown", neutral: null, d: null, profile:false, facing:1 };
+      }
 
       const shoulder = { x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2 };
       const hip      = { x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2 };
       const head     = headCenterNorm(rawNorm);
-      if (!head) return { neckDeg: null, state: "unknown", profile:false, facing:1, neutral: null, d: null };
-
-      // torso up
-      let torso = { x: shoulder.x - hip.x, y: shoulder.y - hip.y };
-      if (torso.y > 0) torso = { x:-torso.x, y:-torso.y };
-
-      let neck = { x: head.x - shoulder.x, y: head.y - shoulder.y };
-
-      torso = normVec(torso);
-      neck  = normVec(neck);
-
-      let ang = signedAngleDeg(torso, neck); // signed
+      if (!head) {
+        return { neckDeg: null, state: "unknown", neutral: null, d: null, profile:false, facing:1 };
+      }
 
       const profile = isProfileLikely(rawNorm);
       const facing  = estimateFacingSign(rawNorm, head, shoulder);
 
-      if (profile && facing < 0) ang = -ang;
+      // Neck vector
+      const neckV = normVec({ x: head.x - shoulder.x, y: head.y - shoulder.y });
 
+      let ang = 0;
+
+      if (profile) {
+        // PROFILE MODE: compare to vertical "up"
+        const up = { x: 0, y: -1 };
+        ang = signedAngleDeg(up, neckV);
+        // normalize sign so + = forward (toward facing), - = backward (extension)
+        if (facing < 0) ang = -ang;
+      } else {
+        // NON-PROFILE: torso-relative
+        let torso = { x: shoulder.x - hip.x, y: shoulder.y - hip.y };
+        if (torso.y > 0) torso = { x:-torso.x, y:-torso.y };
+        torso = normVec(torso);
+        ang = signedAngleDeg(torso, neckV);
+      }
+
+      // EMA on the angle
       const alpha = Number(neckEma.value);
       if (neckAngleEma == null) neckAngleEma = ang;
       else neckAngleEma = alpha*neckAngleEma + (1-alpha)*ang;
 
       const neutralManual = Number(neckNeutral.value);
-      let neutral = neutralManual;
+      let neutral = (neckNeutralAuto != null) ? neckNeutralAuto : neutralManual;
 
-      // Auto neutral only for stand + profile
+      // Auto neutral only for stand + profile (stabilizes "head slightly forward")
       if (profile && filmingPreset.value === "stand") {
         const d0 = neckAngleEma - neutralManual;
-        if (Math.abs(d0) < 18 && neckCalibSamples.length < 40) {
+        if (Math.abs(d0) < 22 && neckCalibSamples.length < 45) {
           neckCalibSamples.push(neckAngleEma);
-          if (neckCalibSamples.length === 40) {
-            const sorted = neckCalibSamples.slice().sort((x,y)=>x-y);
+          if (neckCalibSamples.length === 45) {
+            const sorted = neckCalibSamples.slice().sort((a,b)=>a-b);
             neckNeutralAuto = sorted[Math.floor(sorted.length/2)];
+            neutral = neckNeutralAuto;
           }
         }
         if (neckNeutralAuto != null) neutral = neckNeutralAuto;
@@ -687,10 +701,13 @@
 
       const d = neckAngleEma - neutral;
 
+      // Semantics:
+      // In profile: d>0 = forward head / flexion-ish, d<0 = backward / extension
+      // In non-profile: d>0 / d<0 depends on camera, but we keep same labels for consistency
       let want = "amber";
       if (Math.abs(d) <= greenTol) want = "green";
-      else if (d <= -flexThr) want = "redFlex";
-      else if (d >=  extThr) want = "redExt";
+      else if (d >=  flexThr) want = "redFlex";
+      else if (d <= -extThr)  want = "redExt";
 
       const HOLD_MS = Number(neckHold.value);
       if (want !== neckState) {
@@ -703,12 +720,13 @@
         neckSince = 0;
       }
 
+      // Draw axis
       const cssLs = cssPoints[11], cssRs = cssPoints[12];
-      if (!cssLs || !cssRs) return { neckDeg: neckAngleEma, state: neckState, profile, facing, neutral, d };
+      if (!cssLs || !cssRs) return { neckDeg: neckAngleEma, state: neckState, neutral, d, profile, facing };
 
       const cssShoulder = { _cx:(cssLs._cx+cssRs._cx)/2, _cy:(cssLs._cy+cssRs._cy)/2 };
       const cssHead = headCenterCss(cssPoints);
-      if (!cssHead) return { neckDeg: neckAngleEma, state: neckState, profile, facing, neutral, d };
+      if (!cssHead) return { neckDeg: neckAngleEma, state: neckState, neutral, d, profile, facing };
 
       let stroke = "rgba(255,140,0,0.95)";
       if (neckState === "green") stroke = "rgba(0,180,0,0.95)";
@@ -724,7 +742,7 @@
       ctx.stroke();
       ctx.restore();
 
-      return { neckDeg: neckAngleEma, state: neckState, profile, facing, neutral, d };
+      return { neckDeg: neckAngleEma, state: neckState, neutral, d, profile, facing };
     }
 
     // Knee/leg checks
