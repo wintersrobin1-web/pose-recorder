@@ -7,6 +7,7 @@
   <style>
     :root { --bg: #bfe7ff; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 16px; }
+
     .header {
       background: var(--bg);
       border: 1px solid #d6ecff;
@@ -15,22 +16,50 @@
       margin-bottom: 12px;
     }
     .header h1 { margin: 0; font-size: 20px; }
+    .header p {
+      margin: 6px 0 0 0;
+      color: #1f2a33;
+      font-size: 13.5px;
+      line-height: 1.35;
+      max-width: 980px;
+    }
+
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
     video, canvas { max-width: 100%; border: 1px solid #ddd; border-radius: 10px; }
     video { width: 360px; height: auto; background:#000; }
     canvas { width: 360px; height: auto; background: var(--bg); }
+
     button { padding: 10px 14px; border-radius: 10px; border: 1px solid #ccc; background: #fff; }
     button.primary { border-color: #111; }
     button:disabled { opacity: 0.5; }
+
     label { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #ddd; border-radius: 10px; }
     select { padding: 9px 12px; border-radius: 10px; border: 1px solid #ccc; background: #fff; }
+
     details { border: 1px solid #ddd; border-radius: 10px; padding: 10px 12px; max-width: 1100px; }
     summary { cursor: pointer; font-weight: 600; }
+
     .hint { color: #555; font-size: 14px; line-height: 1.4; max-width: 1100px; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+
     .rangeWrap { display:flex; align-items:center; gap:10px; padding: 8px 10px; border:1px solid #ddd; border-radius: 10px; margin-top: 10px; flex-wrap: wrap; }
     .rangeWrap span { min-width: 170px; font-size: 13px; color:#666; }
     .small { font-size: 13px; color:#666; min-width: 64px; text-align:right; }
+
+    .block {
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: #fff;
+      max-width: 1100px;
+    }
+    .blockTitle {
+      font-weight: 700;
+      margin: 0 0 10px 0;
+      font-size: 13px;
+      color: #222;
+    }
+
     .foot { margin-top: 14px; max-width: 1100px; }
     .tiplist details { margin-top: 10px; }
     .tiplist summary { font-weight: 700; }
@@ -56,12 +85,27 @@
       background: #fafafa;
       margin-left: 6px;
     }
+
+    /* Input-Video standardmäßig "ausgeblendet", aber technisch weiter aktiv (iOS-freundlich) */
+    .videoHidden {
+      width: 1px !important;
+      height: 1px !important;
+      opacity: 0 !important;
+      position: absolute !important;
+      left: -9999px !important;
+      top: -9999px !important;
+      pointer-events: none !important;
+    }
   </style>
 </head>
 
 <body>
   <div class="header">
     <h1>Bewegungsanalyse Recorder</h1>
+    <p>
+      Beta-Version zur anonymen Aufnahme und Analyse von Skelettachsen und Bewegungen (Pose-Landmarks).<br>
+      Optimiert derzeit für die Analyse von Brustschwimmen (Gleitphase/Streamline); Auswertungen sind experimentell und können je nach Aufnahmebedingungen variieren.
+    </p>
   </div>
 
   <div class="row">
@@ -73,12 +117,11 @@
     <button id="btnReset" disabled>Slots zurücksetzen</button>
   </div>
 
-  <div class="row">
+  <!-- Allgemeine Anzeige/Output -->
+  <div class="row block">
+    <div class="blockTitle">Anzeige (allgemein)</div>
     <label><input type="checkbox" id="toggleSkeleton" checked /> Skelett</label>
     <label><input type="checkbox" id="toggleSilhouette" checked /> Segmentierung</label>
-    <label><input type="checkbox" id="toggleNeck" checked /> HWS-Achse</label>
-    <label><input type="checkbox" id="toggleLegCheck" checked /> Knie/Beine-Check</label>
-    <label><input type="checkbox" id="toggleTimer" checked /> Timer Brust – Gleitphase</label>
     <label><input type="checkbox" id="toggleHintBox" checked /> Hinweisbox nach Stop</label>
 
     <select id="filmingPreset" title="Aufnahmeposition">
@@ -88,8 +131,25 @@
     </select>
   </div>
 
+  <!-- Brust-spezifische Analyse -->
+  <div class="row block">
+    <div class="blockTitle">Brustschwimmen-Analyse (spezifisch)</div>
+    <label><input type="checkbox" id="toggleNeck" checked /> HWS-Achse (Brust)</label>
+    <label><input type="checkbox" id="toggleLegCheck" checked /> Knie/Beine-Check (Brust)</label>
+    <label><input type="checkbox" id="toggleTimer" checked /> Timer Brust – Gleitphase</label>
+  </div>
+
   <details>
     <summary>Erweiterte Einstellungen</summary>
+
+    <div class="rangeWrap">
+      <span>Input-Video anzeigen</span>
+      <label style="border:none; padding:0; border-radius:0;">
+        <input type="checkbox" id="showInputVideo" />
+        <span class="small">anzeigen</span>
+      </label>
+      <span class="hint" style="max-width:none;">(Optional – für Kontrolle; Output bleibt anonym.)</span>
+    </div>
 
     <div class="rangeWrap">
       <span>Segmentierung – Deckkraft</span>
@@ -99,8 +159,8 @@
 
     <div class="rangeWrap">
       <span>Segmentierung – Schwelle</span>
-      <input id="silThresh" type="range" min="0" max="100" step="1" value="12">
-      <span id="silThreshVal" class="small">12</span>
+      <input id="silThresh" type="range" min="0" max="100" step="1" value="70">
+      <span id="silThreshVal" class="small">70</span>
     </div>
 
     <div class="rangeWrap">
@@ -146,13 +206,13 @@
     </div>
 
     <p class="hint">
-      Hinweis: Die Checks sind bewusst auf Merkmale begrenzt, die mit 2D-Skelettanalyse aus der Aufnahmeperspektive in der Regel robust beurteilbar sind
-      (das deckt nicht alle wichtigen Brust-Technikmerkmale ab).
+      Hinweis: Die Checks sind bewusst auf Merkmale begrenzt, die mit 2D-Skelettanalyse aus typischen Perspektiven meist robust beurteilbar sind
+      (das deckt nicht alle relevanten Technikmerkmale ab).
     </p>
   </details>
 
   <div class="row">
-    <video id="video" playsinline autoplay muted></video>
+    <video id="video" class="videoHidden" playsinline autoplay muted></video>
     <canvas id="canvas"></canvas>
   </div>
 
@@ -250,6 +310,8 @@
     const toggleHintBox = document.getElementById("toggleHintBox");
     const filmingPreset = document.getElementById("filmingPreset");
 
+    const showInputVideo = document.getElementById("showInputVideo");
+
     const silOpacity = document.getElementById("silOpacity");
     const silThresh = document.getElementById("silThresh");
     const skelLine  = document.getElementById("skelLine");
@@ -293,6 +355,14 @@
     bindSlider(trackConf, trackVal);
     bindSlider(smooth, smoothVal, v => Number(v).toFixed(2));
     bindSlider(neckTol, neckTolVal, v => String(Math.round(Number(v))));
+
+    function setInputVideoVisible(visible) {
+      if (visible) video.classList.remove("videoHidden");
+      else video.classList.add("videoHidden");
+    }
+    // Standard: ausblenden
+    setInputVideoVisible(false);
+    showInputVideo.addEventListener("change", () => setInputVideoVisible(showInputVideo.checked));
 
     // ---------- Orientation + HiDPI ----------
     function isPortraitUI() {
@@ -454,7 +524,7 @@
         maskSrcCanvas.height = mh;
       }
 
-      const threshold = Number(silThresh.value) / 100;
+      const threshold = Number(silThresh.value) / 100; // 0..1
       const alpha = Number(silOpacity.value);
 
       let dataF = null, dataU = null;
@@ -471,7 +541,7 @@
           if (v > maxv) maxv = v;
           const a = (v >= threshold) ? Math.round(255 * alpha) : 0;
           const o = i*4;
-          d[o]   = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a;
+          d[o]   = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a; // Gelb, anonym
         }
       } else if (dataU && dataU.length >= mw*mh) {
         for (let i = 0; i < mw*mh; i++) {
@@ -557,7 +627,6 @@
 
     // ---------- Knie/Bein-Check: farbcodierte Linien ----------
     function colorForRatio(r) {
-      // r = kneeWidth/shoulderWidth
       if (r <= 1.35) return "rgba(0,170,0,0.95)";
       if (r <= 1.55) return "rgba(255,140,0,0.95)";
       return "rgba(220,0,0,0.95)";
@@ -579,13 +648,11 @@
       const kneeW = distPx(kL, kR);
       const kneeRatio = (shoulderW > 1) ? (kneeW / shoulderW) : null;
 
-      // Knee angles (normalized landmarks)
       const lh = raw[23], rh = raw[24], lk = raw[25], rk = raw[26], la = raw[27], ra = raw[28];
       const aL = kneeAngle(lh, lk, la);
       const aR = kneeAngle(rh, rk, ra);
       const diff = (aL != null && aR != null) ? Math.abs(aL - aR) : null;
 
-      // draw knee width line
       if (kneeRatio != null) {
         ctx.save();
         ctx.lineCap = "round";
@@ -596,7 +663,6 @@
         ctx.lineTo(kR._cx, kR._cy);
         ctx.stroke();
 
-        // small label
         ctx.font = "12px system-ui";
         ctx.fillStyle = "rgba(0,0,0,0.85)";
         const mid = { _cx:(kL._cx+kR._cx)/2, _cy:(kL._cy+kR._cy)/2 };
@@ -604,7 +670,6 @@
         ctx.restore();
       }
 
-      // draw asymmetry label if both angles exist
       if (diff != null) {
         ctx.save();
         ctx.font = "12px system-ui";
@@ -706,7 +771,6 @@
       return (0.38*arms + 0.32*legs + 0.18*longB + 0.12*still);
     }
 
-    // robust stop by movement (knees bend / arms drop) + hard max safety stop
     function updateTimer(raw, now){
       if(!toggleTimer.checked){
         glideActive=false; currentElapsed=0;
@@ -720,8 +784,8 @@
       const startThr = (p === "side45") ? 0.72 : 0.75;
       const stopThr  = (p === "side45") ? 0.55 : 0.58;
 
-      const startHoldMs = (p === "side45") ? 130 : 160;  // früher starten
-      const stopHoldMs  = (p === "side45") ? 220 : 230;  // schneller stoppen
+      const startHoldMs = (p === "side45") ? 130 : 160;
+      const stopHoldMs  = (p === "side45") ? 220 : 230;
 
       const hardMaxMs = (p === "stand") ? 5000 : 6500;
 
@@ -729,15 +793,11 @@
       const sNow = computeGlideScore(raw);
       scoreEma = alpha*scoreEma + (1-alpha)*sNow;
 
-      // Bewegungstrigger für Stop:
       const lh = raw[23], rh = raw[24], lk = raw[25], rk = raw[26], la = raw[27], ra = raw[28];
       const aL = kneeAngle(lh, lk, la);
       const aR = kneeAngle(rh, rk, ra);
 
-      // Knie deutlich beugen -> Ende Gleitphase
       const kneesBend = ((aL != null && aL < 158) || (aR != null && aR < 158));
-
-      // Arme verlassen Überkopf-Position
       const armScore = armOverHeadRobust(raw);
       const armsDropped = armScore < 0.48;
 
@@ -761,7 +821,6 @@
 
       currentElapsed = now - glideStart;
 
-      // Hard max safety stop
       if(currentElapsed >= hardMaxMs){
         glideActive = false;
         scoreStableSince = null;
@@ -772,7 +831,6 @@
         return;
       }
 
-      // Stop by movement (prioritized)
       if(movementStop){
         if(scoreLowSince == null) scoreLowSince = now;
         if(now - scoreLowSince >= 90){
@@ -788,7 +846,6 @@
         scoreLowSince = null;
       }
 
-      // Fallback: score low long enough
       if(scoreEma <= stopThr){
         if(scoreLowSince == null) scoreLowSince = now;
         if(now - scoreLowSince >= stopHoldMs){
@@ -891,56 +948,29 @@
       hintMeta.textContent = "";
 
       if (!toggleHintBox.checked) return;
-      if (recStats.frames < 25) return; // zu wenig Daten
+      if (recStats.frames < 25) return;
 
       const p = (n)=> n / Math.max(1, recStats.frames);
 
-      // Schwellwerte: "eindeutig über mehrere Frames"
-      const thr = 0.22; // 22% der Frames
+      const thr = 0.22;
       const issues = [];
 
       if (p(recStats.kneeWide) >= thr) {
-        issues.push({
-          key: "kneeWide",
-          score: p(recStats.kneeWide),
-          title: "Knie öffnen zu weit",
-          tip: "Knie enger (≈ schulterbreit) anziehen – „Schere“ vermeiden."
-        });
+        issues.push({ score: p(recStats.kneeWide), title: "Knie öffnen zu weit", tip: "Knie enger (≈ schulterbreit) anziehen – „Schere“ vermeiden." });
       }
       if (p(recStats.kneeAsym) >= thr) {
-        issues.push({
-          key: "kneeAsym",
-          score: p(recStats.kneeAsym),
-          title: "Beinschlag unsymmetrisch",
-          tip: "Beide Knie ähnlich beugen/strecken – Bewegung links/rechts angleichen."
-        });
+        issues.push({ score: p(recStats.kneeAsym), title: "Beinschlag unsymmetrisch", tip: "Beide Knie ähnlich beugen/strecken – links/rechts angleichen." });
       }
       if (p(recStats.legsBent) >= thr) {
-        issues.push({
-          key: "legsBent",
-          score: p(recStats.legsBent),
-          title: "Beine nicht gestreckt in der Gleitphase",
-          tip: "Nach dem Beinschlag vollständig strecken – kurz stabil gleiten."
-        });
+        issues.push({ score: p(recStats.legsBent), title: "Beine nicht gestreckt in der Gleitphase", tip: "Nach dem Beinschlag vollständig strecken – kurz stabil gleiten." });
       }
       if (p(recStats.headOver) >= thr) {
-        issues.push({
-          key: "headOver",
-          score: p(recStats.headOver),
-          title: "Kopf überstreckt (HWS)",
-          tip: "Nacken lang, Blick eher schräg nach unten/vorne (neutral)."
-        });
+        issues.push({ score: p(recStats.headOver), title: "Kopf überstreckt (HWS)", tip: "Nacken lang, Blick eher schräg nach unten/vorne (neutral)." });
       }
 
-      // Zusätzlich: sehr kurze Gleitzeiten (Slots), falls vorhanden
       const shortGlides = glideTimes.filter(t => (t/1000) < 0.8).length;
       if (glideTimes.length > 0 && shortGlides >= 1) {
-        issues.push({
-          key: "shortGlide",
-          score: 0.30,
-          title: "Gleitphase sehr kurz",
-          tip: "Länger gleiten: nach dem Strecken ruhig halten, bevor die nächste Phase startet."
-        });
+        issues.push({ score: 0.30, title: "Gleitphase sehr kurz", tip: "Länger gleiten: nach dem Strecken ruhig halten, bevor die nächste Phase startet." });
       }
 
       issues.sort((a,b)=> b.score - a.score);
@@ -948,10 +978,7 @@
 
       if (top.length === 0) return;
 
-      const avgRatio = (recStats.avgKneeRatioN > 0)
-        ? (recStats.avgKneeRatioSum / recStats.avgKneeRatioN)
-        : null;
-
+      const avgRatio = (recStats.avgKneeRatioN > 0) ? (recStats.avgKneeRatioSum / recStats.avgKneeRatioN) : null;
       hintMeta.textContent = `${recStats.frames} Frames` + (avgRatio ? ` • Ø Knie/Schulter ${avgRatio.toFixed(2)}×` : "");
 
       hintText.textContent = "In dieser Aufnahme waren folgende Punkte über mehrere Frames deutlich auffällig:";
@@ -984,8 +1011,6 @@
         lastBlob = new Blob(recordedChunks,{type});
         btnShare.disabled = !lastBlob;
         setStatus("Aufnahme fertig (" + (lastBlob.type.includes("mp4") ? "MP4" : "WebM") + ").");
-
-        // Hinweisbox nach Stop (bis zu 3 klare Punkte)
         showHintBoxFromStats();
       };
       recorder.start(200);
@@ -1126,34 +1151,26 @@
 
           const cssPoints = emaCss(mapLandmarksContain(raw, vw, vh, CSS_W, CSS_H));
 
-          // Visuals
           drawSkeletonCssPoints(cssPoints);
           const neck = drawNeckAxis(raw, cssPoints);
           const legs = drawLegChecks(raw, cssPoints);
 
-          // Timer
           updateTimer(raw, ts);
 
-          // Stats collection during recording (for hint box)
           if (isRecording) {
             recStats.frames++;
 
-            // knee ratio
             if (legs.kneeRatio != null) {
               recStats.avgKneeRatioSum += legs.kneeRatio;
               recStats.avgKneeRatioN++;
               if (legs.kneeRatio > 1.55) recStats.kneeWide++;
             }
-
-            // knee asymmetry
             if (legs.kneeDiff != null && legs.kneeDiff > 25) recStats.kneeAsym++;
 
-            // legs bent (during glide timer only → more meaningful)
             const [aL, aR] = legs.kneeAngles || [null,null];
             const bent = ((aL != null && aL < 155) || (aR != null && aR < 155));
             if (toggleTimer.checked && glideActive && bent) recStats.legsBent++;
 
-            // head over (during glide timer only)
             if (toggleTimer.checked && glideActive && neck.neckDeg != null) {
               const tol = Number(neckTol.value);
               if (neck.neckDeg > (tol + 5)) recStats.headOver++;
@@ -1216,7 +1233,6 @@
         smoothedCss = null;
         emptyMaskFrames = 0;
 
-        // Timer reset
         glideActive=false; glideStart=0; currentElapsed=0;
         scoreEma=0; scoreStableSince=null; scoreLowSince=null;
         lastTorso=null;
