@@ -19,13 +19,7 @@
       margin-bottom: 12px;
     }
     .header h1 { margin: 0; font-size: 20px; }
-    .header p {
-      margin: 6px 0 0 0;
-      color: #1f2a33;
-      font-size: 13.5px;
-      line-height: 1.35;
-      max-width: 980px;
-    }
+    .header p { margin: 6px 0 0 0; color: #1f2a33; font-size: 13.5px; line-height: 1.35; max-width: 980px; }
 
     .stack { display: grid; grid-template-columns: 1fr; gap: 12px; max-width: 1100px; }
 
@@ -43,12 +37,7 @@
       letter-spacing: 0.2px;
     }
 
-    details {
-      border: 1px solid #ddd;
-      border-radius: 12px;
-      padding: 10px 12px;
-      background: #fff;
-    }
+    details { border: 1px solid #ddd; border-radius: 12px; padding: 10px 12px; background: #fff; }
     summary { cursor: pointer; font-weight: 800; }
 
     label { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #ddd; border-radius: 10px; background:#fff; }
@@ -380,12 +369,8 @@
       ctx.imageSmoothingEnabled = false;
     }
     function applyLayoutFromOrientation() {
-      if (isPortraitUI()) {
-        setupHiDPICanvas(360, 640);
-      } else {
-        // Größer im Querformat (16:9)
-        setupHiDPICanvas(720, 405);
-      }
+      if (isPortraitUI()) setupHiDPICanvas(360, 640);
+      else setupHiDPICanvas(720, 405);
       setStatus("Ausrichtung: " + (isPortraitUI() ? "Hochformat" : "Querformat"));
     }
     window.addEventListener("resize", applyLayoutFromOrientation);
@@ -395,8 +380,7 @@
     const BG = "#bfe7ff";
 
     // Pose connections:
-    // - Keep wrist->(pinky/index/thumb) lines
-    // - Remove pinky<->index cross line
+    // Keep wrist->(pinky/index/thumb) lines, remove pinky<->index cross-line.
     const POSE_CONNECTIONS = [
       [0,1],[1,2],[2,3],[3,7],
       [0,4],[4,5],[5,6],[6,8],
@@ -412,8 +396,6 @@
     // Helpers
     const dist = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
     const distPx = (a,b)=>Math.hypot(a._cx-b._cx, a._cy-b._cy);
-    function mid2(a, b) { return { x:(a.x+b.x)/2, y:(a.y+b.y)/2 }; }
-    function mid2px(a, b) { return { _cx:(a._cx+b._cx)/2, _cy:(a._cy+b._cy)/2 }; }
 
     function angleBetween(u, v) {
       const dot = u.x*v.x + u.y*v.y;
@@ -567,18 +549,22 @@
       return info;
     }
 
-    // -------- HWS AXIS (FIX FOR side45) --------
-    // Problem: head-point from ear-midpoint can behave counterintuitively in side views.
-    // Fix: use nose primarily, and avoid "flip-to-up" logic for side45.
-    function chooseHeadPoint(raw) {
-      // Prefer nose; fallback: ears midpoint; fallback: eyes midpoint.
-      const nose = raw[0];
+    // -------- HWS AXIS FIX: use head-center (ears midpoint), NOT nose ----------
+    function headCenterNorm(raw) {
       const le = raw[7], re = raw[8];
       const lEye = raw[2], rEye = raw[5];
 
-      if (nose) return nose;
       if (le && re) return { x:(le.x+re.x)/2, y:(le.y+re.y)/2 };
       if (lEye && rEye) return { x:(lEye.x+rEye.x)/2, y:(lEye.y+rEye.y)/2 };
+      return null;
+    }
+
+    function headCenterCss(cssPoints) {
+      const le = cssPoints[7], re = cssPoints[8];
+      const lEye = cssPoints[2], rEye = cssPoints[5];
+
+      if (le && re) return { _cx:(le._cx+re._cx)/2, _cy:(le._cy+re._cy)/2 };
+      if (lEye && rEye) return { _cx:(lEye._cx+rEye._cx)/2, _cy:(lEye._cy+rEye._cy)/2 };
       return null;
     }
 
@@ -589,24 +575,20 @@
       const lh = rawNorm[23], rh = rawNorm[24];
       if (!ls || !rs || !lh || !rh) return { neckDeg: null, ok: null };
 
-      const shoulder = mid2(ls, rs);
-      const hip = mid2(lh, rh);
+      const shoulder = { x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2 };
+      const hip = { x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2 };
 
-      const head = chooseHeadPoint(rawNorm);
+      const head = headCenterNorm(rawNorm);
       if (!head) return { neckDeg: null, ok: null };
 
-      // torso vector (hip -> shoulder)
       const torso = { x: shoulder.x - hip.x, y: shoulder.y - hip.y };
-      // neck vector (shoulder -> head)
       const neck  = { x: head.x - shoulder.x, y: head.y - shoulder.y };
 
-      // For side45: do NOT "flip to up", because perspective can invert the heuristic.
-      // For others: keep the old normalization to reduce sign-instability.
       const preset = filmingPreset.value;
-      let torsoN = torso, neckN = neck;
 
+      // For side45: do not flip vectors; in other presets stabilize to "up".
+      let torsoN = torso, neckN = neck;
       if (preset !== "side45") {
-        // normalize to "upwards" direction (mostly for front/back-ish)
         torsoN = (torso.y < 0) ? torso : { x:-torso.x, y:-torso.y };
         neckN  = (neck.y  < 0) ? neck  : { x:-neck.x,  y:-neck.y  };
       }
@@ -615,33 +597,22 @@
       const tol = Number(neckTol.value);
       const ok = deg <= tol;
 
-      // draw on css
       const cssLs = cssPoints[11], cssRs = cssPoints[12];
       if (!cssLs || !cssRs) return { neckDeg: deg, ok };
 
-      const cssShoulder = mid2px(cssLs, cssRs);
+      const cssShoulder = { _cx:(cssLs._cx+cssRs._cx)/2, _cy:(cssLs._cy+cssRs._cy)/2 };
+      const cssHead = headCenterCss(cssPoints);
+      if (!cssHead) return { neckDeg: deg, ok };
 
-      // head css point: prefer css nose (0), fallback ears midpoint
-      let cssHead = null;
-      const cssNose = cssPoints[0];
-      const cssLe = cssPoints[7], cssRe = cssPoints[8];
-      const cssLEye = cssPoints[2], cssREye = cssPoints[5];
-
-      if (cssNose) cssHead = { _cx: cssNose._cx, _cy: cssNose._cy };
-      else if (cssLe && cssRe) cssHead = mid2px(cssLe, cssRe);
-      else if (cssLEye && cssREye) cssHead = mid2px(cssLEye, cssREye);
-
-      if (cssHead) {
-        ctx.save();
-        ctx.lineCap = "round";
-        ctx.lineWidth = 6;
-        ctx.strokeStyle = ok ? "rgba(0,180,0,0.95)" : "rgba(220,0,0,0.95)";
-        ctx.beginPath();
-        ctx.moveTo(cssShoulder._cx, cssShoulder._cy);
-        ctx.lineTo(cssHead._cx, cssHead._cy);
-        ctx.stroke();
-        ctx.restore();
-      }
+      ctx.save();
+      ctx.lineCap = "round";
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = ok ? "rgba(0,180,0,0.95)" : "rgba(220,0,0,0.95)";
+      ctx.beginPath();
+      ctx.moveTo(cssShoulder._cx, cssShoulder._cy);
+      ctx.lineTo(cssHead._cx, cssHead._cy);
+      ctx.stroke();
+      ctx.restore();
 
       return { neckDeg: deg, ok };
     }
@@ -673,7 +644,7 @@
         ctx.save();
         ctx.lineCap = "round";
         ctx.lineWidth = 3;
-        ctx.setLineDash([7, 6]); // dashed => measurement
+        ctx.setLineDash([7, 6]);
         ctx.strokeStyle = colorForRatio(kneeRatio);
         ctx.beginPath();
         ctx.moveTo(kL._cx, kL._cy);
@@ -697,11 +668,11 @@
       const ls = raw[11], rs = raw[12];
       const le = raw[13], re = raw[14];
       const lw = raw[15], rw = raw[16];
-      const nose = raw[0];
+      const head = headCenterNorm(raw); // now consistent with neck axis
       if (!ls || !rs) return 0;
 
       const shoulderY = (ls.y + rs.y) / 2;
-      const headY = (nose?.y ?? (shoulderY - 0.10));
+      const headY = (head?.y ?? (shoulderY - 0.10));
 
       const elbowMargin = 0.04;
       const wristMargin = 0.02;
@@ -858,23 +829,28 @@
       }
     }
 
-    // Overlay (adjusted for landscape: wider and flatter)
+    // Overlay: fixed overlap issues + slots in one row for landscape
     function drawOverlay(debugText=""){
-      if(!toggleTimer.checked) return;
+      if(!toggleTimer.checked) {
+        // Still render debug footer (small) so you can see state if needed
+        if (debugText) drawDebugFooter(debugText);
+        return;
+      }
 
       const isPortrait = CSS_H > CSS_W;
+
+      // Timer box
+      const x = 12, y = 12;
+      const w = isPortrait ? Math.min(420, CSS_W-24) : Math.min(680, CSS_W-24);
+      const h = isPortrait ? 140 : 90;
+      const r = 14;
 
       ctx.save();
       ctx.fillStyle="rgba(0,0,0,0.40)";
       ctx.strokeStyle="rgba(255,255,255,0.55)";
       ctx.lineWidth=2;
 
-      const x=12, y=12;
-      const w = isPortrait ? Math.min(420, CSS_W-24) : Math.min(600, CSS_W-24);
-      const h = isPortrait ? 140 : 96;
-      const r=14;
       const rr=Math.min(r,w/2,h/2);
-
       ctx.beginPath();
       ctx.moveTo(x+rr,y);
       ctx.arcTo(x+w,y,x+w,y+h,rr);
@@ -894,41 +870,80 @@
       const presetLabel = filmingPreset.value==="stand" ? "Stand" : (filmingPreset.value==="side45" ? "45° seitlich" : "45° hinten");
       ctx.fillText(`Timer Brust – Gleitphase | Aufnahme: ${presetLabel}`, x+12, y+(isPortrait?56:48));
 
-      // Slots: in landscape slightly tighter
-      ctx.font="14px system-ui";
-      const baseY = y + (isPortrait ? 80 : 68);
-      const step = isPortrait ? 16 : 14;
-      for (let i=0;i<4;i++){
-        const t = glideTimes[i]!=null ? fmt(glideTimes[i]) : "—";
-        ctx.fillText(`Slot ${i+1}: ${t}`, x+12, baseY + i*step);
+      // Slots:
+      ctx.font = isPortrait ? "14px system-ui" : "13px system-ui";
+      if (isPortrait) {
+        const baseY = y + 80;
+        for (let i=0;i<4;i++){
+          const t = glideTimes[i]!=null ? fmt(glideTimes[i]) : "—";
+          ctx.fillText(`Slot ${i+1}: ${t}`, x+12, baseY + i*16);
+        }
+      } else {
+        // One row in landscape
+        const lineY = y + 72;
+        const parts = [];
+        for (let i=0;i<4;i++){
+          const t = glideTimes[i]!=null ? fmt(glideTimes[i]) : "—";
+          parts.push(`S${i+1}: ${t}`);
+        }
+        // Fit in one line: draw with measured spacing
+        let cx = x + 12;
+        for (const p of parts) {
+          ctx.fillText(p, cx, lineY);
+          cx += ctx.measureText(p).width + 18;
+          if (cx > x + w - 80) break;
+        }
       }
 
-      if (debugText) {
-        ctx.font="11px system-ui";
-        ctx.fillText(debugText, x+12, y+h-10);
-      }
+      ctx.restore();
+
+      // Debug footer (separate, no overlap)
+      if (debugText) drawDebugFooter(debugText);
+    }
+
+    function drawDebugFooter(text) {
+      // small black translucent footer at bottom
+      const pad = 8;
+      const h = 18;
+      const y = CSS_H - h - 10;
+      const w = Math.min(CSS_W - 24, 900);
+      const x = 12;
+
+      ctx.save();
+      ctx.fillStyle = "rgba(0,0,0,0.25)";
+      ctx.strokeStyle = "rgba(255,255,255,0.25)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, 8);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "rgba(255,255,255,0.95)";
+      ctx.font = "11px system-ui";
+      ctx.fillText(text, x + pad, y + 13);
       ctx.restore();
     }
 
-    // Recording + tips (unchanged, compact)
+    // Polyfill for roundRect (older Safari)
+    if (!CanvasRenderingContext2D.prototype.roundRect) {
+      CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+        const rr = Math.min(r, w/2, h/2);
+        this.beginPath();
+        this.moveTo(x+rr, y);
+        this.arcTo(x+w, y, x+w, y+h, rr);
+        this.arcTo(x+w, y+h, x, y+h, rr);
+        this.arcTo(x, y+h, x, y, rr);
+        this.arcTo(x, y, x+w, y, rr);
+        this.closePath();
+        return this;
+      };
+    }
+
+    // Recording + tips
     let recorder=null, recordedChunks=[], lastBlob=null;
     let isRecording = false;
 
     const recStats = { frames:0, kneeWide:0, kneeAsym:0, legsBent:0, headOver:0, avgKneeRatioSum:0, avgKneeRatioN:0 };
     function resetRecStats() { for (const k of Object.keys(recStats)) recStats[k] = 0; }
-
-    function pickMimeType(){
-      const candidates=[
-        'video/mp4;codecs="avc1.42E01E"',
-        'video/mp4;codecs="avc1.4D401E"',
-        "video/mp4",
-        'video/webm;codecs="vp8"',
-        "video/webm"
-      ];
-      if(!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
-      for(const t of candidates){ try{ if(MediaRecorder.isTypeSupported(t)) return t; } catch(_){} }
-      return "";
-    }
 
     function showTechTipsFromStats() {
       tipsBox.style.display = "none";
@@ -966,6 +981,19 @@
       }
 
       tipsBox.style.display = "block";
+    }
+
+    function pickMimeType(){
+      const candidates=[
+        'video/mp4;codecs="avc1.42E01E"',
+        'video/mp4;codecs="avc1.4D401E"',
+        "video/mp4",
+        'video/webm;codecs="vp8"',
+        "video/webm"
+      ];
+      if(!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
+      for(const t of candidates){ try{ if(MediaRecorder.isTypeSupported(t)) return t; } catch(_){} }
+      return "";
     }
 
     function startRecordingCanvas(){
