@@ -189,16 +189,33 @@
         </div>
 
         <div class="rangeWrap">
-          <span>HWS – Toleranz (°)</span>
-          <input id="neckTol" type="range" min="10" max="60" step="1" value="25">
-          <span id="neckTolVal" class="small">25</span>
+          <span>HWS – Grün-Toleranz (°)</span>
+          <input id="neckTol" type="range" min="6" max="35" step="1" value="18">
+          <span id="neckTolVal" class="small">18</span>
         </div>
 
-        <!-- Neu: optionales Neutral-Offset (v.a. Stand/Profil) -->
         <div class="rangeWrap">
           <span>HWS – Neutral-Offset (°)</span>
-          <input id="neckNeutral" type="range" min="0" max="25" step="1" value="12">
-          <span id="neckNeutralVal" class="small">12</span>
+          <input id="neckNeutral" type="range" min="-10" max="25" step="1" value="8">
+          <span id="neckNeutralVal" class="small">8</span>
+        </div>
+
+        <div class="rangeWrap">
+          <span>HWS – Rot-Schwelle extra (°)</span>
+          <input id="neckRedExtra" type="range" min="0" max="20" step="1" value="8">
+          <span id="neckRedExtraVal" class="small">8</span>
+        </div>
+
+        <div class="rangeWrap">
+          <span>HWS – Glättung (EMA)</span>
+          <input id="neckEma" type="range" min="0.60" max="0.90" step="0.01" value="0.78">
+          <span id="neckEmaVal" class="small">0.78</span>
+        </div>
+
+        <div class="rangeWrap">
+          <span>HWS – Hold (ms)</span>
+          <input id="neckHold" type="range" min="80" max="350" step="10" value="180">
+          <span id="neckHoldVal" class="small">180</span>
         </div>
 
       </details>
@@ -220,41 +237,21 @@
           Diese Liste ist <b>nicht vollständig</b>. Aufgeführt sind vor allem Merkmale, die man mit der <b>Skelettanalyse</b> aus typischen Aufnahmewinkeln
           vergleichsweise zuverlässig prüfen kann.
         </p>
-
         <details>
           <summary>Knie öffnen zu weit („Schere“ / Bremsfläche)</summary>
-          <p class="hint">
-            <b>Faustregel:</b> Knieöffnung ungefähr im Bereich <b>Schulterbreite</b>.<br>
-            Richtwert (intern): Kniebreite/Schulterbreite <b>&gt; 1,55×</b> über mehrere Frames auffällig.
-          </p>
+          <p class="hint"><b>Faustregel:</b> Knieöffnung ungefähr <b>Schulterbreite</b>. Richtwert: Knie/Schulter <b>&gt; 1,55×</b>.</p>
         </details>
-
         <details>
           <summary>Beinschlag unsymmetrisch</summary>
-          <p class="hint">
-            Richtwert (intern): Differenz der Knie-Winkel links/rechts <b>&gt; 25–30°</b> über mehrere Frames auffällig.
-          </p>
+          <p class="hint">Richtwert: Differenz Knie-Winkel <b>&gt; 25–30°</b> über mehrere Frames.</p>
         </details>
-
         <details>
-          <summary>Kopf überstreckt (HWS rot)</summary>
-          <p class="hint">
-            Korrektur: Nacken lang, Blick eher schräg nach unten/vorne, „Doppelkinn“-Gefühl.
-          </p>
+          <summary>Kopf (HWS) – neutral vs. Flexion/Extension</summary>
+          <p class="hint">Grün: im Neutralband. Rot: Kopf deutlich nach unten (Flexion) oder deutlich nach hinten (Überstreckung).</p>
         </details>
-
-        <details>
-          <summary>Arme öffnen zu weit</summary>
-          <p class="hint">
-            Faustregel: Hände nicht deutlich breiter als schulterbreit öffnen; dann Ellenbogen beugen, Hände vor Brust und direkt wieder nach vorn strecken.
-          </p>
-        </details>
-
         <details>
           <summary>Gleitphase zu kurz</summary>
-          <p class="hint">
-            Sehr grob: häufig ca. <b>0,8–1,5 s</b> (Technikfokus/Anfänger) bis <b>1,5–2,5 s</b> (guter Abstoß/fortgeschritten).
-          </p>
+          <p class="hint">Grob: häufig <b>0,8–1,5 s</b> bis <b>1,5–2,5 s</b>.</p>
         </details>
       </details>
     </details>
@@ -273,7 +270,6 @@
       <canvas id="canvas"></canvas>
     </div>
 
-    <!-- Neu: Tippsbox UNTER dem Canvas (immer sichtbar, wenn gefüllt) -->
     <div id="tipsBox" class="tipsBox">
       <h3>Techniktipps Brustschwimmen <span id="hintMeta" class="pill"></span></h3>
       <div class="hint" id="hintText"></div>
@@ -317,8 +313,12 @@
     const presConf = document.getElementById("presConf");
     const trackConf = document.getElementById("trackConf");
     const smooth = document.getElementById("smooth");
+
     const neckTol = document.getElementById("neckTol");
     const neckNeutral = document.getElementById("neckNeutral");
+    const neckRedExtra = document.getElementById("neckRedExtra");
+    const neckEma = document.getElementById("neckEma");
+    const neckHold = document.getElementById("neckHold");
 
     const silOpacityVal = document.getElementById("silOpacityVal");
     const silThreshVal  = document.getElementById("silThreshVal");
@@ -328,8 +328,12 @@
     const presVal = document.getElementById("presVal");
     const trackVal = document.getElementById("trackVal");
     const smoothVal = document.getElementById("smoothVal");
+
     const neckTolVal = document.getElementById("neckTolVal");
     const neckNeutralVal = document.getElementById("neckNeutralVal");
+    const neckRedExtraVal = document.getElementById("neckRedExtraVal");
+    const neckEmaVal = document.getElementById("neckEmaVal");
+    const neckHoldVal = document.getElementById("neckHoldVal");
 
     const tipsBox = document.getElementById("tipsBox");
     const hintList = document.getElementById("hintList");
@@ -352,8 +356,12 @@
     bindSlider(presConf, presVal);
     bindSlider(trackConf, trackVal);
     bindSlider(smooth, smoothVal, v => Number(v).toFixed(2));
+
     bindSlider(neckTol, neckTolVal, v => String(Math.round(Number(v))));
     bindSlider(neckNeutral, neckNeutralVal, v => String(Math.round(Number(v))));
+    bindSlider(neckRedExtra, neckRedExtraVal, v => String(Math.round(Number(v))));
+    bindSlider(neckEma, neckEmaVal, v => Number(v).toFixed(2));
+    bindSlider(neckHold, neckHoldVal, v => String(Math.round(Number(v))));
 
     function setInputVideoVisible(visible) {
       if (visible) video.classList.remove("videoHidden");
@@ -392,7 +400,7 @@
 
     const BG = "#bfe7ff";
 
-    // Pose connections:
+    // Pose connections
     const POSE_CONNECTIONS = [
       [0,1],[1,2],[2,3],[3,7],
       [0,4],[4,5],[5,6],[6,8],
@@ -416,6 +424,18 @@
       const c = Math.max(-1, Math.min(1, dot/(nu*nv)));
       return Math.acos(c) * 180/Math.PI;
     }
+
+    function signedAngleDeg(a, b) {
+      const cross = a.x*b.y - a.y*b.x;
+      const dot   = a.x*b.x + a.y*b.y;
+      return Math.atan2(cross, dot) * 180/Math.PI;
+    }
+
+    function normVec(v){
+      const n = Math.hypot(v.x, v.y) || 1;
+      return { x: v.x/n, y: v.y/n };
+    }
+
     function kneeAngle(hip, knee, ankle) {
       if (!hip || !knee || !ankle) return null;
       const u = { x: hip.x - knee.x, y: hip.y - knee.y };
@@ -437,7 +457,7 @@
       });
     }
 
-    // EMA smoothing in CSS space
+    // EMA smoothing in CSS space (for points)
     let smoothedCss = null;
     function emaCss(cssPoints) {
       const a = Number(smooth.value);
@@ -492,7 +512,7 @@
       ctx.restore();
     }
 
-    // Segmentation mask -> RGBA overlay
+    // Segmentation
     const maskSrcCanvas = document.createElement("canvas");
     const maskSrcCtx = maskSrcCanvas.getContext("2d", { willReadFrequently: false });
 
@@ -561,11 +581,10 @@
       return info;
     }
 
-    // -------- Head center (ears midpoint) ----------
+    // Head center (ears midpoint)
     function headCenterNorm(raw) {
       const le = raw[7], re = raw[8];
       const lEye = raw[2], rEye = raw[5];
-
       if (le && re) return { x:(le.x+re.x)/2, y:(le.y+re.y)/2 };
       if (lEye && rEye) return { x:(lEye.x+rEye.x)/2, y:(lEye.y+rEye.y)/2 };
       return null;
@@ -574,112 +593,130 @@
     function headCenterCss(cssPoints) {
       const le = cssPoints[7], re = cssPoints[8];
       const lEye = cssPoints[2], rEye = cssPoints[5];
-
       if (le && re) return { _cx:(le._cx+re._cx)/2, _cy:(le._cy+re._cy)/2 };
       if (lEye && rEye) return { _cx:(lEye._cx+rEye._cx)/2, _cy:(lEye._cy+rEye._cy)/2 };
       return null;
     }
 
-    // -------- Neck logic: tolerate neutral lordosis + detect overextension in profile ----------
-    function approxFacingSign(raw, head, shoulder) {
-      // Use nose if present; if missing, fallback to head vs shoulder x.
+    function isProfileLikely(raw){
+      const ls = raw[11], rs = raw[12];
+      if(!ls || !rs) return false;
+      return Math.abs(ls.x - rs.x) < 0.055;
+    }
+
+    function estimateFacingSign(raw, head, shoulder) {
       const nose = raw[0];
       if (nose && head) {
         const dx = nose.x - head.x;
-        if (Math.abs(dx) > 0.002) return dx > 0 ? 1 : -1;
+        if (Math.abs(dx) > 0.003) return dx > 0 ? 1 : -1;
       }
       if (head && shoulder) {
         const dx = head.x - shoulder.x;
-        if (Math.abs(dx) > 0.002) return dx > 0 ? 1 : -1;
+        if (Math.abs(dx) > 0.003) return dx > 0 ? 1 : -1;
       }
       return 1;
     }
 
-    function isProfileLike(raw) {
-      // If left/right shoulders are very close in x, it suggests a side view.
-      const ls = raw[11], rs = raw[12];
-      const lh = raw[23], rh = raw[24];
-      if (!ls || !rs || !lh || !rh) return false;
-      const sx = Math.abs(ls.x - rs.x);
-      const hx = Math.abs(lh.x - rh.x);
-      // Thresholds intentionally loose (normalized coords). Tune if needed.
-      return (sx < 0.05 && hx < 0.06);
+    // --- HWS state (signed + EMA + hold + optional auto-neutral in stand/profile)
+    let neckAngleEma = null;
+    let neckState = "unknown"; // "green" | "redFlex" | "redExt" | "amber" | "unknown"
+    let neckSince = 0;
+    let neckNeutralAuto = null;
+    let neckCalibSamples = [];
+
+    function resetNeckState(){
+      neckAngleEma = null;
+      neckState = "unknown";
+      neckSince = 0;
+      neckNeutralAuto = null;
+      neckCalibSamples = [];
     }
 
-    function drawNeckAxis(rawNorm, cssPoints) {
-      if (!toggleNeck.checked || !rawNorm || !cssPoints) return { neckDeg: null, ok: null, overExt: false };
+    function drawNeckAxis(rawNorm, cssPoints, nowTs) {
+      if (!toggleNeck.checked || !rawNorm || !cssPoints) return { neckDeg: null, state: "unknown", profile:false, facing:1, neutral: null, d: null };
 
       const ls = rawNorm[11], rs = rawNorm[12];
       const lh = rawNorm[23], rh = rawNorm[24];
-      if (!ls || !rs || !lh || !rh) return { neckDeg: null, ok: null, overExt: false };
+      if (!ls || !rs || !lh || !rh) return { neckDeg: null, state: "unknown", profile:false, facing:1, neutral: null, d: null };
 
       const shoulder = { x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2 };
-      const hip = { x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2 };
+      const hip      = { x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2 };
+      const head     = headCenterNorm(rawNorm);
+      if (!head) return { neckDeg: null, state: "unknown", profile:false, facing:1, neutral: null, d: null };
 
-      const head = headCenterNorm(rawNorm);
-      if (!head) return { neckDeg: null, ok: null, overExt: false };
-
-      // torso up vector (ensure points "up" in image coords: y decreasing)
+      // torso up
       let torso = { x: shoulder.x - hip.x, y: shoulder.y - hip.y };
       if (torso.y > 0) torso = { x:-torso.x, y:-torso.y };
 
-      const neck  = { x: head.x - shoulder.x, y: head.y - shoulder.y };
+      let neck = { x: head.x - shoulder.x, y: head.y - shoulder.y };
 
-      const deg = angleBetween(torso, neck);
+      torso = normVec(torso);
+      neck  = normVec(neck);
 
-      const tol = Number(neckTol.value);
-      const neutral = Number(neckNeutral.value);
+      let ang = signedAngleDeg(torso, neck); // signed
 
-      // Default: accept within neutral±tol as OK (green)
-      let ok = Math.abs(deg - neutral) <= tol;
+      const profile = isProfileLikely(rawNorm);
+      const facing  = estimateFacingSign(rawNorm, head, shoulder);
 
-      // Profile/Stand: specifically detect "head back" overextension:
-      // If profile-like, check whether neck points backwards relative to facing direction.
-      const preset = filmingPreset.value;
-      const profile = isProfileLike(rawNorm);
+      if (profile && facing < 0) ang = -ang;
 
-      let overExt = false;
-      if (profile && (preset === "stand" || preset === "side45")) {
-        const facing = approxFacingSign(rawNorm, head, shoulder); // +1 right, -1 left
-        const neckLen = Math.hypot(neck.x, neck.y) || 1;
-        const neckUnit = { x: neck.x/neckLen, y: neck.y/neckLen };
+      const alpha = Number(neckEma.value);
+      if (neckAngleEma == null) neckAngleEma = ang;
+      else neckAngleEma = alpha*neckAngleEma + (1-alpha)*ang;
 
-        // forward component along facing direction; negative => head/neck tilted backwards
-        const forwardComp = neckUnit.x * facing;
+      const neutralManual = Number(neckNeutral.value);
+      let neutral = neutralManual;
 
-        // Criteria:
-        // - backwards enough (forwardComp clearly negative)
-        // - and neck angle not "very flexed" (avoid false red when chin on chest)
-        if (forwardComp < -0.12 && deg <= (neutral + tol + 10)) {
-          overExt = true;
-          ok = false;
+      // Auto neutral only for stand + profile
+      if (profile && filmingPreset.value === "stand") {
+        const d0 = neckAngleEma - neutralManual;
+        if (Math.abs(d0) < 18 && neckCalibSamples.length < 40) {
+          neckCalibSamples.push(neckAngleEma);
+          if (neckCalibSamples.length === 40) {
+            const sorted = neckCalibSamples.slice().sort((x,y)=>x-y);
+            neckNeutralAuto = sorted[Math.floor(sorted.length/2)];
+          }
         }
+        if (neckNeutralAuto != null) neutral = neckNeutralAuto;
+      }
 
-        // Also: if angle is very high (chin down), we treat as "not overextended" but may be outside ok band.
-        // (No extra action needed; ok already computed via neutral band.)
+      const greenTol = Number(neckTol.value);
+      const redExtra = Number(neckRedExtra.value);
+      const flexThr = greenTol + redExtra;
+      const extThr  = greenTol + redExtra;
+
+      const d = neckAngleEma - neutral;
+
+      let want = "amber";
+      if (Math.abs(d) <= greenTol) want = "green";
+      else if (d <= -flexThr) want = "redFlex";
+      else if (d >=  extThr) want = "redExt";
+
+      const HOLD_MS = Number(neckHold.value);
+      if (want !== neckState) {
+        if (!neckSince) neckSince = nowTs;
+        if (nowTs - neckSince >= HOLD_MS) {
+          neckState = want;
+          neckSince = 0;
+        }
+      } else {
+        neckSince = 0;
       }
 
       const cssLs = cssPoints[11], cssRs = cssPoints[12];
-      if (!cssLs || !cssRs) return { neckDeg: deg, ok, overExt };
+      if (!cssLs || !cssRs) return { neckDeg: neckAngleEma, state: neckState, profile, facing, neutral, d };
 
       const cssShoulder = { _cx:(cssLs._cx+cssRs._cx)/2, _cy:(cssLs._cy+cssRs._cy)/2 };
       const cssHead = headCenterCss(cssPoints);
-      if (!cssHead) return { neckDeg: deg, ok, overExt };
+      if (!cssHead) return { neckDeg: neckAngleEma, state: neckState, profile, facing, neutral, d };
+
+      let stroke = "rgba(255,140,0,0.95)";
+      if (neckState === "green") stroke = "rgba(0,180,0,0.95)";
+      if (neckState === "redFlex" || neckState === "redExt") stroke = "rgba(220,0,0,0.95)";
 
       ctx.save();
       ctx.lineCap = "round";
       ctx.lineWidth = 6;
-
-      // Color logic:
-      // - red if overextension detected OR outside tolerance band strongly
-      // - green if ok
-      // - orange otherwise (optional but useful feedback)
-      let stroke = "rgba(255,140,0,0.95)";
-      if (ok) stroke = "rgba(0,180,0,0.95)";
-      if (overExt) stroke = "rgba(220,0,0,0.95)";
-      // Hard fail if far outside band:
-      if (!ok && !overExt && Math.abs(deg - neutral) > (tol + 12)) stroke = "rgba(220,0,0,0.95)";
-
       ctx.strokeStyle = stroke;
       ctx.beginPath();
       ctx.moveTo(cssShoulder._cx, cssShoulder._cy);
@@ -687,10 +724,10 @@
       ctx.stroke();
       ctx.restore();
 
-      return { neckDeg: deg, ok, overExt };
+      return { neckDeg: neckAngleEma, state: neckState, profile, facing, neutral, d };
     }
 
-    // Knee/leg checks (dashed measurement line only)
+    // Knee/leg checks
     function colorForRatio(r) {
       if (r <= 1.35) return "rgba(0,170,0,0.95)";
       if (r <= 1.55) return "rgba(255,140,0,0.95)";
@@ -902,7 +939,7 @@
       }
     }
 
-    // Overlay
+    // Overlay + debug footer
     function drawOverlay(debugText=""){
       if(!toggleTimer.checked) {
         if (debugText) drawDebugFooter(debugText);
@@ -910,7 +947,6 @@
       }
 
       const isPortrait = CSS_H > CSS_W;
-
       const x = 12, y = 12;
       const w = isPortrait ? Math.min(420, CSS_W-24) : Math.min(680, CSS_W-24);
       const h = isPortrait ? 140 : 90;
@@ -971,7 +1007,7 @@
       const pad = 8;
       const h = 18;
       const y = CSS_H - h - 10;
-      const w = Math.min(CSS_W - 24, 900);
+      const w = Math.min(CSS_W - 24, 980);
       const x = 12;
 
       ctx.save();
@@ -979,9 +1015,11 @@
       ctx.strokeStyle = "rgba(255,255,255,0.25)";
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.roundRect(x, y, w, h, 8);
-      ctx.fill();
-      ctx.stroke();
+      if (ctx.roundRect) ctx.roundRect(x, y, w, h, 8);
+      else {
+        ctx.moveTo(x+8,y); ctx.arcTo(x+w,y,x+w,y+h,8); ctx.arcTo(x+w,y+h,x,y+h,8); ctx.arcTo(x,y+h,x,y,8); ctx.arcTo(x,y,x+w,y,8); ctx.closePath();
+      }
+      ctx.fill(); ctx.stroke();
       ctx.fillStyle = "rgba(255,255,255,0.95)";
       ctx.font = "11px system-ui";
       ctx.fillText(text, x + pad, y + 13);
@@ -1006,7 +1044,7 @@
     let recorder=null, recordedChunks=[], lastBlob=null;
     let isRecording = false;
 
-    const recStats = { frames:0, kneeWide:0, kneeAsym:0, legsBent:0, headOver:0, avgKneeRatioSum:0, avgKneeRatioN:0 };
+    const recStats = { frames:0, kneeWide:0, kneeAsym:0, legsBent:0, headExt:0, headFlex:0, avgKneeRatioSum:0, avgKneeRatioN:0 };
     function resetRecStats() { for (const k of Object.keys(recStats)) recStats[k] = 0; }
 
     function clearTipsUI() {
@@ -1029,7 +1067,9 @@
       if (p(recStats.kneeWide) >= thr) issues.push({ score:p(recStats.kneeWide), title:"Knie öffnen zu weit", tip:"Knie enger (≈ schulterbreit) anziehen – „Schere“ vermeiden." });
       if (p(recStats.kneeAsym) >= thr) issues.push({ score:p(recStats.kneeAsym), title:"Beinschlag unsymmetrisch", tip:"Links/rechts ähnlich beugen/strecken – Symmetrie anstreben." });
       if (p(recStats.legsBent) >= thr) issues.push({ score:p(recStats.legsBent), title:"Beine nicht gestreckt in der Gleitphase", tip:"Nach dem Beinschlag vollständig strecken – kurz stabil gleiten." });
-      if (p(recStats.headOver) >= thr) issues.push({ score:p(recStats.headOver), title:"Kopf überstreckt (HWS)", tip:"Nacken lang, Blick eher schräg nach unten/vorne (neutral)." });
+
+      if (p(recStats.headExt) >= thr) issues.push({ score:p(recStats.headExt), title:"Kopf überstreckt (HWS)", tip:"Nacken lang, Blick eher schräg nach unten/vorne (neutral)." });
+      if (p(recStats.headFlex) >= thr) issues.push({ score:p(recStats.headFlex), title:"Kopf zu tief (HWS-Flexion)", tip:"Kopf neutral: Blick leicht nach vorn/unten, nicht „Kinn auf Brust“." });
 
       const shortGlides = glideTimes.filter(t => (t/1000) < 0.8).length;
       if (glideTimes.length > 0 && shortGlides >= 1) issues.push({ score:0.30, title:"Gleitphase sehr kurz", tip:"Länger gleiten: nach dem Strecken ruhig halten, bevor die nächste Phase startet." });
@@ -1039,7 +1079,7 @@
       if (top.length === 0) return;
 
       const avgRatio = (recStats.avgKneeRatioN > 0) ? (recStats.avgKneeRatioSum / recStats.avgKneeRatioN) : null;
-      hintMeta.textContent = `${recStats.frames} Frames` + (avgRatio ? ` • Ø Kniebreite/Schulterbreite ${avgRatio.toFixed(2)}×` : "");
+      hintMeta.textContent = `${recStats.frames} Frames` + (avgRatio ? ` • Ø Knie/Schulter ${avgRatio.toFixed(2)}×` : "");
       hintText.textContent = "In dieser Aufnahme waren folgende Punkte über mehrere Frames deutlich auffällig:";
 
       for (const it of top) {
@@ -1069,7 +1109,6 @@
       resetRecStats();
       isRecording = true;
 
-      // WICHTIG: alte Tipps beim neuen Start sofort weg
       clearTipsUI();
 
       const s = canvas.captureStream(15);
@@ -1085,7 +1124,6 @@
         lastBlob = new Blob(recordedChunks,{type});
         btnShare.disabled = !lastBlob;
         setStatus("Aufnahme fertig (" + (lastBlob.type.includes("mp4") ? "MP4" : "WebM") + ").");
-        // Nach Stop: neue Tipps zur letzten Sequenz
         showTechTipsFromStats();
       };
       recorder.start(200);
@@ -1227,7 +1265,7 @@
 
           drawSkeletonCssPoints(cssPoints);
 
-          const neck = drawNeckAxis(raw, cssPoints);
+          const neck = drawNeckAxis(raw, cssPoints, ts);
           const legs = drawLegChecks(raw, cssPoints);
 
           updateTimer(raw, ts);
@@ -1246,18 +1284,17 @@
             const bent = ((aL != null && aL < 155) || (aR != null && aR < 155));
             if (toggleTimer.checked && glideActive && bent) recStats.legsBent++;
 
-            // HWS overextension: count when we are clearly "red"
-            if (toggleTimer.checked && glideActive && neck.neckDeg != null) {
-              if (neck.overExt) recStats.headOver++;
-              else {
-                const tol = Number(neckTol.value);
-                const neutral = Number(neckNeutral.value);
-                if (Math.abs(neck.neckDeg - neutral) > (tol + 12)) recStats.headOver++;
-              }
+            if (toggleTimer.checked && glideActive && neck?.state) {
+              if (neck.state === "redExt") recStats.headExt++;
+              if (neck.state === "redFlex") recStats.headFlex++;
             }
           }
 
-          drawOverlay(`DEBUG: lm=${raw.length} mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} score=${scoreEma.toFixed(2)} ui=${isPortraitUI()?"P":"L"}`);
+          const neckDbg = (neck && neck.neckDeg != null)
+            ? `neck=${neck.neckDeg.toFixed(1)}° n=${(neck.neutral??0).toFixed(1)} d=${(neck.d??0).toFixed(1)} ${neck.state} prof=${neck.profile?1:0} face=${neck.facing}`
+            : `neck=—`;
+
+          drawOverlay(`DEBUG: lm=${raw.length} mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} score=${scoreEma.toFixed(2)} ${neckDbg} ui=${isPortraitUI()?"P":"L"}`);
         } else {
           drawOverlay(`DEBUG: lm=0 mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} ui=${isPortraitUI()?"P":"L"}`);
         }
@@ -1290,6 +1327,7 @@
 
         clearTipsUI();
         emptyMaskFrames = 0;
+        resetNeckState();
 
         setStatus("bereit.");
         rafId = requestAnimationFrame(loop);
@@ -1317,6 +1355,7 @@
         lastTorso=null;
 
         clearTipsUI();
+        resetNeckState();
 
         running=true;
         rafId = requestAnimationFrame(loop);
@@ -1352,6 +1391,7 @@
       scoreEma=0; scoreStableSince=null; scoreLowSince=null;
       setStatus("Slots zurückgesetzt.");
       clearTipsUI();
+      resetNeckState();
     });
   </script>
 </body>
