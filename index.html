@@ -76,6 +76,7 @@
       padding: 10px 12px;
       background: #fafafa;
       display: none;
+      max-width: 1100px;
     }
     .tipsBox h3 { margin: 0 0 6px 0; font-size: 14px; }
     .tipsBox ul { margin: 6px 0 0 18px; padding: 0; }
@@ -119,7 +120,6 @@
       <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
         <label><input type="checkbox" id="toggleSkeleton" checked /> Skelett</label>
         <label><input type="checkbox" id="toggleSilhouette" checked /> Segmentierung</label>
-        <label><input type="checkbox" id="toggleHintBox" checked /> Techniktipps nach Stop</label>
 
         <select id="filmingPreset" title="Aufnahmeposition">
           <option value="stand" selected>Stand</option>
@@ -193,6 +193,14 @@
           <input id="neckTol" type="range" min="10" max="60" step="1" value="25">
           <span id="neckTolVal" class="small">25</span>
         </div>
+
+        <!-- Neu: optionales Neutral-Offset (v.a. Stand/Profil) -->
+        <div class="rangeWrap">
+          <span>HWS – Neutral-Offset (°)</span>
+          <input id="neckNeutral" type="range" min="0" max="25" step="1" value="12">
+          <span id="neckNeutralVal" class="small">12</span>
+        </div>
+
       </details>
     </details>
 
@@ -203,12 +211,7 @@
         <label><input type="checkbox" id="toggleNeck" checked /> HWS-Achse (Brust)</label>
         <label><input type="checkbox" id="toggleLegCheck" checked /> Knie/Beine-Check (Brust)</label>
         <label><input type="checkbox" id="toggleTimer" checked /> Timer Brust – Gleitphase</label>
-      </div>
-
-      <div id="tipsBox" class="tipsBox">
-        <h3>Techniktipps Brustschwimmen <span id="hintMeta" class="pill"></span></h3>
-        <div class="hint" id="hintText"></div>
-        <ul id="hintList"></ul>
+        <label><input type="checkbox" id="toggleHintBox" checked /> Techniktipps nach Stop</label>
       </div>
 
       <details style="margin-top:10px;">
@@ -269,6 +272,13 @@
     <div>
       <canvas id="canvas"></canvas>
     </div>
+
+    <!-- Neu: Tippsbox UNTER dem Canvas (immer sichtbar, wenn gefüllt) -->
+    <div id="tipsBox" class="tipsBox">
+      <h3>Techniktipps Brustschwimmen <span id="hintMeta" class="pill"></span></h3>
+      <div class="hint" id="hintText"></div>
+      <ul id="hintList"></ul>
+    </div>
   </div>
 
   <p class="hint mono" id="status">Status: bereit</p>
@@ -290,11 +300,11 @@
 
     const toggleSkeleton = document.getElementById("toggleSkeleton");
     const toggleSilhouette = document.getElementById("toggleSilhouette");
-    const toggleHintBox = document.getElementById("toggleHintBox");
 
     const toggleNeck = document.getElementById("toggleNeck");
     const toggleLegCheck = document.getElementById("toggleLegCheck");
     const toggleTimer = document.getElementById("toggleTimer");
+    const toggleHintBox = document.getElementById("toggleHintBox");
     const filmingPreset = document.getElementById("filmingPreset");
 
     const showInputVideo = document.getElementById("showInputVideo");
@@ -308,6 +318,7 @@
     const trackConf = document.getElementById("trackConf");
     const smooth = document.getElementById("smooth");
     const neckTol = document.getElementById("neckTol");
+    const neckNeutral = document.getElementById("neckNeutral");
 
     const silOpacityVal = document.getElementById("silOpacityVal");
     const silThreshVal  = document.getElementById("silThreshVal");
@@ -318,6 +329,7 @@
     const trackVal = document.getElementById("trackVal");
     const smoothVal = document.getElementById("smoothVal");
     const neckTolVal = document.getElementById("neckTolVal");
+    const neckNeutralVal = document.getElementById("neckNeutralVal");
 
     const tipsBox = document.getElementById("tipsBox");
     const hintList = document.getElementById("hintList");
@@ -341,6 +353,7 @@
     bindSlider(trackConf, trackVal);
     bindSlider(smooth, smoothVal, v => Number(v).toFixed(2));
     bindSlider(neckTol, neckTolVal, v => String(Math.round(Number(v))));
+    bindSlider(neckNeutral, neckNeutralVal, v => String(Math.round(Number(v))));
 
     function setInputVideoVisible(visible) {
       if (visible) video.classList.remove("videoHidden");
@@ -380,7 +393,6 @@
     const BG = "#bfe7ff";
 
     // Pose connections:
-    // Keep wrist->(pinky/index/thumb) lines, remove pinky<->index cross-line.
     const POSE_CONNECTIONS = [
       [0,1],[1,2],[2,3],[3,7],
       [0,4],[4,5],[5,6],[6,8],
@@ -549,7 +561,7 @@
       return info;
     }
 
-    // -------- HWS AXIS FIX: use head-center (ears midpoint), NOT nose ----------
+    // -------- Head center (ears midpoint) ----------
     function headCenterNorm(raw) {
       const le = raw[7], re = raw[8];
       const lEye = raw[2], rEye = raw[5];
@@ -568,53 +580,114 @@
       return null;
     }
 
+    // -------- Neck logic: tolerate neutral lordosis + detect overextension in profile ----------
+    function approxFacingSign(raw, head, shoulder) {
+      // Use nose if present; if missing, fallback to head vs shoulder x.
+      const nose = raw[0];
+      if (nose && head) {
+        const dx = nose.x - head.x;
+        if (Math.abs(dx) > 0.002) return dx > 0 ? 1 : -1;
+      }
+      if (head && shoulder) {
+        const dx = head.x - shoulder.x;
+        if (Math.abs(dx) > 0.002) return dx > 0 ? 1 : -1;
+      }
+      return 1;
+    }
+
+    function isProfileLike(raw) {
+      // If left/right shoulders are very close in x, it suggests a side view.
+      const ls = raw[11], rs = raw[12];
+      const lh = raw[23], rh = raw[24];
+      if (!ls || !rs || !lh || !rh) return false;
+      const sx = Math.abs(ls.x - rs.x);
+      const hx = Math.abs(lh.x - rh.x);
+      // Thresholds intentionally loose (normalized coords). Tune if needed.
+      return (sx < 0.05 && hx < 0.06);
+    }
+
     function drawNeckAxis(rawNorm, cssPoints) {
-      if (!toggleNeck.checked || !rawNorm || !cssPoints) return { neckDeg: null, ok: null };
+      if (!toggleNeck.checked || !rawNorm || !cssPoints) return { neckDeg: null, ok: null, overExt: false };
 
       const ls = rawNorm[11], rs = rawNorm[12];
       const lh = rawNorm[23], rh = rawNorm[24];
-      if (!ls || !rs || !lh || !rh) return { neckDeg: null, ok: null };
+      if (!ls || !rs || !lh || !rh) return { neckDeg: null, ok: null, overExt: false };
 
       const shoulder = { x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2 };
       const hip = { x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2 };
 
       const head = headCenterNorm(rawNorm);
-      if (!head) return { neckDeg: null, ok: null };
+      if (!head) return { neckDeg: null, ok: null, overExt: false };
 
-      const torso = { x: shoulder.x - hip.x, y: shoulder.y - hip.y };
+      // torso up vector (ensure points "up" in image coords: y decreasing)
+      let torso = { x: shoulder.x - hip.x, y: shoulder.y - hip.y };
+      if (torso.y > 0) torso = { x:-torso.x, y:-torso.y };
+
       const neck  = { x: head.x - shoulder.x, y: head.y - shoulder.y };
 
-      const preset = filmingPreset.value;
+      const deg = angleBetween(torso, neck);
 
-      // For side45: do not flip vectors; in other presets stabilize to "up".
-      let torsoN = torso, neckN = neck;
-      if (preset !== "side45") {
-        torsoN = (torso.y < 0) ? torso : { x:-torso.x, y:-torso.y };
-        neckN  = (neck.y  < 0) ? neck  : { x:-neck.x,  y:-neck.y  };
+      const tol = Number(neckTol.value);
+      const neutral = Number(neckNeutral.value);
+
+      // Default: accept within neutral±tol as OK (green)
+      let ok = Math.abs(deg - neutral) <= tol;
+
+      // Profile/Stand: specifically detect "head back" overextension:
+      // If profile-like, check whether neck points backwards relative to facing direction.
+      const preset = filmingPreset.value;
+      const profile = isProfileLike(rawNorm);
+
+      let overExt = false;
+      if (profile && (preset === "stand" || preset === "side45")) {
+        const facing = approxFacingSign(rawNorm, head, shoulder); // +1 right, -1 left
+        const neckLen = Math.hypot(neck.x, neck.y) || 1;
+        const neckUnit = { x: neck.x/neckLen, y: neck.y/neckLen };
+
+        // forward component along facing direction; negative => head/neck tilted backwards
+        const forwardComp = neckUnit.x * facing;
+
+        // Criteria:
+        // - backwards enough (forwardComp clearly negative)
+        // - and neck angle not "very flexed" (avoid false red when chin on chest)
+        if (forwardComp < -0.12 && deg <= (neutral + tol + 10)) {
+          overExt = true;
+          ok = false;
+        }
+
+        // Also: if angle is very high (chin down), we treat as "not overextended" but may be outside ok band.
+        // (No extra action needed; ok already computed via neutral band.)
       }
 
-      const deg = angleBetween(torsoN, neckN);
-      const tol = Number(neckTol.value);
-      const ok = deg <= tol;
-
       const cssLs = cssPoints[11], cssRs = cssPoints[12];
-      if (!cssLs || !cssRs) return { neckDeg: deg, ok };
+      if (!cssLs || !cssRs) return { neckDeg: deg, ok, overExt };
 
       const cssShoulder = { _cx:(cssLs._cx+cssRs._cx)/2, _cy:(cssLs._cy+cssRs._cy)/2 };
       const cssHead = headCenterCss(cssPoints);
-      if (!cssHead) return { neckDeg: deg, ok };
+      if (!cssHead) return { neckDeg: deg, ok, overExt };
 
       ctx.save();
       ctx.lineCap = "round";
       ctx.lineWidth = 6;
-      ctx.strokeStyle = ok ? "rgba(0,180,0,0.95)" : "rgba(220,0,0,0.95)";
+
+      // Color logic:
+      // - red if overextension detected OR outside tolerance band strongly
+      // - green if ok
+      // - orange otherwise (optional but useful feedback)
+      let stroke = "rgba(255,140,0,0.95)";
+      if (ok) stroke = "rgba(0,180,0,0.95)";
+      if (overExt) stroke = "rgba(220,0,0,0.95)";
+      // Hard fail if far outside band:
+      if (!ok && !overExt && Math.abs(deg - neutral) > (tol + 12)) stroke = "rgba(220,0,0,0.95)";
+
+      ctx.strokeStyle = stroke;
       ctx.beginPath();
       ctx.moveTo(cssShoulder._cx, cssShoulder._cy);
       ctx.lineTo(cssHead._cx, cssHead._cy);
       ctx.stroke();
       ctx.restore();
 
-      return { neckDeg: deg, ok };
+      return { neckDeg: deg, ok, overExt };
     }
 
     // Knee/leg checks (dashed measurement line only)
@@ -668,7 +741,7 @@
       const ls = raw[11], rs = raw[12];
       const le = raw[13], re = raw[14];
       const lw = raw[15], rw = raw[16];
-      const head = headCenterNorm(raw); // now consistent with neck axis
+      const head = headCenterNorm(raw);
       if (!ls || !rs) return 0;
 
       const shoulderY = (ls.y + rs.y) / 2;
@@ -829,17 +902,15 @@
       }
     }
 
-    // Overlay: fixed overlap issues + slots in one row for landscape
+    // Overlay
     function drawOverlay(debugText=""){
       if(!toggleTimer.checked) {
-        // Still render debug footer (small) so you can see state if needed
         if (debugText) drawDebugFooter(debugText);
         return;
       }
 
       const isPortrait = CSS_H > CSS_W;
 
-      // Timer box
       const x = 12, y = 12;
       const w = isPortrait ? Math.min(420, CSS_W-24) : Math.min(680, CSS_W-24);
       const h = isPortrait ? 140 : 90;
@@ -870,7 +941,6 @@
       const presetLabel = filmingPreset.value==="stand" ? "Stand" : (filmingPreset.value==="side45" ? "45° seitlich" : "45° hinten");
       ctx.fillText(`Timer Brust – Gleitphase | Aufnahme: ${presetLabel}`, x+12, y+(isPortrait?56:48));
 
-      // Slots:
       ctx.font = isPortrait ? "14px system-ui" : "13px system-ui";
       if (isPortrait) {
         const baseY = y + 80;
@@ -879,14 +949,12 @@
           ctx.fillText(`Slot ${i+1}: ${t}`, x+12, baseY + i*16);
         }
       } else {
-        // One row in landscape
         const lineY = y + 72;
         const parts = [];
         for (let i=0;i<4;i++){
           const t = glideTimes[i]!=null ? fmt(glideTimes[i]) : "—";
           parts.push(`S${i+1}: ${t}`);
         }
-        // Fit in one line: draw with measured spacing
         let cx = x + 12;
         for (const p of parts) {
           ctx.fillText(p, cx, lineY);
@@ -896,13 +964,10 @@
       }
 
       ctx.restore();
-
-      // Debug footer (separate, no overlap)
       if (debugText) drawDebugFooter(debugText);
     }
 
     function drawDebugFooter(text) {
-      // small black translucent footer at bottom
       const pad = 8;
       const h = 18;
       const y = CSS_H - h - 10;
@@ -923,7 +988,6 @@
       ctx.restore();
     }
 
-    // Polyfill for roundRect (older Safari)
     if (!CanvasRenderingContext2D.prototype.roundRect) {
       CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
         const rr = Math.min(r, w/2, h/2);
@@ -945,11 +1009,15 @@
     const recStats = { frames:0, kneeWide:0, kneeAsym:0, legsBent:0, headOver:0, avgKneeRatioSum:0, avgKneeRatioN:0 };
     function resetRecStats() { for (const k of Object.keys(recStats)) recStats[k] = 0; }
 
-    function showTechTipsFromStats() {
+    function clearTipsUI() {
       tipsBox.style.display = "none";
       hintList.innerHTML = "";
       hintText.textContent = "";
       hintMeta.textContent = "";
+    }
+
+    function showTechTipsFromStats() {
+      clearTipsUI();
 
       if (!toggleHintBox.checked) return;
       if (recStats.frames < 25) return;
@@ -1001,10 +1069,8 @@
       resetRecStats();
       isRecording = true;
 
-      tipsBox.style.display = "none";
-      hintList.innerHTML = "";
-      hintText.textContent = "";
-      hintMeta.textContent = "";
+      // WICHTIG: alte Tipps beim neuen Start sofort weg
+      clearTipsUI();
 
       const s = canvas.captureStream(15);
       const mt = pickMimeType();
@@ -1019,6 +1085,7 @@
         lastBlob = new Blob(recordedChunks,{type});
         btnShare.disabled = !lastBlob;
         setStatus("Aufnahme fertig (" + (lastBlob.type.includes("mp4") ? "MP4" : "WebM") + ").");
+        // Nach Stop: neue Tipps zur letzten Sequenz
         showTechTipsFromStats();
       };
       recorder.start(200);
@@ -1179,9 +1246,14 @@
             const bent = ((aL != null && aL < 155) || (aR != null && aR < 155));
             if (toggleTimer.checked && glideActive && bent) recStats.legsBent++;
 
+            // HWS overextension: count when we are clearly "red"
             if (toggleTimer.checked && glideActive && neck.neckDeg != null) {
-              const tol = Number(neckTol.value);
-              if (neck.neckDeg > (tol + 5)) recStats.headOver++;
+              if (neck.overExt) recStats.headOver++;
+              else {
+                const tol = Number(neckTol.value);
+                const neutral = Number(neckNeutral.value);
+                if (Math.abs(neck.neckDeg - neutral) > (tol + 12)) recStats.headOver++;
+              }
             }
           }
 
@@ -1216,7 +1288,7 @@
         btnRec.disabled=false;
         btnReset.disabled=false;
 
-        tipsBox.style.display = "none";
+        clearTipsUI();
         emptyMaskFrames = 0;
 
         setStatus("bereit.");
@@ -1244,7 +1316,7 @@
         scoreEma=0; scoreStableSince=null; scoreLowSince=null;
         lastTorso=null;
 
-        tipsBox.style.display = "none";
+        clearTipsUI();
 
         running=true;
         rafId = requestAnimationFrame(loop);
@@ -1279,7 +1351,7 @@
       glideActive=false; glideStart=0; currentElapsed=0;
       scoreEma=0; scoreStableSince=null; scoreLowSince=null;
       setStatus("Slots zurückgesetzt.");
-      tipsBox.style.display = "none";
+      clearTipsUI();
     });
   </script>
 </body>
