@@ -24,7 +24,8 @@
       max-width: 980px;
     }
 
-    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; margin: 12px 0; }
+
     video, canvas { max-width: 100%; border: 1px solid #ddd; border-radius: 10px; }
     video { width: 360px; height: auto; background:#000; }
     canvas { width: 360px; height: auto; background: var(--bg); }
@@ -36,13 +37,13 @@
     label { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #ddd; border-radius: 10px; }
     select { padding: 9px 12px; border-radius: 10px; border: 1px solid #ccc; background: #fff; }
 
-    details { border: 1px solid #ddd; border-radius: 10px; padding: 10px 12px; max-width: 1100px; }
-    summary { cursor: pointer; font-weight: 600; }
+    details { border: 1px solid #ddd; border-radius: 10px; padding: 10px 12px; max-width: 1100px; background: #fff; }
+    summary { cursor: pointer; font-weight: 700; }
 
     .hint { color: #555; font-size: 14px; line-height: 1.4; max-width: 1100px; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 
-    .rangeWrap { display:flex; align-items:center; gap:10px; padding: 8px 10px; border:1px solid #ddd; border-radius: 10px; margin-top: 10px; flex-wrap: wrap; }
+    .rangeWrap { display:flex; align-items:center; gap:10px; padding: 8px 10px; border:1px solid #ddd; border-radius: 10px; margin-top: 10px; flex-wrap: wrap; background:#fff; }
     .rangeWrap span { min-width: 170px; font-size: 13px; color:#666; }
     .small { font-size: 13px; color:#666; min-width: 64px; text-align:right; }
 
@@ -59,6 +60,20 @@
       font-size: 13px;
       color: #222;
     }
+
+    .sidePanel {
+      width: 360px;
+      display:flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .btnGrid {
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .btnGrid .full { grid-column: 1 / -1; }
 
     .foot { margin-top: 14px; max-width: 1100px; }
     .tiplist details { margin-top: 10px; }
@@ -86,7 +101,6 @@
       margin-left: 6px;
     }
 
-    /* Input-Video standardmäßig "ausgeblendet", aber technisch weiter aktiv (iOS-freundlich) */
     .videoHidden {
       width: 1px !important;
       height: 1px !important;
@@ -108,35 +122,51 @@
     </p>
   </div>
 
-  <div class="row">
+  <!-- Oben nur Kamera/Grundfunktionen -->
+  <div class="row" style="align-items:center;">
     <button id="btnInit" class="primary">Kamera aktivieren</button>
     <button id="btnSwitch" disabled>Kamera wechseln (Rück)</button>
-    <button id="btnRec" disabled>Aufnahme starten</button>
-    <button id="btnStop" disabled>Stop</button>
-    <button id="btnShare" disabled>Teilen/Speichern</button>
-    <button id="btnReset" disabled>Slots zurücksetzen</button>
+
+    <div class="block" style="margin-left:auto; max-width: 560px;">
+      <div class="blockTitle">Anzeige (allgemein)</div>
+      <label><input type="checkbox" id="toggleSkeleton" checked /> Skelett</label>
+      <label><input type="checkbox" id="toggleSilhouette" checked /> Segmentierung</label>
+      <label><input type="checkbox" id="toggleHintBox" checked /> Hinweisbox nach Stop</label>
+
+      <select id="filmingPreset" title="Aufnahmeposition" style="margin-left:6px;">
+        <option value="stand" selected>Stand (Beckenrand)</option>
+        <option value="side45">45° seitlich</option>
+        <option value="back45">45° von hinten</option>
+      </select>
+    </div>
   </div>
 
-  <!-- Allgemeine Anzeige/Output -->
-  <div class="row block">
-    <div class="blockTitle">Anzeige (allgemein)</div>
-    <label><input type="checkbox" id="toggleSkeleton" checked /> Skelett</label>
-    <label><input type="checkbox" id="toggleSilhouette" checked /> Segmentierung</label>
-    <label><input type="checkbox" id="toggleHintBox" checked /> Hinweisbox nach Stop</label>
+  <!-- Canvas + Bedienung nebeneinander -->
+  <div class="row">
+    <video id="video" class="videoHidden" playsinline autoplay muted></video>
+    <canvas id="canvas"></canvas>
 
-    <select id="filmingPreset" title="Aufnahmeposition">
-      <option value="stand" selected>Stand (Beckenrand)</option>
-      <option value="side45">45° seitlich</option>
-      <option value="back45">45° von hinten</option>
-    </select>
-  </div>
+    <div class="sidePanel">
+      <div class="block">
+        <div class="blockTitle">Aufnahme</div>
+        <div class="btnGrid">
+          <button id="btnRec" disabled class="full">Aufnahme starten</button>
+          <button id="btnStop" disabled>Stop</button>
+          <button id="btnShare" disabled>Teilen/Speichern</button>
+          <button id="btnReset" disabled class="full">Slots zurücksetzen</button>
+        </div>
+      </div>
 
-  <!-- Brust-spezifische Analyse -->
-  <div class="row block">
-    <div class="blockTitle">Brustschwimmen-Analyse (spezifisch)</div>
-    <label><input type="checkbox" id="toggleNeck" checked /> HWS-Achse (Brust)</label>
-    <label><input type="checkbox" id="toggleLegCheck" checked /> Knie/Beine-Check (Brust)</label>
-    <label><input type="checkbox" id="toggleTimer" checked /> Timer Brust – Gleitphase</label>
+      <!-- Brust-Tools als aufklappbarer Block -->
+      <details id="breastTools" open>
+        <summary>Brustschwimmen-Tools (spezifisch)</summary>
+        <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
+          <label><input type="checkbox" id="toggleNeck" checked /> HWS-Achse (Brust)</label>
+          <label><input type="checkbox" id="toggleLegCheck" checked /> Knie/Beine-Check (Brust)</label>
+          <label><input type="checkbox" id="toggleTimer" checked /> Timer Brust – Gleitphase</label>
+        </div>
+      </details>
+    </div>
   </div>
 
   <details>
@@ -211,11 +241,6 @@
     </p>
   </details>
 
-  <div class="row">
-    <video id="video" class="videoHidden" playsinline autoplay muted></video>
-    <canvas id="canvas"></canvas>
-  </div>
-
   <p class="hint mono" id="status">Status: bereit</p>
 
   <div class="foot tiplist">
@@ -287,8 +312,7 @@
   </div>
 
   <script type="module">
-    import { FilesetResolver, PoseLandmarker }
-      from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+    import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
     // ---------- DOM ----------
     const video = document.getElementById("video");
@@ -360,7 +384,6 @@
       if (visible) video.classList.remove("videoHidden");
       else video.classList.add("videoHidden");
     }
-    // Standard: ausblenden
     setInputVideoVisible(false);
     showInputVideo.addEventListener("change", () => setInputVideoVisible(showInputVideo.checked));
 
@@ -514,17 +537,17 @@
     }
 
     function renderMaskToCanvas(segMask) {
-      if (!segMask) return { max: 0, w: 0, h: 0 };
+      if (!segMask) return { max: 0 };
       const mw = segMask.width ?? 0;
       const mh = segMask.height ?? 0;
-      if (!mw || !mh) return { max: 0, w: 0, h: 0 };
+      if (!mw || !mh) return { max: 0 };
 
       if (maskSrcCanvas.width !== mw || maskSrcCanvas.height !== mh) {
         maskSrcCanvas.width = mw;
         maskSrcCanvas.height = mh;
       }
 
-      const threshold = Number(silThresh.value) / 100; // 0..1
+      const threshold = Number(silThresh.value) / 100;
       const alpha = Number(silOpacity.value);
 
       let dataF = null, dataU = null;
@@ -541,7 +564,7 @@
           if (v > maxv) maxv = v;
           const a = (v >= threshold) ? Math.round(255 * alpha) : 0;
           const o = i*4;
-          d[o]   = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a; // Gelb, anonym
+          d[o] = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a;
         }
       } else if (dataU && dataU.length >= mw*mh) {
         for (let i = 0; i < mw*mh; i++) {
@@ -549,12 +572,12 @@
           if (v > maxv) maxv = v;
           const a = (v >= threshold) ? Math.round(255 * alpha) : 0;
           const o = i*4;
-          d[o]   = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a;
+          d[o] = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a;
         }
       }
 
       maskSrcCtx.putImageData(img, 0, 0);
-      return { max: maxv, w: mw, h: mh };
+      return { max: maxv };
     }
 
     function drawSilhouette(segMask) {
@@ -564,12 +587,7 @@
       if (!vw || !vh) return { max: 0 };
 
       const info = renderMaskToCanvas(segMask);
-      if (info.max > 0) {
-        ctx.save();
-        ctx.globalCompositeOperation = "source-over";
-        drawMaskContainFromSource(maskSrcCanvas, vw, vh);
-        ctx.restore();
-      }
+      if (info.max > 0) drawMaskContainFromSource(maskSrcCanvas, vw, vh);
       return info;
     }
 
@@ -625,7 +643,7 @@
       return { neckDeg: deg, ok };
     }
 
-    // ---------- Knie/Bein-Check: farbcodierte Linien ----------
+    // ---------- Knie/Bein-Check ----------
     function colorForRatio(r) {
       if (r <= 1.35) return "rgba(0,170,0,0.95)";
       if (r <= 1.55) return "rgba(255,140,0,0.95)";
@@ -780,13 +798,10 @@
       }
 
       const p = filmingPreset.value;
-
       const startThr = (p === "side45") ? 0.72 : 0.75;
       const stopThr  = (p === "side45") ? 0.55 : 0.58;
-
       const startHoldMs = (p === "side45") ? 130 : 160;
       const stopHoldMs  = (p === "side45") ? 220 : 230;
-
       const hardMaxMs = (p === "stand") ? 5000 : 6500;
 
       const alpha = (p === "side45") ? 0.62 : 0.60;
@@ -805,7 +820,6 @@
 
       if(!glideActive){
         currentElapsed = 0;
-
         if(scoreEma >= startThr && glideTimes.length < 4){
           if(scoreStableSince == null) scoreStableSince = now;
           if(now - scoreStableSince >= startHoldMs){
@@ -904,29 +918,12 @@
       ctx.restore();
     }
 
-    // ---------- Recording + Analyse (Hinweisbox) ----------
+    // ---------- Recording + Hinweisbox (unverändert, aber kompakt gelassen) ----------
     let recorder=null, recordedChunks=[], lastBlob=null;
     let isRecording = false;
 
-    const recStats = {
-      frames: 0,
-      kneeWide: 0,
-      kneeAsym: 0,
-      legsBent: 0,
-      headOver: 0,
-      avgKneeRatioSum: 0,
-      avgKneeRatioN: 0
-    };
-
-    function resetRecStats() {
-      recStats.frames = 0;
-      recStats.kneeWide = 0;
-      recStats.kneeAsym = 0;
-      recStats.legsBent = 0;
-      recStats.headOver = 0;
-      recStats.avgKneeRatioSum = 0;
-      recStats.avgKneeRatioN = 0;
-    }
+    const recStats = { frames:0, kneeWide:0, kneeAsym:0, legsBent:0, headOver:0, avgKneeRatioSum:0, avgKneeRatioN:0 };
+    function resetRecStats() { for (const k of Object.keys(recStats)) recStats[k] = 0; }
 
     function pickMimeType(){
       const candidates=[
@@ -951,37 +948,25 @@
       if (recStats.frames < 25) return;
 
       const p = (n)=> n / Math.max(1, recStats.frames);
-
       const thr = 0.22;
       const issues = [];
 
-      if (p(recStats.kneeWide) >= thr) {
-        issues.push({ score: p(recStats.kneeWide), title: "Knie öffnen zu weit", tip: "Knie enger (≈ schulterbreit) anziehen – „Schere“ vermeiden." });
-      }
-      if (p(recStats.kneeAsym) >= thr) {
-        issues.push({ score: p(recStats.kneeAsym), title: "Beinschlag unsymmetrisch", tip: "Beide Knie ähnlich beugen/strecken – links/rechts angleichen." });
-      }
-      if (p(recStats.legsBent) >= thr) {
-        issues.push({ score: p(recStats.legsBent), title: "Beine nicht gestreckt in der Gleitphase", tip: "Nach dem Beinschlag vollständig strecken – kurz stabil gleiten." });
-      }
-      if (p(recStats.headOver) >= thr) {
-        issues.push({ score: p(recStats.headOver), title: "Kopf überstreckt (HWS)", tip: "Nacken lang, Blick eher schräg nach unten/vorne (neutral)." });
-      }
+      if (p(recStats.kneeWide) >= thr) issues.push({ score:p(recStats.kneeWide), title:"Knie öffnen zu weit", tip:"Knie enger (≈ schulterbreit) anziehen – „Schere“ vermeiden." });
+      if (p(recStats.kneeAsym) >= thr) issues.push({ score:p(recStats.kneeAsym), title:"Beinschlag unsymmetrisch", tip:"Beide Knie ähnlich beugen/strecken – links/rechts angleichen." });
+      if (p(recStats.legsBent) >= thr) issues.push({ score:p(recStats.legsBent), title:"Beine nicht gestreckt in der Gleitphase", tip:"Nach dem Beinschlag vollständig strecken – kurz stabil gleiten." });
+      if (p(recStats.headOver) >= thr) issues.push({ score:p(recStats.headOver), title:"Kopf überstreckt (HWS)", tip:"Nacken lang, Blick eher schräg nach unten/vorne (neutral)." });
 
       const shortGlides = glideTimes.filter(t => (t/1000) < 0.8).length;
-      if (glideTimes.length > 0 && shortGlides >= 1) {
-        issues.push({ score: 0.30, title: "Gleitphase sehr kurz", tip: "Länger gleiten: nach dem Strecken ruhig halten, bevor die nächste Phase startet." });
-      }
+      if (glideTimes.length > 0 && shortGlides >= 1) issues.push({ score:0.30, title:"Gleitphase sehr kurz", tip:"Länger gleiten: nach dem Strecken ruhig halten, bevor die nächste Phase startet." });
 
       issues.sort((a,b)=> b.score - a.score);
       const top = issues.slice(0,3);
-
       if (top.length === 0) return;
 
       const avgRatio = (recStats.avgKneeRatioN > 0) ? (recStats.avgKneeRatioSum / recStats.avgKneeRatioN) : null;
       hintMeta.textContent = `${recStats.frames} Frames` + (avgRatio ? ` • Ø Knie/Schulter ${avgRatio.toFixed(2)}×` : "");
-
       hintText.textContent = "In dieser Aufnahme waren folgende Punkte über mehrere Frames deutlich auffällig:";
+
       for (const it of top) {
         const li = document.createElement("li");
         li.innerHTML = `<b>${it.title}</b> – ${it.tip}`;
@@ -994,7 +979,6 @@
 
     function startRecordingCanvas(){
       recordedChunks=[]; lastBlob=null; btnShare.disabled=true;
-
       resetRecStats();
       isRecording = true;
 
@@ -1148,7 +1132,6 @@
         if(hasLandmarks){
           const raw = result.landmarks[0];
           const vw = video.videoWidth, vh = video.videoHeight;
-
           const cssPoints = emaCss(mapLandmarksContain(raw, vw, vh, CSS_W, CSS_H));
 
           drawSkeletonCssPoints(cssPoints);
@@ -1177,9 +1160,7 @@
             }
           }
 
-          drawOverlay(
-            `DEBUG: lm=${raw.length} mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} score=${scoreEma.toFixed(2)} ui=${isPortraitUI()?"P":"L"}`
-          );
+          drawOverlay(`DEBUG: lm=${raw.length} mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} score=${scoreEma.toFixed(2)} ui=${isPortraitUI()?"P":"L"}`);
         } else {
           drawOverlay(`DEBUG: lm=0 mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} ui=${isPortraitUI()?"P":"L"}`);
         }
