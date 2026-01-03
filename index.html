@@ -145,7 +145,7 @@
     .btnRow button{ flex: 1 1 auto; }
     .btnRow .wide{ flex: 1 1 100%; }
 
-    /* Aufnahme: 3 Buttons möglichst in einer Zeile, darf auf klein umbrechen */
+    /* Aufnahme: Start/Stop/Teilen in einer Zeile (darf umbrechen) */
     .recRow3{
       display:flex;
       gap:10px;
@@ -250,8 +250,7 @@
     </div>
     <div class="introBox">
       <p>
-        Beta-Version zur anonymen Aufnahme und Analyse von Skelettachsen und Bewegungen (Pose-Landmarks).
-        <br>
+        Beta-Version zur anonymen Aufnahme und Analyse von Skelettachsen und Bewegungen (Pose-Landmarks).<br>
         Bislang optimiert für Brustschwimmen. Auswertungen sind experimentell und können je nach Aufnahmebedingungen variieren.
       </p>
     </div>
@@ -261,7 +260,6 @@
 
   <div class="stack">
 
-    <!-- KAMERA-Block (mit btnInit/btnSwitch) -->
     <div class="block">
       <div class="blockTitle">Kamera</div>
       <div class="btnRow">
@@ -423,7 +421,7 @@
       </details>
     </details>
 
-    <!-- Aufnahme-Block DIREKT über Canvas -->
+    <!-- Aufnahme-Block direkt über dem Canvas -->
     <div class="block">
       <div class="blockTitle">Aufnahme</div>
       <div class="btnRow">
@@ -470,7 +468,7 @@
         </div>
 
         <input type="hidden" name="app" value="MOTAXIS" />
-        <input type="hidden" name="version" value="2026-01-03" />
+        <input type="hidden" name="version" value="2025-12-30" />
         <input type="hidden" id="fbMeta" name="meta" value="" />
 
         <div class="btnRow" style="max-width: 420px;">
@@ -480,6 +478,7 @@
         <div id="fbStatus" class="fbStatus"></div>
       </form>
     </details>
+
   </div>
 
   <p class="hint mono" id="status">Status: bereit</p>
@@ -623,29 +622,17 @@
       [24,26],[26,28],[28,30],[30,32]
     ];
 
-    // =========================
-    // 3D/World-Landmarks HELPERS
-    // =========================
-    // Ziel: Gerüst nicht ändern – nur zusätzliche 3D-Daten nutzen, wo sinnvoll.
-    // - Wenn worldLandmarks verfügbar sind: nutze diese für Distanzen/Stillness/Heuristiken.
-    // - Sonst fallback: nutze (x,y,z) aus normalen Landmarks (z ist relativ).
-    function hasWorld(result) {
-      return !!(result?.worldLandmarks?.length && result.worldLandmarks[0]?.length);
-    }
-    function getRaw3D(result) {
-      // Liefert ein Array von Punkten mit {x,y,z} (world bevorzugt).
-      if (hasWorld(result)) return result.worldLandmarks[0];
-      // Fallback: normale Landmarks haben i.d.R. auch z (relativ)
-      if (result?.landmarks?.length && result.landmarks[0]?.length) return result.landmarks[0];
-      return null;
-    }
-    const dist3 = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y, (a.z||0)-(b.z||0));
-    const dist2 = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
-
-    // Helpers (2D)
+    // Helpers
     const dist = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
     const distPx = (a,b)=>Math.hypot(a._cx-b._cx, a._cy-b._cy);
     const distXPx = (a,b)=>Math.abs(a._cx - b._cx);
+
+    // NEW: 2D/3D helpers for timer (minimal, isolated)
+    const dist2 = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
+    const dist3 = (a,b)=>{
+      const az = (a.z ?? 0), bz = (b.z ?? 0);
+      return Math.hypot(a.x-b.x, a.y-b.y, az-bz);
+    };
 
     function angleBetween(u, v) {
       const dot = u.x*v.x + u.y*v.y;
@@ -836,26 +823,10 @@
     }
 
     // "Profile likely" heuristic
-    // UPDATE: nutzt zusätzlich 3D-Info (Schulter-Z-Differenz), falls verfügbar.
-    function isProfileLikely(raw2D, raw3D){
-      const ls = raw2D[11], rs = raw2D[12];
+    function isProfileLikely(raw){
+      const ls = raw[11], rs = raw[12];
       if(!ls || !rs) return false;
-
-      // ursprünglicher 2D-Test:
-      const twoD = Math.abs(ls.x - rs.x) < 0.055;
-
-      // zusätzlicher 3D-Test:
-      // Wenn worldLandmarks da sind, ist z i.d.R. in "echterem" Raum aussagekräftiger.
-      // Bei Fallback-z (Bildraum) ist es immer noch ein brauchbares Zusatzsignal.
-      let threeD = false;
-      if (raw3D && raw3D[11] && raw3D[12] && typeof raw3D[11].z === "number" && typeof raw3D[12].z === "number") {
-        const dz = Math.abs(raw3D[11].z - raw3D[12].z);
-        // Schwelle bewusst konservativ: nur als Zusatzsignal.
-        threeD = dz > 0.05;
-      }
-
-      // Heuristik: Profil, wenn 2D "schmal" ODER klarer Z-Versatz vorhanden.
-      return twoD || threeD;
+      return Math.abs(ls.x - rs.x) < 0.055;
     }
 
     function estimateFacingSign(raw, head, shoulder) {
@@ -886,7 +857,7 @@
       neckCalibSamples = [];
     }
 
-    function drawNeckAxis(rawNorm, cssPoints, nowTs, raw3D) {
+    function drawNeckAxis(rawNorm, cssPoints, nowTs) {
       if (!toggleNeck.checked || !rawNorm || !cssPoints) {
         return { neckDeg: null, state: "unknown", neutral: null, d: null, profile:false, facing:1 };
       }
@@ -903,9 +874,10 @@
         return { neckDeg: null, state: "unknown", neutral: null, d: null, profile:false, facing:1 };
       }
 
-      const profile = isProfileLikely(rawNorm, raw3D);
+      const profile = isProfileLikely(rawNorm);
       const facing  = estimateFacingSign(rawNorm, head, shoulder);
 
+      // Compute angle ONLY if profile; otherwise keep neutral display
       let ang = null;
       let neutral = null;
       let d = null;
@@ -963,6 +935,7 @@
         neckSince = 0;
       }
 
+      // Draw axis ALWAYS (neutral grey if not profile)
       const cssLs = cssPoints[11], cssRs = cssPoints[12];
       const cssShoulder = (cssLs && cssRs) ? { _cx:(cssLs._cx+cssRs._cx)/2, _cy:(cssLs._cy+cssRs._cy)/2 } : null;
       const cssHead = headCenterCss(cssPoints);
@@ -995,33 +968,22 @@
       return "rgba(220,0,0,0.95)";
     }
 
-    // UPDATE: Ratio optional 3D (world bevorzugt)
-    function drawLegChecks(raw2D, cssPoints, raw3D) {
-      if (!toggleLegCheck.checked || !raw2D || !cssPoints) return { kneeRatio: null, kneeDiff: null, kneeAngles: [null,null], valid: false };
+    function drawLegChecks(raw, cssPoints) {
+      if (!toggleLegCheck.checked || !raw || !cssPoints) return { kneeRatio: null, kneeDiff: null, kneeAngles: [null,null], valid: false };
 
       const kL = cssPoints[25], kR = cssPoints[26];
       const sL = cssPoints[11], sR = cssPoints[12];
 
       const okVis = (p)=> (p && (typeof p.visibility !== "number" || p.visibility >= 0.20));
       const valid = !!(kL && kR && sL && sR && okVis(kL) && okVis(kR) && okVis(sL) && okVis(sR));
+
       if (!valid) return { kneeRatio: null, kneeDiff: null, kneeAngles: [null,null], valid: false };
 
-      // 3D-basiertes Verhältnis, wenn möglich:
-      let kneeRatio = null;
-      if (raw3D && raw3D[25] && raw3D[26] && raw3D[11] && raw3D[12]) {
-        const shoulderW3 = dist3(raw3D[11], raw3D[12]);
-        const kneeW3     = dist3(raw3D[25], raw3D[26]);
-        if (shoulderW3 > 1e-6) kneeRatio = kneeW3 / shoulderW3;
-      }
+      const shoulderW = distPx(sL, sR);
+      const kneeW = distPx(kL, kR);
+      const kneeRatio = (shoulderW > 1) ? (kneeW / shoulderW) : null;
 
-      // fallback (2D Canvas):
-      if (kneeRatio == null) {
-        const shoulderW = distPx(sL, sR);
-        const kneeW = distPx(kL, kR);
-        kneeRatio = (shoulderW > 1) ? (kneeW / shoulderW) : null;
-      }
-
-      const lh = raw2D[23], rh = raw2D[24], lk = raw2D[25], rk = raw2D[26], la = raw2D[27], ra = raw2D[28];
+      const lh = raw[23], rh = raw[24], lk = raw[25], rk = raw[26], la = raw[27], ra = raw[28];
       const aL = kneeAngle(lh, lk, la);
       const aR = kneeAngle(rh, rk, ra);
       const diff = (aL != null && aR != null) ? Math.abs(aL - aR) : null;
@@ -1051,7 +1013,7 @@
     }
 
     // =========================
-    // TIMER (UPDATED / OPTIMAL)
+    // TIMER (3D-INTEGRATION FIXED)
     // =========================
 
     // Timer state (robust + recording-gated + stable stops)
@@ -1060,16 +1022,17 @@
 
     let stopScoreSince = null;
     let stopMoveSince  = null;
+
     let ignoreStopUntil = 0;
 
-    // UPDATE: Stillness nutzt zusätzlich 3D (Torso-Bewegung in world/3D)
+    // NEW: separate torso memories for 2D/3D (keeps old behavior stable)
     let lastTorso2D = null;
     let lastTorso3D = null;
 
     const glideTimes = [];
     const fmt = (ms)=> (ms/1000).toFixed(3) + " s";
 
-    // Robust: "Arm über Kopf / Streamline" (ein Arm reicht) – weiterhin primär 2D (robust in Bildkoordinaten)
+    // Robust: "Arm über Kopf / Streamline" (ein Arm reicht)
     function armOverHeadRobust(raw) {
       const ls = raw[11], rs = raw[12];
       const le = raw[13], re = raw[14];
@@ -1163,12 +1126,11 @@
       return Math.max(toScore(aL), toScore(aR));
     }
 
-    // UPDATE: bodyLongScore nutzt 3D (falls verfügbar)
+    // REPLACED: bodyLongScore uses 3D (worldLandmarks) but scale-normalized (torso / shoulderWidth)
     function bodyLongScore(raw2D, raw3D) {
       const ls2 = raw2D[11], rs2 = raw2D[12], lh2 = raw2D[23], rh2 = raw2D[24];
       if (!ls2 || !rs2 || !lh2 || !rh2) return 0;
 
-      // 3D bevorzugt
       if (raw3D && raw3D[11] && raw3D[12] && raw3D[23] && raw3D[24]) {
         const sh3 = {
           x:(raw3D[11].x+raw3D[12].x)/2,
@@ -1180,14 +1142,17 @@
           y:(raw3D[23].y+raw3D[24].y)/2,
           z:((raw3D[23].z||0)+(raw3D[24].z||0))/2
         };
-        const d3 = dist3(sh3, hp3);
-        // Skalen/Schwellen: konservativ – wir nutzen nur als Score-Kontur.
-        if (d3 <= 0.20) return 0;
-        if (d3 >= 0.35) return 1;
-        return (d3 - 0.20) / (0.35 - 0.20);
+
+        const shoulderW3 = dist3(raw3D[11], raw3D[12]) || 1e-6;
+        const torso3 = dist3(sh3, hp3);
+        const r = torso3 / shoulderW3;
+
+        if (r <= 0.85) return 0;
+        if (r >= 1.35) return 1;
+        return (r - 0.85) / (1.35 - 0.85);
       }
 
-      // fallback 2D
+      // 2D fallback (dein Original)
       const sh = { x:(ls2.x+rs2.x)/2, y:(ls2.y+rs2.y)/2 };
       const hp = { x:(lh2.x+rh2.x)/2, y:(lh2.y+rh2.y)/2 };
       const d = dist(sh, hp);
@@ -1196,7 +1161,7 @@
       return (d - 0.10) / (0.14 - 0.10);
     }
 
-    // UPDATE: stillnessScore nutzt 3D (falls verfügbar) und fällt sonst auf 2D zurück
+    // REPLACED: stillnessScore uses 3D but scale-normalized (movement / shoulderWidth)
     function stillnessScore(raw2D, raw3D) {
       const ls = raw2D[11], rs = raw2D[12], lh = raw2D[23], rh = raw2D[24];
       if (!ls || !rs || !lh || !rh) return 0;
@@ -1208,25 +1173,27 @@
 
       const p = filmingPreset.value;
 
-      // 3D-Variante (bevorzugt): Torso-Bewegung im (world) Raum
       if (raw3D && raw3D[11] && raw3D[12] && raw3D[23] && raw3D[24]) {
         const sh3 = { x:(raw3D[11].x+raw3D[12].x)/2, y:(raw3D[11].y+raw3D[12].y)/2, z:((raw3D[11].z||0)+(raw3D[12].z||0))/2 };
         const hp3 = { x:(raw3D[23].x+raw3D[24].x)/2, y:(raw3D[23].y+raw3D[24].y)/2, z:((raw3D[23].z||0)+(raw3D[24].z||0))/2 };
         const torso3 = { x:(sh3.x+hp3.x)/2, y:(sh3.y+hp3.y)/2, z:(sh3.z+hp3.z)/2 };
 
-        // toleranz: worldUnits sind modellabhängig; daher nur relative Schwellen.
-        const tol3 = (p === "side45") ? 0.035 : 0.030;
+        const shoulderW3 = dist3(raw3D[11], raw3D[12]) || 1e-6;
 
-        if (!lastTorso3D) { lastTorso3D = torso3; lastTorso2D = torso2; return 0.3; }
+        if (!lastTorso3D) { lastTorso3D = torso3; lastTorso2D = torso2; return 0.4; }
+
         const move3 = dist3(torso3, lastTorso3D);
         lastTorso3D = torso3;
         lastTorso2D = torso2;
 
-        const s = 1 - Math.min(1, move3 / tol3);
+        const moveRel = move3 / shoulderW3;
+        const tolRel = (p === "side45") ? 0.10 : 0.08;
+
+        const s = 1 - Math.min(1, moveRel / tolRel);
         return Math.max(0, s);
       }
 
-      // fallback 2D
+      // 2D fallback (dein Original)
       const tol2 = (p === "side45") ? 0.014 : 0.012;
       if (!lastTorso2D) { lastTorso2D = torso2; return 0.3; }
       const move2 = dist2(torso2, lastTorso2D);
@@ -1278,16 +1245,19 @@
       if (scoreEma === 0) scoreEma = sNow;
       else scoreEma = alpha*scoreEma + (1-alpha)*sNow;
 
+      // STOP-Signale
       const lh = raw2D[23], rh = raw2D[24], lk = raw2D[25], rk = raw2D[26], la = raw2D[27], ra = raw2D[28];
       const aL = kneeAngle(lh, lk, la);
       const aR = kneeAngle(rh, rk, ra);
 
       const kneesBend = ((aL != null && aL < 158) || (aR != null && aR < 158));
+
       const armScore = armOverHeadRobust(raw2D);
       const armsDropped = armScore < 0.48;
 
       const movementStop = kneesBend || armsDropped;
 
+      // START
       if(!glideActive){
         currentElapsed = 0;
 
@@ -1310,6 +1280,7 @@
         return;
       }
 
+      // RUN
       currentElapsed = now - glideStart;
 
       if(currentElapsed >= hardMaxMs){
@@ -1323,6 +1294,7 @@
 
       if(now < ignoreStopUntil) return;
 
+      // STOP 1: Bewegung (schnell)
       if(movementStop){
         if(stopMoveSince == null) stopMoveSince = now;
 
@@ -1338,6 +1310,7 @@
         stopMoveSince = null;
       }
 
+      // STOP 2: Score unter Schwelle (mit Hold)
       if(scoreEma <= stopThr){
         if(stopScoreSince == null) stopScoreSince = now;
 
@@ -1355,11 +1328,10 @@
     }
 
     // Hand-axis drawing + measurement (GATED: only when NOT glideActive)
-    // UPDATE: Ratio optional 3D (world bevorzugt)
-    function drawHandAxis(raw2D, cssPoints, raw3D) {
+    function drawHandAxis(raw, cssPoints) {
       if (toggleTimer.checked && glideActive) return { handRatio: null, gated: true };
 
-      if (!toggleHandAxis.checked || !raw2D || !cssPoints) return { handRatio: null, gated: false };
+      if (!toggleHandAxis.checked || !raw || !cssPoints) return { handRatio: null, gated: false };
 
       const wL = cssPoints[15];
       const wR = cssPoints[16];
@@ -1370,21 +1342,9 @@
         return { handRatio: null, gated: false };
       }
 
-      let handRatio = null;
-
-      // 3D bevorzugt: Handbreite/Schulterbreite in 3D
-      if (raw3D && raw3D[15] && raw3D[16] && raw3D[11] && raw3D[12]) {
-        const shoulderW3 = dist3(raw3D[11], raw3D[12]);
-        const handW3     = dist3(raw3D[15], raw3D[16]);
-        if (shoulderW3 > 1e-6) handRatio = handW3 / shoulderW3;
-      }
-
-      // fallback: 2D-x-Distanz (wie vorher)
-      if (handRatio == null) {
-        const shoulderW = distXPx(sL, sR);
-        const handW = distXPx(wL, wR);
-        handRatio = (shoulderW > 1) ? (handW / shoulderW) : null;
-      }
+      const shoulderW = distXPx(sL, sR);
+      const handW = distXPx(wL, wR);
+      const handRatio = (shoulderW > 1) ? (handW / shoulderW) : null;
 
       if (handRatio != null) {
         ctx.save();
@@ -1514,7 +1474,7 @@
     const HAND_RED_THR = 2.50;
     const HAND_STREAK_FRAMES = 8;
 
-    // HWS extension streak (count tip only if long or frequent)
+    // HWS extension streak
     let headExtStreakStart = null;
 
     const recStats = {
@@ -1568,9 +1528,9 @@
       if (p(recStats.legsBent) >= thr) {
         issues.push({ score:p(recStats.legsBent), title:"Beine nicht gestreckt in der Gleitphase", tip:"Nach dem Beinschlag vollständig strecken – kurz stabil gleiten." });
       }
-
       const armPullDen = Math.max(1, recStats.armPullFrames);
       const handWideShare = recStats.handWideFrames / armPullDen;
+
       const earlyWide = recStats.handWideEvents >= 2;
 
       if (earlyWide || handWideShare >= 0.18) {
@@ -1779,10 +1739,7 @@
 
         const hasMask = !!(result?.segmentationMasks?.length);
         const hasLandmarks = !!(result?.landmarks?.length && result.landmarks[0]?.length);
-
-        // 3D raw (world bevorzugt)
-        const raw3D = getRaw3D(result);
-        const isWorld = hasWorld(result) ? 1 : 0;
+        const hasWorld = !!(result?.worldLandmarks?.length && result.worldLandmarks[0]?.length);
 
         let maskInfo = { max: 0 };
         if (hasMask) {
@@ -1797,19 +1754,21 @@
         }
 
         if (hasLandmarks) {
-          const raw = result.landmarks[0]; // 2D (normalized)
+          const raw = result.landmarks[0];
+          const raw3D = hasWorld ? result.worldLandmarks[0] : null;
+
           const vw = video.videoWidth, vh = video.videoHeight;
           const cssPoints = emaCss(mapLandmarksContain(raw, vw, vh, CSS_W, CSS_H));
 
           drawSkeletonCssPoints(cssPoints);
 
-          const neck = drawNeckAxis(raw, cssPoints, ts, raw3D);
-          const legs = drawLegChecks(raw, cssPoints, raw3D);
+          const neck = drawNeckAxis(raw, cssPoints, ts);
+          const legs = drawLegChecks(raw, cssPoints);
 
-          // Timer BEFORE hands (so glideActive is current for gating)
+          // UPDATED: timer uses 2D + 3D (normalized)
           updateTimer(raw, raw3D, ts, isRecording);
 
-          const hands = drawHandAxis(raw, cssPoints, raw3D);
+          const hands = drawHandAxis(raw, cssPoints);
 
           if (isRecording) {
             recStats.frames++;
@@ -1861,17 +1820,17 @@
           }
 
           const handDbg = (hands && hands.handRatio != null)
-            ? `handR=${hands.handRatio.toFixed(2)}`
-            : `handR=—`;
+            ? `hand/shoulderX=${hands.handRatio.toFixed(2)}`
+            : `hand/shoulderX=—`;
 
           const gateDbg = (hands && hands.gated) ? "handGate=1" : "handGate=0";
           const aDbg = armsStreamlineScore(raw).toFixed(2);
 
           drawOverlay(
-            `DEBUG: lm=${raw.length} w3d=${isWorld} mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} score=${scoreEma.toFixed(2)} arms=${aDbg} ${handDbg} ${gateDbg} rec=${isRecording?1:0} ui=${isPortraitUI()?"P":"L"}`
+            `DEBUG: lm=${raw.length} w3d=${hasWorld?1:0} mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} score=${scoreEma.toFixed(2)} arms=${aDbg} ${handDbg} ${gateDbg} rec=${isRecording?1:0} ui=${isPortraitUI()?"P":"L"}`
           );
         } else {
-          drawOverlay(`DEBUG: lm=0 w3d=${(hasWorld(result)?1:0)} mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} rec=${isRecording?1:0} ui=${isPortraitUI()?"P":"L"}`);
+          drawOverlay(`DEBUG: lm=0 w3d=0 mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} rec=${isRecording?1:0} ui=${isPortraitUI()?"P":"L"}`);
         }
 
         rafId = requestAnimationFrame(loop);
@@ -1999,7 +1958,7 @@
         }
       } catch (e) {
         fbStatus.className = "fbStatus err";
-        fbStatus.textContent = "Netzwerkfehler. Bitte später erneut versuchen.";
+        fbStatus.textContent = "Netzwerkfehler. Bitte später später erneut versuchen.";
       }
     });
   </script>
