@@ -1677,8 +1677,14 @@ let landmarker = null;
 let running = false;
 let rafId = null;
 
-// bevorzugt lokales Model (GitHub Pages), fallback remote
-const LOCAL_TASK_URL = "models/pose_landmarker_full.task";
+// bevorzugt lokale Models (GitHub Pages: docs/models/*), fallback remote
+const LOCAL_TASK_CANDIDATES = [
+  "models/pose_landmarker_full.task",
+  "models/pose_landmarker_heavy.task",
+  "models/pose_landmarker.task",
+  "models/pose_landmarker_lite.task"
+];
+
 const REMOTE_TASK_URL =
   "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task";
 
@@ -1698,14 +1704,23 @@ async function createLandmarker(){
     minTrackingConfidence: Number(trackConf.value),
   });
 
-  // Try local first
-  try{
-    setStatus("Lade Pose Landmarker (lokal) …");
-    landmarker = await PoseLandmarker.createFromOptions(fileset, options(LOCAL_TASK_URL));
-    return;
-  } catch(e){
-    console.warn("Local model failed, fallback to remote:", e);
+  // 1) Lokal probieren (mehrere Namen)
+  for (const path of LOCAL_TASK_CANDIDATES) {
+    try {
+      setStatus(`Lade Pose Landmarker (lokal): ${path} …`);
+      landmarker = await PoseLandmarker.createFromOptions(fileset, options(path));
+      setStatus(`Landmarker geladen (lokal): ${path}`);
+      return;
+    } catch (e) {
+      console.warn("Local model failed:", path, e);
+    }
   }
+
+  // 2) Fallback remote
+  setStatus("Lade Pose Landmarker (remote) …");
+  landmarker = await PoseLandmarker.createFromOptions(fileset, options(REMOTE_TASK_URL));
+  setStatus("Landmarker geladen (remote).");
+}
 
   setStatus("Lade Pose Landmarker (remote) …");
   landmarker = await PoseLandmarker.createFromOptions(fileset, options(REMOTE_TASK_URL));
