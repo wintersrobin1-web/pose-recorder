@@ -1678,7 +1678,47 @@ function showTechTipsFromStats() {
 
   tipsBox.style.display = "block";
 }
+function buildOverlayTipsFromStats() {
+  if (!toggleHintBox.checked) return [];
 
+  if (recStats.frames < 25) {
+    return ["• Aufnahme war sehr kurz – bitte länger filmen."];
+  }
+
+  const p = (n)=> n / Math.max(1, recStats.frames);
+  const thr = 0.22;
+  const issues = [];
+
+  if (p(recStats.kneeWide) >= thr)
+    issues.push({s:p(recStats.kneeWide), t:"• Knie schmaler rückholen (≈ schulterbreit)."});
+
+  if (filmingPreset.value==="back45" && p(recStats.kneeAsym) >= thr)
+    issues.push({s:p(recStats.kneeAsym), t:"• Beinschere: links/rechts symmetrischer kicken."});
+
+  if (p(recStats.legsBent) >= thr)
+    issues.push({s:p(recStats.legsBent), t:"• In der Gleitphase Beine vollständig strecken."});
+
+  const handShare = recStats.handWideFrames / Math.max(1, recStats.armPullFrames);
+  if (handShare >= 0.18)
+    issues.push({s:handShare, t:"• Armzug weniger weit nach außen öffnen."});
+
+  if (recStats.armTooDeepFrames / Math.max(1, recStats.armPullFrames) >= 0.20)
+    issues.push({s:0.4, t:"• Armzug: Druck nach hinten – nicht nach unten."});
+
+  if (recStats.streamlineGoodFrames / Math.max(1, recStats.frames) <= 0.12)
+    issues.push({s:0.3, t:"• Nach dem Arbeiten klare Stromlinie herstellen."});
+
+  if (recStats.lateKickEvents >= 2)
+    issues.push({s:0.5, t:"• Kick früher starten (wenn Hände nach vorn gehen)."});
+
+  if (p(recStats.headExtAny) >= thr)
+    issues.push({s:0.4, t:"• Kopf neutral halten (Nacken lang)."});
+
+  issues.sort((a,b)=>b.s-a.s);
+  return issues.slice(0,3).map(o=>o.t);
+}
+
+  
 function pickMimeType(){
   const candidates=[
     'video/mp4;codecs="avc1.42E01E"',
@@ -1918,11 +1958,10 @@ function loop(){
       const legs = drawLegChecks(raw, cssPoints);
 
       // Timer BEFORE hands (so glideActive is current)
-      updateTimer(raw, ts, isRecording);
-
+      updateTimer(raw, ts, isRecording && !isFinalizingStop);
       const hands = drawHandAxis(raw, cssPoints);
 
-      if (isRecording) {
+      if (isRecording && !isFinalizingStop) {
         recStats.frames++;
 
         // Knie/Schulter (Rückholphase-Kriterium bleibt wie vorher)
@@ -2184,21 +2223,30 @@ function buildOverlayTipsFromStats() {
 btnStop.addEventListener("click", ()=>{
   btnStop.disabled = true;
 
-  // Fallback-Text fürs Video (falls noch keine Tipps berechnet wurden)
-  tipsOverlayTitle = "Techniktipps (Brust)";
-  tipsOverlayLines = [
-    "• Techniktipps werden im Anschluss eingeblendet.",
-    "• Gute Perspektive + längere Aufnahme = bessere Hinweise."
-  ];
+  // Aufnahme einfrieren (Stats stoppen), aber Video noch laufen lassen
+  isFinalizingStop = true;
 
-  // 3 Sekunden Overlay ins Video aufnehmen
+  // ECHTE Techniktipps aus bisherigen recStats erzeugen
+  tipsOverlayTitle = "Techniktipps (Brust)";
+  const lines = buildOverlayTipsFromStats();
+
+  tipsOverlayLines = (lines.length > 0)
+    ? lines
+    : [
+        "• Keine klaren Auffälligkeiten erkannt.",
+        "• Tipp: länger filmen + stabile Perspektive."
+      ];
+
+  // 3 Sekunden im Video sichtbar halten
   showTipsOverlayUntil = performance.now() + 3000;
 
   setTimeout(() => {
     stopRecordingCanvas();
     btnRec.disabled = false;
+    isFinalizingStop = false;
   }, 3000);
 });
+
 
 
 btnShare.addEventListener("click", ()=>shareOrDownload());
