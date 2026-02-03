@@ -1352,12 +1352,14 @@ function drawOverlay(debugText=""){
   ctx.fillStyle="white";
   ctx.shadowBlur=0;
 
-  ctx.font = isPortrait ? "800 28px system-ui" : "800 24px system-ui";
-  ctx.fillText(glideActive ? fmt(currentElapsed) : "0.000 s", x+12, y+(isPortrait?36:30));
+  // 1) große Zeit
+ctx.font = isPortrait ? "800 24px system-ui" : "800 20px system-ui";  // etwas kleiner
+ctx.fillText(glideActive ? fmt(currentElapsed) : "0.000 s", x+12, y+(isPortrait?34:28));
 
-ctx.fillText(`Timer – Gleitphase | Kameraperspektive: ${getPresetLabel()}`, x+12, y+(isPortrait?56:48));
+// 2) Titel klein (OHNE Kameraperspektive)
+ctx.font = isPortrait ? "700 13px system-ui" : "700 12.5px system-ui";
+ctx.fillText("Timer – Gleitphase", x+12, y+(isPortrait?54:46));
 
-  ctx.font = isPortrait ? "14px system-ui" : "13px system-ui";
   if (isPortrait) {
     const baseY = y + 80;
     for (let i=0;i<4;i++){
