@@ -857,6 +857,10 @@ function resetMaskEma() {
   lastMaskInvert = false;
   lastInvertTs = 0;
 }
+// Kompatibilität: alter Code nutzt noch den alten Namen
+function drawSilhouetteFromMask(segMask, rawPoseOrNull) {
+  return drawSilhouette(segMask, rawPoseOrNull);
+}
 
 // Head center
 function headCenterNorm(raw) {
