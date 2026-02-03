@@ -1533,24 +1533,78 @@ function clearTipsUI() {
   hintText.textContent = "";
   hintMeta.textContent = "";
 }
+function getTopIssuesUnified(maxN = 3) {
+  if (!toggleHintBox.checked) return { meta:"", intro:"", issues:[] };
 
-function showTechTipsFromStats() {
-  clearTipsUI();
-
-  if (!toggleHintBox.checked) return;
-  if (recStats.frames < 25) return;
+  if (recStats.frames < 25) {
+    return {
+      meta: `${recStats.frames} Frames`,
+      intro: "Aufnahme war sehr kurz – bitte länger filmen.",
+      issues: [{
+        score: 1,
+        title: "Aufnahme zu kurz",
+        tip: "Bitte länger filmen (mehrere Zyklen) + stabile Perspektive."
+      }].slice(0, maxN)
+    };
+  }
 
   const p = (n)=> n / Math.max(1, recStats.frames);
   const thr = 0.22;
   const issues = [];
 
-  if (p(recStats.kneeWide) >= thr) {
-    issues.push({
-      score: p(recStats.kneeWide),
-      title: "Knie ziehen zu breit an (Rückholphase)",
-      tip: "Knie schmal (≈ schulterbreit) anziehen. Rückholen kompakt – Kick dann kräftig nach hinten."
-    });
+  if (p(recStats.kneeWide) >= thr)
+    issues.push({score:p(recStats.kneeWide), title:"Knie ziehen zu breit an (Rückholphase)", tip:"Knie schmal (≈ schulterbreit) anziehen. Rückholen kompakt – Kick dann kräftig nach hinten."});
+
+  if (filmingPreset.value==="back45" && p(recStats.kneeAsym) >= thr)
+    issues.push({score:p(recStats.kneeAsym), title:"Beinschere (Asymmetrie)", tip:"Beinbewegung links/rechts wirkte über mehrere Frames asymmetrisch."});
+
+  if (p(recStats.legsBent) >= thr)
+    issues.push({score:p(recStats.legsBent), title:"Beine nicht gestreckt in der Gleitphase", tip:"Nach dem Beinschlag vollständig strecken und kurz stabil gleiten."});
+
+  const armPullDen = Math.max(1, recStats.armPullFrames);
+  const handWideShare = recStats.handWideFrames / armPullDen;
+  if (recStats.handWideEvents >= 2 || handWideShare >= 0.18)
+    issues.push({score:Math.max(0.38, handWideShare), title:"Armzug sehr breit", tip:"Hände weniger weit nach außen öffnen, Ellbogen eher hoch führen."});
+
+  const deepShare = recStats.armTooDeepFrames / armPullDen;
+  if (deepShare >= 0.20 && recStats.armPullFrames >= 12)
+    issues.push({score:deepShare, title:"Hände ziehen zu tief", tip:"Hände wandern deutlich bis zur Hüfte nach hinten."});
+
+  const streamShare = recStats.streamlineGoodFrames / Math.max(1, recStats.frames);
+  if (streamShare <= 0.12 && recStats.frames >= 40)
+    issues.push({score:Math.min(1,(0.16-streamShare)/0.16), title:"Streck-/Stromlinienphase fehlt", tip:"Nach dem Arbeiten klare Stromlinienhaltung herstellen."});
+
+  if (recStats.lateKickEvents >= 2)
+    issues.push({score:0.5, title:"Beinschlag übernimmt zu spät", tip:"Kick startet, wenn die Hände wieder nach vorn gehen."});
+
+  issues.sort((a,b)=>b.score-a.score);
+  const top = issues.slice(0, maxN);
+
+  return {
+    meta: `${recStats.frames} Frames`,
+    intro: "In dieser Aufnahme waren folgende Punkte auffällig:",
+    issues: top
+  };
+}
+
+function showTechTipsFromStats() {
+  clearTipsUI();
+
+  const pack = getTopIssuesUnified(3);
+  if (!pack.issues || pack.issues.length === 0) return;
+
+  hintMeta.textContent = pack.meta;
+  hintText.textContent = pack.intro;
+
+  for (const it of pack.issues) {
+    const li = document.createElement("li");
+    li.innerHTML = `<b>${it.title}</b> – ${it.tip}`;
+    hintList.appendChild(li);
   }
+
+  tipsBox.style.display = "block";
+}
+
 
   if (filmingPreset.value === "back45") {
     if (p(recStats.kneeAsym) >= thr) {
@@ -1675,11 +1729,18 @@ function showTechTipsFromStats() {
 }
 
 function buildOverlayTipsFromStats() {
-  if (!toggleHintBox.checked) return [];
+  const pack = getTopIssuesUnified(3);
 
-  if (recStats.frames < 25) {
-    return ["• Aufnahme war sehr kurz – bitte länger filmen."];
+  if (!pack.issues || pack.issues.length === 0) {
+    return [
+      "• Keine klaren Auffälligkeiten erkannt.",
+      "• Tipp: länger filmen + stabile Perspektive."
+    ];
   }
+
+  return pack.issues.map(it => `• ${it.title} – ${it.tip}`);
+}
+
 
   const p = (n)=> n / Math.max(1, recStats.frames);
   const thr = 0.22;
