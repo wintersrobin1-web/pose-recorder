@@ -247,7 +247,6 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
     </div>
   </div>
 
-  <!-- Anzeige by default ausgeklappt -->
   <details id="displayBox" open>
     <summary>Anzeige (allgemein)</summary>
 
@@ -256,18 +255,16 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
       <label><input type="checkbox" id="toggleSilhouette" checked /> Segmentierung</label>
 
       <label style="border:none; padding:0; background:transparent;">
-  <span style="font-weight:800; color:#0b1220;">Kameraperspektive</span>
-</label>
+        <span style="font-weight:800; color:#0b1220;">Kameraperspektive</span>
+      </label>
 
-<select id="filmingPreset" title="Kameraperspektive">
-  <option value="side45" selected>Schräg seitlich (leicht von oben)</option>
-  <option value="back45">Schräg von hinten (leicht von oben)</option>
-  <option value="stand">Frontal (Stand)</option>
-</select>
-
+      <select id="filmingPreset" title="Kameraperspektive">
+        <option value="side45" selected>Schräg seitlich (leicht von oben)</option>
+        <option value="back45">Schräg von hinten (leicht von oben)</option>
+        <option value="stand">Frontal (Stand)</option>
+      </select>
     </div>
 
-    <!-- Erweiterte Einstellungen NICHT open -->
     <details id="advancedBox" style="margin-top:10px;">
       <summary>Erweiterte Einstellungen</summary>
 
@@ -435,7 +432,7 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
         </p>
       </details>
     </details>
-  </details><!-- ✅ WICHTIG: breastTools schließen -->
+  </details>
 
   <div class="block">
     <div class="blockTitle">Aufnahme</div>
@@ -457,7 +454,6 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
     <ul id="hintList"></ul>
   </div>
 
-  <!-- FEEDBACK (standardmäßig zugeklappt) -->
   <details id="feedbackBox">
     <summary>Feedback / Fehler melden</summary>
     <div class="hint" style="margin-top:8px; max-width: 820px;">
@@ -493,7 +489,7 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
     </form>
   </details>
 
-</div><!-- /.stack -->
+</div>
 
 <p class="hint mono" id="status">Status: bereit</p>
 
@@ -521,7 +517,7 @@ const toggleHandAxis = document.getElementById("toggleHandAxis");
 const toggleTimer = document.getElementById("toggleTimer");
 const toggleHintBox = document.getElementById("toggleHintBox");
 const filmingPreset = document.getElementById("filmingPreset");
-// Kameraperspektive: verständliche Labels für Overlay/Timer
+
 function getPresetLabel() {
   switch (filmingPreset.value) {
     case "side45": return "Schräg seitlich (leicht von oben)";
@@ -530,6 +526,7 @@ function getPresetLabel() {
     default:       return filmingPreset.value;
   }
 }
+
 const showInputVideo = document.getElementById("showInputVideo");
 
 const silOpacity = document.getElementById("silOpacity");
@@ -829,7 +826,6 @@ function headCenterNorm(raw) {
   if (lEye && rEye) return { x:(lEye.x+rEye.x)/2, y:(lEye.y+rEye.y)/2 };
   return null;
 }
-
 function headCenterCss(cssPoints) {
   const le = cssPoints[7], re = cssPoints[8];
   const lEye = cssPoints[2], rEye = cssPoints[5];
@@ -1028,7 +1024,7 @@ function colorForHandRatio(r) {
 }
 
 // =========================
-// TIMER (UPDATED / OPTIMAL)
+// TIMER
 // =========================
 let glideActive = false, glideStart = 0, currentElapsed = 0;
 let scoreEma = 0, scoreStableSince = null;
@@ -1209,10 +1205,8 @@ function updateTimer(raw, now, isRecording){
   const aR = kneeAngle(rh, rk, ra);
 
   const kneesBend = ((aL != null && aL < 158) || (aR != null && aR < 158));
-
   const armScore = armOverHeadRobust(raw);
   const armsDropped = armScore < 0.48;
-
   const movementStop = kneesBend || armsDropped;
 
   // START
@@ -1322,6 +1316,8 @@ function drawHandAxis(raw, cssPoints) {
 }
 
 // Overlay + debug footer
+const DEBUG_ENABLED = false;
+
 function drawOverlay(debugText=""){
   if(!toggleTimer.checked) {
     if (DEBUG_ENABLED && debugText) drawDebugFooter(debugText);
@@ -1353,12 +1349,12 @@ function drawOverlay(debugText=""){
   ctx.shadowBlur=0;
 
   // 1) große Zeit
-ctx.font = isPortrait ? "800 24px system-ui" : "800 20px system-ui";  // etwas kleiner
-ctx.fillText(glideActive ? fmt(currentElapsed) : "0.000 s", x+12, y+(isPortrait?34:28));
+  ctx.font = isPortrait ? "800 24px system-ui" : "800 20px system-ui";
+  ctx.fillText(glideActive ? fmt(currentElapsed) : "0.000 s", x+12, y+(isPortrait?34:28));
 
-// 2) Titel klein (OHNE Kameraperspektive)
-ctx.font = isPortrait ? "700 13px system-ui" : "700 12.5px system-ui";
-ctx.fillText("Timer – Gleitphase", x+12, y+(isPortrait?54:46));
+  // 2) Titel klein
+  ctx.font = isPortrait ? "700 13px system-ui" : "700 12.5px system-ui";
+  ctx.fillText("Timer – Gleitphase", x+12, y+(isPortrait?54:46));
 
   if (isPortrait) {
     const baseY = y + 80;
@@ -1382,7 +1378,7 @@ ctx.fillText("Timer – Gleitphase", x+12, y+(isPortrait?54:46));
   }
 
   ctx.restore();
-    if (DEBUG_ENABLED && debugText) drawDebugFooter(debugText);
+  if (DEBUG_ENABLED && debugText) drawDebugFooter(debugText);
 }
 
 function drawDebugFooter(text) {
@@ -1425,17 +1421,9 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
 // Recording + tips
 let recorder=null, recordedChunks=[], lastBlob=null;
 let isRecording = false;
-let isFinalizingStop = false; // ✅ hinzufügen
+let isFinalizingStop = false; // <- NUR EINMAL!
 
-// ✅ wird im loop() und beim Stop gebraucht (sonst ReferenceError)
-let isFinalizingStop = false;
-
-// === Post-Stop Tips Overlay (wird im Video mit aufgenommen) ===
-let showTipsOverlayUntil = 0;
-let tipsOverlayLines = [];
-let tipsOverlayTitle = "Techniktipps (Brust)";
-
-// === Post-Stop Tips Overlay (wird im Video mit aufgenommen) ===
+// Post-Stop Tips Overlay (wird im Video mit aufgenommen)
 let showTipsOverlayUntil = 0;
 let tipsOverlayLines = [];
 let tipsOverlayTitle = "Techniktipps (Brust)";
@@ -1482,7 +1470,6 @@ function drawTipsOverlay(nowTs){
   ctx.restore();
 }
 
-  
 // ✅ fehlende Variablen, die du in resetRecStats() nutzt:
 let prevIsPullPhase = false;
 let prevKneesBent = false;
@@ -1490,9 +1477,7 @@ let lastArmEndTs = null;
 
 // Hand detection (only during arm pull phase i.e. outside glideActive)
 let prevHandTooWide = false;
-let handWideStreak = 0;
 const HAND_RED_THR = 2.50;
-const HAND_STREAK_FRAMES = 8;
 
 // HWS extension streak
 let headExtStreakStart = null;
@@ -1513,10 +1498,10 @@ const recStats = {
   armPullFrames: 0,
   handWideFrames: 0,
   handWideEvents: 0,
-  armTooDeepFrames: 0,      // ✅ wird jetzt gezählt
-  streamlineGoodFrames: 0,  // ✅ wird jetzt gezählt
+  armTooDeepFrames: 0,
+  streamlineGoodFrames: 0,
 
-  lateKickEvents: 0,        // ✅ wird jetzt gezählt
+  lateKickEvents: 0,
   lateKickDelaySumMs: 0,
   lateKickDelayN: 0
 };
@@ -1524,7 +1509,6 @@ const recStats = {
 function resetRecStats() {
   for (const k of Object.keys(recStats)) recStats[k] = 0;
 
-  handWideStreak = 0;
   prevHandTooWide = false;
 
   headExtStreakStart = null;
@@ -1581,18 +1565,11 @@ function showTechTipsFromStats() {
   const armPullDen = Math.max(1, recStats.armPullFrames);
   const handWideShare = recStats.handWideFrames / armPullDen;
 
-  const needEv = (filmingPreset.value === "side45") ? 3 : 2;
-  const redThr = (filmingPreset.value === "side45") ? 2.70 : 2.50;
-
-  const earlyWide = recStats.handWideEvents >= needEv;
-
-  if (earlyWide || handWideShare >= 0.18) {
+  if (recStats.handWideEvents >= 2 || handWideShare >= 0.18) {
     issues.push({
-      score: earlyWide ? Math.max(0.38, handWideShare) : handWideShare,
+      score: Math.max(0.38, handWideShare),
       title: "Armzug sehr breit",
-      tip: earlyWide
-        ? `In der Zugphase wurden die Hände mehrfach deutlich zu weit geöffnet (≥ ${needEv}× „Rot“, Schwelle ${redThr.toFixed(2)}×). Öffnung moderater halten, Ellbogen eher „hoch“ führen.`
-        : "Im Armzug nicht extrem nach außen aufmachen: Ellbogen eher „hoch“ halten und moderat öffnen."
+      tip: "In der Zugphase wurden die Hände mehrfach deutlich zu weit geöffnet. Öffnung moderater halten, Ellbogen eher „hoch“ führen."
     });
   }
 
@@ -1610,7 +1587,7 @@ function showTechTipsFromStats() {
     issues.push({
       score: Math.min(1, (0.16 - streamShare) / 0.16),
       title: "Streck-/Stromlinienphase fehlt",
-      tip: "Nach dem Arbeiten war selten eine klare Stromlinienhaltung erkennbar (Arme lang/geschlossen, Beine gestreckt, Körper lang). Wenn nichts arbeitet: schlank machen."
+      tip: "Nach dem Arbeiten war selten eine klare Stromlinienhaltung erkennbar. Wenn nichts arbeitet: schlank machen."
     });
   }
 
@@ -1634,7 +1611,7 @@ function showTechTipsFromStats() {
     issues.push({
       score: Math.max(extShare, Math.min(1, extStreak/1500)),
       title:"Kopf häufig/zu lange überstreckt (HWS)",
-      tip:"Neutral halten: Nacken lang, Blick schräg nach unten/vorn. Häufige/andauernde Überstreckung bremst und belastet die HWS."
+      tip:"Neutral halten: Nacken lang, Blick schräg nach unten/vorn."
     });
   }
 
@@ -1661,7 +1638,7 @@ function showTechTipsFromStats() {
     issues.push({
       score: 0.28,
       title: "Gleitphase sehr lang",
-      tip: `Mindestens eine Gleitphase war sehr lang (> ${longThr.toFixed(1)} s). Nicht zu lange „verharren“: nach stabiler Streckung sauber in die nächste Phase übergehen.`
+      tip: `Mindestens eine Gleitphase war sehr lang (> ${longThr.toFixed(1)} s).`
     });
   }
 
@@ -1688,6 +1665,7 @@ function showTechTipsFromStats() {
 
   tipsBox.style.display = "block";
 }
+
 function buildOverlayTipsFromStats() {
   if (!toggleHintBox.checked) return [];
 
@@ -1728,7 +1706,6 @@ function buildOverlayTipsFromStats() {
   return issues.slice(0,3).map(o=>o.t);
 }
 
-  
 function pickMimeType(){
   const candidates=[
     'video/mp4;codecs="avc1.42E01E"',
@@ -1829,9 +1806,6 @@ detConf.addEventListener("change", updateLandmarkerThresholds);
 presConf.addEventListener("change", updateLandmarkerThresholds);
 trackConf.addEventListener("change", updateLandmarkerThresholds);
 
-// DEBUG AN/AUS (default: false = unsichtbar)
-const DEBUG_ENABLED = false;
-
 // Camera
 let isBackCamera = true;
 let stream = null;
@@ -1875,7 +1849,6 @@ function getKneesBent(raw){
   return { bent, aL, aR };
 }
 
-// Pull-Phase Heuristik (außerhalb glide):
 function isPullPhaseHeuristic(raw){
   const ls = raw[11], rs = raw[12];
   const le = raw[13], re = raw[14];
@@ -1884,11 +1857,9 @@ function isPullPhaseHeuristic(raw){
 
   const shoulderY = (ls.y + rs.y) / 2;
 
-  // Arme nicht über Kopf (sonst eher Streck-/Gleit)
   const oh = armOverHeadRobust(raw);
   if (oh > 0.55) return false;
 
-  // Handgelenke eher "unten" (Richtung Brust/Hüfte) + Ellbogen gebeugt
   const eL = elbowAngle(ls, le, lw);
   const eR = elbowAngle(rs, re, rw);
 
@@ -1907,7 +1878,6 @@ function wristsTooDeep(raw){
   if(!lh || !rh || (!lw && !rw)) return false;
   const hipY = (lh.y + rh.y) / 2;
 
-  // "zu tief" ≈ Handgelenke unter Hüfthöhe (+ kleiner Puffer)
   const m = 0.02;
   const leftDeep = lw ? (lw.y > hipY + m) : false;
   const rightDeep = rw ? (rw.y > hipY + m) : false;
@@ -1915,7 +1885,6 @@ function wristsTooDeep(raw){
 }
 
 function isStreamlineGood(raw){
-  // klare Stromlinie: ArmOverHead hoch + Beine gestreckt + Körper lang
   const a = armOverHeadRobust(raw);
   const l = legsStraightScore(raw);
   const b = bodyLongScore(raw);
@@ -1967,14 +1936,12 @@ function loop(){
       const neck = drawNeckAxis(raw, cssPoints, ts);
       const legs = drawLegChecks(raw, cssPoints);
 
-      // Timer BEFORE hands (so glideActive is current)
       updateTimer(raw, ts, isRecording && !isFinalizingStop);
       const hands = drawHandAxis(raw, cssPoints);
 
       if (isRecording && !isFinalizingStop) {
         recStats.frames++;
 
-        // Knie/Schulter (Rückholphase-Kriterium bleibt wie vorher)
         if (legs.valid && legs.kneeRatio != null) {
           recStats.avgKneeRatioSum += legs.kneeRatio;
           recStats.avgKneeRatioN++;
@@ -1985,19 +1952,14 @@ function loop(){
           if (legs.kneeDiff != null && legs.kneeDiff > 25) recStats.kneeAsym++;
         }
 
-        // Beine nicht gestreckt in Gleitphase
         if (toggleTimer.checked && glideActive && legs.valid) {
           const [aL, aR] = legs.kneeAngles || [null,null];
           const bent = ((aL != null && aL < 155) || (aR != null && aR < 155));
           if (bent) recStats.legsBent++;
         }
 
-        // Stromlinie gut (unabhängig: zählt pro Frame)
-        if (isStreamlineGood(raw)) {
-          recStats.streamlineGoodFrames++;
-        }
+        if (isStreamlineGood(raw)) recStats.streamlineGoodFrames++;
 
-        // HWS
         if (toggleTimer.checked && glideActive && neck?.profile && neck?.state) {
           if (neck.state === "redFlex") recStats.headFlex++;
           if (neck.state === "redExt") {
@@ -2012,27 +1974,17 @@ function loop(){
           headExtStreakStart = null;
         }
 
-        // ===== Pull-Phase Heuristik + neue Zähler =====
         const pullPhase = (!glideActive) && isPullPhaseHeuristic(raw);
 
-        // PullFrames zählen unabhängig von hands.handRatio (robuster)
         if (pullPhase) {
           recStats.armPullFrames++;
 
-          // "zu tief" in Pull-Phase
-          if (wristsTooDeep(raw)) {
-            recStats.armTooDeepFrames++;
-          }
+          if (wristsTooDeep(raw)) recStats.armTooDeepFrames++;
 
-          // Handbreite: nur wenn Ratio da ist
           if (hands.handRatio != null) {
             const tooWideNow = hands.handRatio > HAND_RED_THR;
-
-            if (tooWideNow && !prevHandTooWide) {
-              recStats.handWideEvents++;
-            }
+            if (tooWideNow && !prevHandTooWide) recStats.handWideEvents++;
             prevHandTooWide = tooWideNow;
-
             if (tooWideNow) recStats.handWideFrames++;
           } else {
             prevHandTooWide = false;
@@ -2041,20 +1993,13 @@ function loop(){
           prevHandTooWide = false;
         }
 
-        // ===== Timing Arm-Ende → Kick (lateKick) =====
-        // Arm-Ende: true -> false
-        if (prevIsPullPhase && !pullPhase) {
-          lastArmEndTs = ts;
-        }
+        if (prevIsPullPhase && !pullPhase) lastArmEndTs = ts;
         prevIsPullPhase = pullPhase;
 
-        // Kick-Start: kneesBent false -> true
         const kb = getKneesBent(raw);
         if (!prevKneesBent && kb.bent) {
           if (lastArmEndTs != null) {
             const delay = ts - lastArmEndTs;
-
-            // "zu spät": > 350ms (aber nur plausibler Bereich)
             if (delay > 350 && delay < 1500) {
               recStats.lateKickEvents++;
               recStats.lateKickDelaySumMs += delay;
@@ -2065,18 +2010,11 @@ function loop(){
         prevKneesBent = kb.bent;
       }
 
-      const handDbg = (hands && hands.handRatio != null)
-        ? `hand/shoulderX=${hands.handRatio.toFixed(2)}`
-        : `hand/shoulderX=—`;
-
-      const gateDbg = (hands && hands.gated) ? "handGate=1" : "handGate=0";
-      const aDbg = armsStreamlineScore(raw).toFixed(2);
-
       drawOverlay(
-        `DEBUG: lm=${raw.length} mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} score=${scoreEma.toFixed(2)} arms=${aDbg} ${handDbg} ${gateDbg} rec=${isRecording?1:0} ui=${isPortraitUI()?"P":"L"}`
+        `DEBUG: mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} score=${scoreEma.toFixed(2)} rec=${isRecording?1:0} preset=${filmingPreset.value}`
       );
     } else {
-      drawOverlay(`DEBUG: lm=0 mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} rec=${isRecording?1:0} ui=${isPortraitUI()?"P":"L"}`);
+      drawOverlay(`DEBUG: lm=0 mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} rec=${isRecording?1:0}`);
     }
 
     rafId = requestAnimationFrame(loop);
@@ -2149,20 +2087,18 @@ btnSwitch.addEventListener("click", async ()=>{
     btnSwitch.disabled=false;
   }
 });
+
 btnRec.addEventListener("click", ()=>{
   btnRec.disabled=true;
   btnStop.disabled=false;
   startRecordingCanvas();
 });
 
-
 btnStop.addEventListener("click", ()=>{
   btnStop.disabled = true;
 
-  // Aufnahme einfrieren (Stats stoppen), aber Video noch laufen lassen
   isFinalizingStop = true;
 
-  // ECHTE Techniktipps aus bisherigen recStats erzeugen
   tipsOverlayTitle = "Techniktipps (Brust)";
   const lines = buildOverlayTipsFromStats();
 
@@ -2173,7 +2109,6 @@ btnStop.addEventListener("click", ()=>{
         "• Tipp: länger filmen + stabile Perspektive."
       ];
 
-  // 3 Sekunden im Video sichtbar halten
   showTipsOverlayUntil = performance.now() + 3000;
 
   setTimeout(() => {
@@ -2182,8 +2117,6 @@ btnStop.addEventListener("click", ()=>{
     isFinalizingStop = false;
   }, 3000);
 });
-
-
 
 btnShare.addEventListener("click", ()=>shareOrDownload());
 
