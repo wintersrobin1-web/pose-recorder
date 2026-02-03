@@ -723,9 +723,13 @@ function drawSkeletonCssPoints(cssPoints) {
 
   ctx.restore();
 }
-// Segmentation
+// Segmentation (CRISP wie früher, aber mit Auto-Invert-Fix)
 const maskSrcCanvas = document.createElement("canvas");
 const maskSrcCtx = maskSrcCanvas.getContext("2d", { willReadFrequently: false });
+
+// Invert-Status wird selten aktualisiert (stabil)
+let maskInvert = null;
+let maskInvertTs = 0;
 
 function drawMaskContainFromSource(srcCanvas, vw, vh) {
   const cw = CSS_W, ch = CSS_H;
@@ -734,14 +738,68 @@ function drawMaskContainFromSource(srcCanvas, vw, vh) {
   const dispH = vh * scale;
   const offX = (cw - dispW) / 2;
   const offY = (ch - dispH) / 2;
+
+  // CRISP (kein bilinear blur)
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
   ctx.drawImage(srcCanvas, offX, offY, dispW, dispH);
+  ctx.restore();
 }
 
-function renderMaskToCanvas(segMask) {
-  if (!segMask) return { max: 0 };
+function _readMask(segMask, mw, mh) {
+  let dataF = null, dataU = null;
+  try { if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array(); } catch(_) {}
+  if (!dataF) { try { if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array(); } catch(_) {} }
+
+  if (dataF && dataF.length >= mw*mh) return { arr: dataF, isFloat: true };
+  if (dataU && dataU.length >= mw*mh) return { arr: dataU, isFloat: false };
+  return { arr: null, isFloat: false };
+}
+
+function _sampleMask01(arr, isFloat, mw, mh, xNorm, yNorm) {
+  const x = Math.max(0, Math.min(mw - 1, Math.round(xNorm * (mw - 1))));
+  const y = Math.max(0, Math.min(mh - 1, Math.round(yNorm * (mh - 1))));
+  const v = arr[y * mw + x];
+  return isFloat ? v : (v / 255);
+}
+
+// Entscheidet invert stabil:
+// - bevorzugt Pose-Punkte (Nase/Schultern/Hüfte)
+// - fallback: Bildmitte
+function _decideInvert(segMask, arr, isFloat, mw, mh, threshold, rawPoseOrNull) {
+  // 1) Pose-Punkte sind am zuverlässigsten
+  if (rawPoseOrNull && rawPoseOrNull.length) {
+    const ids = [0, 11, 12, 23, 24]; // nose, shoulders, hips
+    let on = 0, off = 0, n = 0;
+
+    for (const id of ids) {
+      const p = rawPoseOrNull[id];
+      if (!p) continue;
+      // nur wenn plausibel
+      if (typeof p.visibility === "number" && p.visibility < 0.15) continue;
+      const s = _sampleMask01(arr, isFloat, mw, mh, p.x, p.y);
+      n++;
+      if (s >= threshold) on++; else off++;
+    }
+
+    if (n >= 2) {
+      // Wenn an Körperpunkten überwiegend "0", ist Maske sehr wahrscheinlich invertiert.
+      return off > on;
+    }
+  }
+
+  // 2) Fallback: Zentrum (Person ist oft in der Mitte)
+  const mid = _sampleMask01(arr, isFloat, mw, mh, 0.5, 0.5);
+  // Wenn Mitte unter threshold, ist es wahrscheinlich invertiert
+  return (mid < threshold);
+}
+
+function renderMaskToCanvas(segMask, rawPoseOrNull = null) {
+  if (!segMask) return { max: 0, invert: !!maskInvert };
+
   const mw = segMask.width ?? 0;
   const mh = segMask.height ?? 0;
-  if (!mw || !mh) return { max: 0 };
+  if (!mw || !mh) return { max: 0, invert: !!maskInvert };
 
   if (maskSrcCanvas.width !== mw || maskSrcCanvas.height !== mh) {
     maskSrcCanvas.width = mw;
@@ -751,46 +809,63 @@ function renderMaskToCanvas(segMask) {
   const threshold = Number(silThresh.value) / 100;
   const alpha = Number(silOpacity.value);
 
-  let dataF = null, dataU = null;
-  try { if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array(); } catch(_) {}
-  if (!dataF) { try { if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array(); } catch(_) {} }
+  const { arr, isFloat } = _readMask(segMask, mw, mh);
+  if (!arr) return { max: 0, invert: !!maskInvert };
+
+  // Auto-Invert: nur alle ~150ms neu bewerten (kein Flipping)
+  const now = performance.now();
+  if (maskInvert === null || (now - maskInvertTs) > 150) {
+    maskInvert = _decideInvert(segMask, arr, isFloat, mw, mh, threshold, rawPoseOrNull);
+    maskInvertTs = now;
+  }
 
   const img = maskSrcCtx.createImageData(mw, mh);
   const d = img.data;
   let maxv = 0;
 
-  if (dataF && dataF.length >= mw*mh) {
-    for (let i = 0; i < mw*mh; i++) {
-      const v = dataF[i];
-      if (v > maxv) maxv = v;
-      const a = (v >= threshold) ? Math.round(255 * alpha) : 0;
-      const o = i*4;
-      d[o] = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a;
-    }
-  } else if (dataU && dataU.length >= mw*mh) {
-    for (let i = 0; i < mw*mh; i++) {
-      const v = dataU[i] / 255;
-      if (v > maxv) maxv = v;
-      const a = (v >= threshold) ? Math.round(255 * alpha) : 0;
-      const o = i*4;
-      d[o] = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a;
-    }
+  // CRISP binär wie früher, aber optional invertiert
+  for (let i = 0; i < mw * mh; i++) {
+    let v = arr[i];
+    v = isFloat ? v : (v / 255);
+    if (v > maxv) maxv = v;
+
+    let m = (v >= threshold) ? 1 : 0;
+    if (maskInvert) m = 1 - m;
+
+    const a = m ? Math.round(255 * alpha) : 0;
+    const o = i * 4;
+    d[o]   = 255; // GELB
+    d[o+1] = 215;
+    d[o+2] = 0;
+    d[o+3] = a;
   }
 
   maskSrcCtx.putImageData(img, 0, 0);
-  return { max: maxv };
+  return { max: maxv, invert: !!maskInvert };
 }
 
-function drawSilhouette(segMask) {
+function drawSilhouette(segMask, rawPoseOrNull = null) {
   if (!toggleSilhouette.checked || !segMask) return { max: 0 };
   const vw = video.videoWidth || 0;
   const vh = video.videoHeight || 0;
   if (!vw || !vh) return { max: 0 };
 
-  const info = renderMaskToCanvas(segMask);
+  const info = renderMaskToCanvas(segMask, rawPoseOrNull);
   if (info.max > 0) drawMaskContainFromSource(maskSrcCanvas, vw, vh);
   return info;
 }
+
+// Kompatibilität (wie bei dir erwartet)
+function resetMaskEma() {
+  maskInvert = null;
+  maskInvertTs = 0;
+}
+
+// alter Name bleibt gültig
+function drawSilhouetteFromMask(segMask, rawPoseOrNull = null) {
+  return drawSilhouette(segMask, rawPoseOrNull);
+}
+
 // Head center
 function headCenterNorm(raw) {
   const le = raw[7], re = raw[8];
