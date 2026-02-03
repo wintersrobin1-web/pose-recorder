@@ -2106,6 +2106,80 @@ btnRec.addEventListener("click", ()=>{
   btnStop.disabled=false;
   startRecordingCanvas();
 });
+function buildOverlayTipsFromStats() {
+  // Nutzt dieselbe Logik wie showTechTipsFromStats, aber liefert kurze Lines fürs Video-Overlay.
+  if (!toggleHintBox.checked) return [];
+
+  // Zu wenig Daten?
+  if (recStats.frames < 25) {
+    return ["• Aufnahme war sehr kurz – für sichere Hinweise bitte länger filmen."];
+  }
+
+  const p = (n)=> n / Math.max(1, recStats.frames);
+  const thr = 0.22;
+  const issues = [];
+
+  // Knie breit
+  if (p(recStats.kneeWide) >= thr) {
+    issues.push({ score:p(recStats.kneeWide), line:"• Knie schmaler rückholen (≈ schulterbreit)." });
+  }
+
+  // Beinschere (nur back45 sinnvoll)
+  if (filmingPreset.value === "back45" && p(recStats.kneeAsym) >= thr) {
+    issues.push({ score:p(recStats.kneeAsym), line:"• Beinschere: links/rechts symmetrischer kicken." });
+  }
+
+  // Beine in Gleitphase nicht gestreckt
+  if (p(recStats.legsBent) >= thr) {
+    issues.push({ score:p(recStats.legsBent), line:"• In der Gleitphase Beine vollständig strecken." });
+  }
+
+  // Armzug breit
+  const armPullDen = Math.max(1, recStats.armPullFrames);
+  const handWideShare = recStats.handWideFrames / armPullDen;
+  const needEv = (filmingPreset.value === "side45") ? 3 : 2;
+  const earlyWide = recStats.handWideEvents >= needEv;
+  if (earlyWide || handWideShare >= 0.18) {
+    issues.push({ score: Math.max(earlyWide ? 0.38 : 0, handWideShare), line:"• Armzug: Hände weniger weit nach außen öffnen." });
+  }
+
+  // Hände zu tief
+  const deepShare = recStats.armTooDeepFrames / Math.max(1, recStats.armPullFrames);
+  if (deepShare >= 0.20 && recStats.armPullFrames >= 12) {
+    issues.push({ score:deepShare, line:"• Armzug: Druck nach hinten – nicht nach unten (Hände nicht zu tief)." });
+  }
+
+  // Stromlinie fehlt
+  const streamShare = recStats.streamlineGoodFrames / Math.max(1, recStats.frames);
+  if (streamShare <= 0.12 && recStats.frames >= 40) {
+    issues.push({ score: Math.min(1,(0.16-streamShare)/0.16), line:"• Nach dem Arbeiten: klare Stromlinie (lang & schlank)!" });
+  }
+
+  // Late kick
+  if (recStats.lateKickEvents >= 2) {
+    issues.push({ score:0.55, line:"• Kick früher: Kick startet, wenn die Hände nach vorn gehen." });
+  }
+
+  // Kopf/HWS
+  if (p(recStats.headExtAny) >= thr || (recStats.headExtStreakMsMax||0) >= 700) {
+    issues.push({ score:0.45, line:"• Kopf neutral: Nacken lang, Blick schräg nach unten/vorn." });
+  }
+
+  // Gleitphase kurz/lang (aus glideTimes)
+  const shortGlides = glideTimes.filter(t => (t/1000) < 0.8).length;
+  if (glideTimes.length > 0 && shortGlides >= 1) {
+    issues.push({ score:0.30, line:"• Gleitphase etwas länger stabil halten." });
+  }
+
+  const longThr = (filmingPreset.value === "stand") ? 3.2 : 2.8;
+  const longGlides = glideTimes.filter(t => (t/1000) > longThr).length;
+  if (glideTimes.length > 0 && longGlides >= 1) {
+    issues.push({ score:0.28, line:"• Gleitphase nicht zu lang “verharren” – sauber einleiten." });
+  }
+
+  issues.sort((a,b)=> b.score - a.score);
+  return issues.slice(0,3).map(x => x.line);
+}
 
 btnStop.addEventListener("click", ()=>{
   btnStop.disabled = true;
