@@ -723,8 +723,14 @@ function drawSkeletonCssPoints(cssPoints) {
 
   ctx.restore();
 }
+/* =========================
+   SEGMENTATION (CRISP):
+   - KEIN feather (keine Löcherfüllung)
+   - KEIN temporales EMA (keine Bewegungs-Schmiere)
+   - KEIN bilinear scaling (keine Unschärfe)
+   - Auto-Invert via Pose-Punkte (damit Körper gelb bleibt)
+   ========================= */
 
-// Segmentation (CRISP – no blur, no fill, correct polarity)
 const maskSrcCanvas = document.createElement("canvas");
 const maskSrcCtx = maskSrcCanvas.getContext("2d", { willReadFrequently: false });
 
@@ -752,6 +758,7 @@ function sampleMask(arr, isFloat, mw, mh, xNorm, yNorm){
 function decideInvertByPose(rawPose, arr, isFloat, mw, mh, threshold){
   if (!rawPose) return lastMaskInvert;
 
+  // typische "Körperpunkte"
   const ids = [0,11,12,23,24];
   let on = 0, off = 0;
 
@@ -773,31 +780,32 @@ function drawMaskContainFromSource(srcCanvas, vw, vh) {
   const offY = (ch - dispH) / 2;
 
   ctx.save();
-  ctx.imageSmoothingEnabled = false; // KEIN Blur!
+  ctx.imageSmoothingEnabled = false; // CRISP: kein Blur beim Skalieren
   ctx.drawImage(srcCanvas, offX, offY, dispW, dispH);
   ctx.restore();
 }
 
-function renderMaskToCanvas(segMask, rawPose) {
-  if (!segMask) return { max: 0 };
+function renderMaskToCanvas(segMask, rawPoseOrNull) {
+  if (!segMask) return { max: 0, invert: lastMaskInvert };
 
   const mw = segMask.width ?? 0;
   const mh = segMask.height ?? 0;
-  if (!mw || !mh) return { max: 0 };
+  if (!mw || !mh) return { max: 0, invert: lastMaskInvert };
 
   if (maskSrcCanvas.width !== mw || maskSrcCanvas.height !== mh) {
     maskSrcCanvas.width = mw;
     maskSrcCanvas.height = mh;
   }
 
-  const threshold = Number(silThresh.value) / 100;
+  const threshold = Number(silThresh.value) / 100;  // harte Schwelle
   const alphaMax  = Number(silOpacity.value);
 
   const { arr, isFloat } = readMaskToArr01(segMask, mw, mh);
-  if (!arr) return { max: 0 };
+  if (!arr) return { max: 0, invert: lastMaskInvert };
 
+  // Auto-invert (stabilisiert, damit es nicht flippt)
   const now = performance.now();
-  const wantInvert = decideInvertByPose(rawPose, arr, isFloat, mw, mh, threshold);
+  const wantInvert = decideInvertByPose(rawPoseOrNull, arr, isFloat, mw, mh, threshold);
   if (now - lastInvertTs > 120) {
     lastMaskInvert = wantInvert;
     lastInvertTs = now;
@@ -813,28 +821,33 @@ function renderMaskToCanvas(segMask, rawPose) {
     v = isFloat ? v : (v / 255);
     if (v > maxv) maxv = v;
 
+    // binär, ohne feather: verhindert "Löcher werden gefüllt"
     let m = (v >= threshold) ? 1 : 0;
     if (lastMaskInvert) m = 1 - m;
 
     const o = i*4;
-    d[o]   = 255; // GELB = KÖRPER
+    d[o]   = 255; // GELB
     d[o+1] = 215;
     d[o+2] = 0;
     d[o+3] = Math.round(255 * alphaMax * m);
   }
 
   maskSrcCtx.putImageData(img, 0, 0);
-  return { max: maxv };
+  return { max: maxv, invert: lastMaskInvert };
 }
 
-function drawSilhouette(segMask, rawPose) {
+/**
+ * Zeichnet die gelbe Silhouette.
+ * rawPoseOrNull ist optional – wenn vorhanden, stabilisiert es die Invert-Erkennung.
+ */
+function drawSilhouette(segMask, rawPoseOrNull) {
   if (!toggleSilhouette.checked || !segMask) return { max: 0 };
 
   const vw = video.videoWidth || 0;
   const vh = video.videoHeight || 0;
   if (!vw || !vh) return { max: 0 };
 
-  const info = renderMaskToCanvas(segMask, rawPose);
+  const info = renderMaskToCanvas(segMask, rawPoseOrNull);
   if (info.max > 0) drawMaskContainFromSource(maskSrcCanvas, vw, vh);
   return info;
 }
