@@ -1518,6 +1518,7 @@ function resetRecStats() {
   prevIsPullPhase = false;
   prevKneesBent = false;
   lastArmEndTs = null;
+  lastHandsForwardTs = null;
 }
 
 function clearTipsUI() {
@@ -1923,6 +1924,20 @@ function wristsTooDeep(raw){
   return leftNearHip || rightNearHip;
 }
 
+// Streamline "gut" (für recStats.streamlineGoodFrames)
+// bewusst konservativ: zählt nur, wenn Arme klar vorn/über Kopf UND Beine eher gestreckt sind
+function isStreamlineGood(raw){
+  if(!raw) return false;
+
+  // 0..1 (armOverHeadRobust): 1.0 = Wrist über Kopf, 0.7 = Ellbogen hoch, 0 = nichts
+  const arms = armOverHeadRobust(raw);
+
+  // 0..1 (legsStraightScore): 1.0 = Knie sehr gestreckt
+  const legs = legsStraightScore(raw);
+
+  // konservative Schwellen → weniger False-Positives
+  return (arms >= 0.70) && (legs >= 0.70);
+}
 
 // Loop
 let emptyMaskFrames = 0;
