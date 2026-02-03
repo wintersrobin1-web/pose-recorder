@@ -1902,78 +1902,121 @@ function loop(){
           prevHandTooWide = false;
           deepStreak = 0;
         }
-        // ===== Timing Hände-vor → Kick (lateKick) – ROBUSTER =====
-        // Ziel: nur "zu spät" zählen, wenn nach klarer Armstreckung
-        // der Kick wirklich erst deutlich später BEGINNT.
+              // ===== Timing Hände-vor → Kick (lateKick) – ULTRA-ROBUST (occlusion-safe) =====
+        // Ziel: "zu spät" nur, wenn:
+        // 1) Armzug endet,
+        // 2) Hände sind WIRKLICH wieder vorn (Streamline),
+        // 3) Kick STARTET messbar erst deutlich später.
         //
-        // Kick-BEGINN erkennen wir über: Kniewinkel fällt deutlich (Δ) UND ist wirklich gebeugt
-        // (statt nur "unter 158°" zu springen, was im Wasser ständig flackert).
+        // Robustheit:
+        // - Kick-Start via (A) Knie-Flex-Drop ODER (B) Ankle-Speed (falls Knie/Bein verdeckt).
+        // - Nutzt Visibility-Gating, damit seitliche/oben-Perspektive nicht permanent false-positive triggert.
 
-        // 0) Optional: prevKneeAngles initialisieren (falls noch nicht vorhanden)
-        // (Diese Variablen kannst du oben bei den anderen prev-Variablen lassen,
-        //  aber hier ist es safe, falls sie fehlen.)
-        if (typeof window.__prevKneeAL === "undefined") window.__prevKneeAL = null;
-        if (typeof window.__prevKneeAR === "undefined") window.__prevKneeAR = null;
+        // ---- kleine State-Variablen persistent halten (global im Modul-Scope via window)
+        if (typeof window.__lk_prevKneeAL === "undefined") window.__lk_prevKneeAL = null;
+        if (typeof window.__lk_prevKneeAR === "undefined") window.__lk_prevKneeAR = null;
+        if (typeof window.__lk_prevAnkleLX === "undefined") window.__lk_prevAnkleLX = null;
+        if (typeof window.__lk_prevAnkleLY === "undefined") window.__lk_prevAnkleLY = null;
+        if (typeof window.__lk_prevAnkleRX === "undefined") window.__lk_prevAnkleRX = null;
+        if (typeof window.__lk_prevAnkleRY === "undefined") window.__lk_prevAnkleRY = null;
+        if (typeof window.__lk_prevTs === "undefined") window.__lk_prevTs = null;
 
-        // 1) Armzug-Ende merken
+        // ---- 1) Armzug-Ende merken
         if (prevIsPullPhase && !pullPhase) {
           lastArmEndTs = ts;
           lastHandsForwardTs = null;
         }
         prevIsPullPhase = pullPhase;
 
-        // 2) Hände wieder klar nach vorn/oben (echte Streckung) erkennen:
-        //    - Arme über Kopf (oh)
-        //    - Beine eher gestreckt (legsStraightScore) -> reduziert False-Positives
+        // ---- 2) Hände wieder klar vorn (echte Streckung) erkennen
+        // Für side45/back45: wir verlangen Streamline-Signal + Beine eher gestreckt, sonst kein Startpunkt
         if (lastArmEndTs != null && lastHandsForwardTs == null) {
-          const oh = armOverHeadRobust(raw);
-          const legS = legsStraightScore(raw);
-          if (oh >= 0.62 && legS >= 0.55 && (ts - lastArmEndTs) <= 950) {
+          const oh = armOverHeadRobust(raw);       // 0..1
+          const legS = legsStraightScore(raw);     // 0..1
+          const withinWindow = (ts - lastArmEndTs) <= 1100;
+
+          // etwas strenger als vorher, damit "Hände vorn" nicht zufällig im Arm-Rauschen gesetzt wird
+          if (withinWindow && oh >= 0.68 && legS >= 0.58) {
             lastHandsForwardTs = ts;
           }
         }
 
-        // 3) Kick-BEGINN robust erkennen: Kniewinkel droppt merklich + wird wirklich klein
-        const kb = getKneesBent(raw); // liefert bent,aL,aR
-        const aL = kb.aL, aR = kb.aR;
+        // ---- 3) Kick-Start robust erkennen (Knie-Flex-Drop ODER Ankle-Speed)
+        const okVisRaw = (p) => (p && (typeof p.visibility !== "number" || p.visibility >= 0.25));
 
-        const prevAL = window.__prevKneeAL;
-        const prevAR = window.__prevKneeAR;
+        const lh = raw[23], rh = raw[24];
+        const lk = raw[25], rk = raw[26];
+        const la = raw[27], ra = raw[28];
 
-        const DROP_DEG = 8;    // Mindest-Drop von Frame zu Frame
-        const KICK_ANG = 155;  // Knie muss darunter fallen, sonst ist es nur Rauschen
+        const aL = (lh && lk && la) ? kneeAngle(lh, lk, la) : null;
+        const aR = (rh && rk && ra) ? kneeAngle(rh, rk, ra) : null;
 
-        const kickStartNow =
-          (aL != null && prevAL != null && (prevAL - aL) >= DROP_DEG && aL < KICK_ANG) ||
-          (aR != null && prevAR != null && (prevAR - aR) >= DROP_DEG && aR < KICK_ANG);
+        const prevAL = window.__lk_prevKneeAL;
+        const prevAR = window.__lk_prevKneeAR;
 
-        // prev angles updaten
-        window.__prevKneeAL = aL;
-        window.__prevKneeAR = aR;
+        // (A) Knie-Winkel Drop: nur wenn Winkel stabil genug ist
+        const DROP_DEG = 10;     // stärkerer Drop = weniger false
+        const KICK_ANG = 154;    // wirklich gebeugt, sonst nur Rauschen
 
-        // 4) Delay nur auswerten, wenn Hände-vorn-Moment existiert und Kick wirklich startet
+        const kneeDropL = (aL != null && prevAL != null && (prevAL - aL) >= DROP_DEG && aL < KICK_ANG);
+        const kneeDropR = (aR != null && prevAR != null && (prevAR - aR) >= DROP_DEG && aR < KICK_ANG);
+
+        // (B) Ankle-Speed: wenn Bein teilweise verdeckt ist, erkennt man Kick-Einsatz oft über "plötzliche Fußbewegung"
+        // Wir verwenden normalisierte coords, daher Speed-Schwelle hängt vom dt ab.
+        const prevTs = window.__lk_prevTs;
+        const dt = (prevTs != null) ? Math.max(1, ts - prevTs) : null;
+
+        let ankleSpeedHit = false;
+        if (dt != null) {
+          // Links
+          if (la && okVisRaw(la) && window.__lk_prevAnkleLX != null && window.__lk_prevAnkleLY != null) {
+            const vx = (la.x - window.__lk_prevAnkleLX) / dt;
+            const vy = (la.y - window.__lk_prevAnkleLY) / dt;
+            const v = Math.hypot(vx, vy);
+            // konservativ: nur bei deutlichem Impuls
+            if (v > 0.00011) ankleSpeedHit = true;
+          }
+          // Rechts
+          if (ra && okVisRaw(ra) && window.__lk_prevAnkleRX != null && window.__lk_prevAnkleRY != null) {
+            const vx = (ra.x - window.__lk_prevAnkleRX) / dt;
+            const vy = (ra.y - window.__lk_prevAnkleRY) / dt;
+            const v = Math.hypot(vx, vy);
+            if (v > 0.00011) ankleSpeedHit = true;
+          }
+        }
+
+        // Kick-Start = KnieDrop ODER AnkleSpeedHit
+        const kickStartNow = (kneeDropL || kneeDropR || ankleSpeedHit);
+
+        // ---- prev state updaten
+        window.__lk_prevKneeAL = aL;
+        window.__lk_prevKneeAR = aR;
+
+        window.__lk_prevTs = ts;
+        if (la && okVisRaw(la)) { window.__lk_prevAnkleLX = la.x; window.__lk_prevAnkleLY = la.y; }
+        if (ra && okVisRaw(ra)) { window.__lk_prevAnkleRX = ra.x; window.__lk_prevAnkleRY = ra.y; }
+
+        // ---- 4) Delay auswerten (noch konservativer)
         if (lastHandsForwardTs != null) {
-          // Timeout: wenn innerhalb ~1.6s kein Kick erkannt -> reset (kein Spam)
-          if ((ts - lastHandsForwardTs) > 1600) {
+          // Wenn wir zu lange warten ohne Kick -> Reset, damit kein Dauer-Spam entsteht
+          if ((ts - lastHandsForwardTs) > 1850) {
             lastHandsForwardTs = null;
             lastArmEndTs = null;
           } else if (kickStartNow) {
             const delay = ts - lastHandsForwardTs;
 
-            // "zu spät" erst ab deutlich größerer Verzögerung (konservativer als vorher)
-            if (delay > 700 && delay < 1500) {
+            // "zu spät" erst ab 800ms (konservativ) und nur im plausiblen Fenster
+            if (delay > 800 && delay < 1550) {
               recStats.lateKickEvents++;
               recStats.lateKickDelaySumMs += delay;
               recStats.lateKickDelayN++;
             }
 
-            // Reset nach erkanntem Kick-Start (keine Mehrfachzählung)
+            // Reset nach erkanntem Kick-Start
             lastHandsForwardTs = null;
             lastArmEndTs = null;
           }
         }
-
-      }
 
       drawOverlay(
         `DEBUG: mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} score=${scoreEma.toFixed(2)} rec=${isRecording?1:0} preset=${filmingPreset.value}`
