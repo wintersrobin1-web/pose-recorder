@@ -1415,7 +1415,54 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
 // Recording + tips
 let recorder=null, recordedChunks=[], lastBlob=null;
 let isRecording = false;
+// === Post-Stop Tips Overlay (wird im Video mit aufgenommen) ===
+let showTipsOverlayUntil = 0;
+let tipsOverlayLines = [];
+let tipsOverlayTitle = "Techniktipps (Brust)";
 
+function drawTipsOverlay(nowTs){
+  if (!showTipsOverlayUntil || nowTs > showTipsOverlayUntil) return;
+  if (!tipsOverlayLines || tipsOverlayLines.length === 0) return;
+
+  const isPortrait = CSS_H > CSS_W;
+  const pad = 12;
+  const boxW = Math.min(CSS_W - 24, isPortrait ? 520 : 860);
+  const x = 12;
+  const y = CSS_H - (isPortrait ? 220 : 170);
+  const lineH = isPortrait ? 18 : 16;
+
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  ctx.strokeStyle = "rgba(255,255,255,0.35)";
+  ctx.lineWidth = 2;
+
+  const lines = [tipsOverlayTitle, ...tipsOverlayLines.slice(0,3)];
+  const boxH = pad*2 + 10 + lines.length*lineH;
+
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y, boxW, boxH, 14);
+  else {
+    const r=14,w=boxW,h=boxH;
+    ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+  }
+  ctx.fill(); ctx.stroke();
+
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.font = (isPortrait ? "800 14px system-ui" : "800 13px system-ui");
+  ctx.fillText(lines[0], x+pad, y+pad+14);
+
+  ctx.font = (isPortrait ? "13px system-ui" : "12.5px system-ui");
+  let ty = y + pad + 14 + 8;
+  for (let i=1;i<lines.length;i++){
+    ty += lineH;
+    ctx.fillText(lines[i], x+pad, ty);
+  }
+
+  ctx.restore();
+}
+
+  
 // ✅ fehlende Variablen, die du in resetRecStats() nutzt:
 let prevIsPullPhase = false;
 let prevKneesBent = false;
@@ -1833,6 +1880,7 @@ function loop(){
 
     const ts = performance.now();
     const result = landmarker.detectForVideo(video, ts);
+    drawTipsOverlay(ts);
 
     const hasMask = !!(result?.segmentationMasks?.length);
     const hasLandmarks = !!(result?.landmarks?.length && result.landmarks[0]?.length);
@@ -2050,10 +2098,24 @@ btnRec.addEventListener("click", ()=>{
 });
 
 btnStop.addEventListener("click", ()=>{
-  btnStop.disabled=true;
-  stopRecordingCanvas();
-  btnRec.disabled=false;
+  btnStop.disabled = true;
+
+  // Fallback-Text fürs Video (falls noch keine Tipps berechnet wurden)
+  tipsOverlayTitle = "Techniktipps (Brust)";
+  tipsOverlayLines = [
+    "• Techniktipps werden im Anschluss eingeblendet.",
+    "• Gute Perspektive + längere Aufnahme = bessere Hinweise."
+  ];
+
+  // 3 Sekunden Overlay ins Video aufnehmen
+  showTipsOverlayUntil = performance.now() + 3000;
+
+  setTimeout(() => {
+    stopRecordingCanvas();
+    btnRec.disabled = false;
+  }, 3000);
 });
+
 
 btnShare.addEventListener("click", ()=>shareOrDownload());
 
