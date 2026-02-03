@@ -1748,24 +1748,57 @@ function startRecordingCanvas(){
 function stopRecordingCanvas(){ if(recorder && recorder.state!=="inactive") recorder.stop(); }
 
 async function shareOrDownload(){
-  if(!lastBlob) return;
-  const type=lastBlob.type||"";
-  const ext=type.includes("mp4")?"mp4":(type.includes("webm")?"webm":"bin");
-  const fileName=`bewegungsanalyse_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`;
-  const file=new File([lastBlob],fileName,{type:lastBlob.type});
+  try{
+    if(!lastBlob){
+      setStatus("Kein Video vorhanden (erst aufnehmen & stoppen).");
+      return;
+    }
 
-  if(navigator.canShare && navigator.canShare({files:[file]})){
-    await navigator.share({files:[file], title:"Anonyme Bewegungsanalyse"});
-    setStatus("Geteilt/gespeichert ("+ext.toUpperCase()+").");
-    return;
+    const type = lastBlob.type || "video/webm";
+    const ext  = type.includes("mp4") ? "mp4" : (type.includes("webm") ? "webm" : "bin");
+    const fileName = `bewegungsanalyse_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`;
+    const file = new File([lastBlob], fileName, { type });
+
+    // Desktop-Erkennung → dort IMMER Download
+    const isDesktop =
+      matchMedia("(pointer:fine)").matches &&
+      !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+    // Mobile / unterstützte Browser → Share versuchen
+    if (!isDesktop && navigator.share && navigator.canShare) {
+      let can = false;
+      try { can = navigator.canShare({ files: [file] }); } catch(_) {}
+      if (can) {
+        await navigator.share({ files:[file], title:"Anonyme Bewegungsanalyse" });
+        setStatus("Geteilt/gespeichert.");
+        return;
+      }
+    }
+
+    // Fallback: Download (Desktop + alle anderen Fälle)
+    const url = URL.createObjectURL(lastBlob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    // Safari / restriktive Desktop-Browser → Blob im neuen Tab öffnen
+    setTimeout(() => {
+      try { window.open(url, "_blank", "noopener,noreferrer"); } catch(_) {}
+    }, 250);
+
+    setTimeout(()=>URL.revokeObjectURL(url), 8000);
+    setStatus("Speichern gestartet (" + ext.toUpperCase() + ").");
+  } catch (e) {
+    console.error("shareOrDownload error:", e);
+    setStatus("Teilen/Speichern fehlgeschlagen: " + (e?.message || String(e)));
   }
-  const url=URL.createObjectURL(lastBlob);
-  const a=document.createElement("a");
-  a.href=url; a.download=fileName;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),2000);
-  setStatus("Download gestartet ("+ext.toUpperCase()+").");
 }
+
 
 // MediaPipe
 let landmarker = null;
