@@ -1708,7 +1708,8 @@ function stopCamera(){
   video.srcObject=null;
 }
 
-// === Zusätzliche Heuristiken für recStats-Zähler ===
+// === Zusätzliche Heuristiken für recStats-Zähler (ROBUST & PERSPEKTIVSENSITIV) ===
+
 function getKneesBent(raw){
   const lh = raw[23], rh = raw[24], lk = raw[25], rk = raw[26], la = raw[27], ra = raw[28];
   const aL = kneeAngle(lh, lk, la);
@@ -1717,6 +1718,9 @@ function getKneesBent(raw){
   return { bent, aL, aR };
 }
 
+/* =========================
+   ARMZUG – PHASENERKENNUNG
+   ========================= */
 function isPullPhaseHeuristic(raw){
   const ls = raw[11], rs = raw[12];
   const le = raw[13], re = raw[14];
@@ -1725,14 +1729,14 @@ function isPullPhaseHeuristic(raw){
 
   const shoulderY = (ls.y + rs.y) / 2;
 
-  const oh = armOverHeadRobust(raw);
-  if (oh > 0.55) return false;
+  // Streamline → KEINE Zugphase
+  if (armOverHeadRobust(raw) > 0.55) return false;
 
   const eL = elbowAngle(ls, le, lw);
   const eR = elbowAngle(rs, re, rw);
 
-  const wristDownL = lw ? (lw.y > shoulderY + 0.02) : false;
-  const wristDownR = rw ? (rw.y > shoulderY + 0.02) : false;
+  const wristDownL = lw ? (lw.y > shoulderY + 0.035) : false;
+  const wristDownR = rw ? (rw.y > shoulderY + 0.035) : false;
 
   const elbowBentL = (eL != null) ? (eL < 165) : false;
   const elbowBentR = (eR != null) ? (eR < 165) : false;
@@ -1740,29 +1744,35 @@ function isPullPhaseHeuristic(raw){
   return ( (wristDownL && elbowBentL) || (wristDownR && elbowBentR) );
 }
 
-// ✅ weniger sensibel: wirklich "bis Hüfte" + mehrere Frames
-function wristsTooDeep(raw){
+/* =========================
+   HÄNDE ZU TIEF – EXTREM KONSERVATIV
+   ========================= */
+function wristsClearlyAtHip(raw){
   const lh = raw[23], rh = raw[24];
   const lw = raw[15], rw = raw[16];
   if(!lh || !rh || (!lw && !rw)) return false;
 
   const hipY = (lh.y + rh.y) / 2;
 
-  // STRIKT: erst wenn Handgelenk deutlich auf/unter Hüfte
-  const belowHipMargin = 0.030; // 3% Bildhöhe -> deutlich strenger
+  // SEHR streng: deutlich unter Hüfte
+  const margin = 0.045; // 4.5 % Bildhöhe
 
-  const leftDeep  = lw ? (lw.y >= hipY + belowHipMargin) : false;
-  const rightDeep = rw ? (rw.y >= hipY + belowHipMargin) : false;
+  const leftDeep  = lw ? (lw.y >= hipY + margin) : false;
+  const rightDeep = rw ? (rw.y >= hipY + margin) : false;
 
   return leftDeep || rightDeep;
 }
 
+/* =========================
+   STROMLINIE – bewusst konservativ
+   ========================= */
 function isStreamlineGood(raw){
   if(!raw) return false;
   const arms = armOverHeadRobust(raw);
   const legs = legsStraightScore(raw);
-  return (arms >= 0.70) && (legs >= 0.70);
+  return (arms >= 0.72) && (legs >= 0.72);
 }
+
 
 // Loop
 let emptyMaskFrames = 0;
