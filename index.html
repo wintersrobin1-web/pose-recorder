@@ -1747,15 +1747,16 @@ function isPullPhaseHeuristic(raw){
 /* =========================
    HÄNDE ZU TIEF – EXTREM KONSERVATIV
    ========================= */
-function wristsClearlyAtHip(raw){
+function wristsTooDeep(raw){
   const lh = raw[23], rh = raw[24];
   const lw = raw[15], rw = raw[16];
   if(!lh || !rh || (!lw && !rw)) return false;
 
   const hipY = (lh.y + rh.y) / 2;
 
-  // SEHR streng: deutlich unter Hüfte
-  const margin = 0.045; // 4.5 % Bildhöhe
+  // EXTREM streng: nur wenn Handgelenk klar UNTER Hüfte ist
+  // y wächst nach unten → "unter Hüfte" = hipY + margin
+  const margin = 0.045; // 4.5 % Bildhöhe → sehr unempfindlich
 
   const leftDeep  = lw ? (lw.y >= hipY + margin) : false;
   const rightDeep = rw ? (rw.y >= hipY + margin) : false;
