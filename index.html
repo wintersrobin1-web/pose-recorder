@@ -1311,7 +1311,7 @@ function drawHandAxis(raw, cssPoints) {
 // Overlay + debug footer
 function drawOverlay(debugText=""){
   if(!toggleTimer.checked) {
-    if (debugText) drawDebugFooter(debugText);
+    if (DEBUG_ENABLED && debugText) drawDebugFooter(debugText);
     return;
   }
 
@@ -1369,7 +1369,7 @@ function drawOverlay(debugText=""){
   }
 
   ctx.restore();
-  if (debugText) drawDebugFooter(debugText);
+    if (DEBUG_ENABLED && debugText) drawDebugFooter(debugText);
 }
 
 function drawDebugFooter(text) {
@@ -1718,6 +1718,9 @@ function updateLandmarkerThresholds(){
 detConf.addEventListener("change", updateLandmarkerThresholds);
 presConf.addEventListener("change", updateLandmarkerThresholds);
 trackConf.addEventListener("change", updateLandmarkerThresholds);
+
+// DEBUG AN/AUS (default: false = unsichtbar)
+const DEBUG_ENABLED = false;
 
 // Camera
 let isBackCamera = true;
