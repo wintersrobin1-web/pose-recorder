@@ -1406,7 +1406,6 @@ function drawTipsOverlay(nowTs){
 
 // ✅ State für Timing/Events
 let prevIsPullPhase = false;
-let prevKneesBent = false;
 let lastArmEndTs = null;
 let lastHandsForwardTs = null;
 
@@ -1452,7 +1451,6 @@ function resetRecStats() {
   recStats.headExtStreakMsMax = 0;
 
   prevIsPullPhase = false;
-  prevKneesBent = false;
   lastArmEndTs = null;
   lastHandsForwardTs = null;
 
@@ -1708,16 +1706,6 @@ function stopCamera(){
   video.srcObject=null;
 }
 
-// === Zusätzliche Heuristiken für recStats-Zähler (ROBUST & PERSPEKTIVSENSITIV) ===
-
-function getKneesBent(raw){
-  const lh = raw[23], rh = raw[24], lk = raw[25], rk = raw[26], la = raw[27], ra = raw[28];
-  const aL = kneeAngle(lh, lk, la);
-  const aR = kneeAngle(rh, rk, ra);
-  const bent = ((aL != null && aL < 158) || (aR != null && aR < 158));
-  return { bent, aL, aR };
-}
-
 /* =========================
    ARMZUG – PHASENERKENNUNG
    ========================= */
@@ -1752,38 +1740,26 @@ function wristsTooDeep(raw){
   const lh = raw[23], rh = raw[24];
   const lw = raw[15], rw = raw[16];
 
-  // braucht Schultern + Hüften + mind. ein Handgelenk
   if (!ls || !rs || !lh || !rh || (!lw && !rw)) return false;
 
-  // Körperachsenpunkte
-  const sh = { x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2 }; // Schultermitte
-  const hp = { x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2 }; // Hüftmitte
+  const sh = { x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2 };
+  const hp = { x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2 };
 
-  // Körperachse (Schulter -> Hüfte), normiert
   let ax = { x: hp.x - sh.x, y: hp.y - sh.y };
   const L = Math.hypot(ax.x, ax.y);
   if (L < 1e-6) return false;
   ax = { x: ax.x / L, y: ax.y / L };
 
-  // Projektion eines Punkts auf die Körperachse (Skalar entlang der Achse)
   const proj = (p) => ( (p.x - sh.x)*ax.x + (p.y - sh.y)*ax.y );
-
   const hipT = proj(hp);
 
-  // SEHR streng: erst "zu tief", wenn Handgelenk entlang der Achse
-  // wirklich (nahe) Hüftniveau erreicht/überschreitet.
-  // Margin relativ zur Rumpflänge (L) statt absoluter y-Werte:
-  const margin = 0.10 * L; // 10% der Rumpflänge -> konservativ
+  const margin = 0.10 * L;
 
   const leftDeep  = lw ? (proj(lw) >= hipT - margin) : false;
   const rightDeep = rw ? (proj(rw) >= hipT - margin) : false;
 
-  // Noch strenger: mindestens ein Wrist wirklich tief UND nicht nur ein Frame-Zucken:
-  // (Die Frame-Stabilität machst du bereits über "deepShare" & Mindestframes im Statistikteil.)
-
   return leftDeep || rightDeep;
 }
-
 
 /* =========================
    STROMLINIE – bewusst konservativ
@@ -1794,7 +1770,6 @@ function isStreamlineGood(raw){
   const legs = legsStraightScore(raw);
   return (arms >= 0.72) && (legs >= 0.72);
 }
-
 
 // Loop
 let emptyMaskFrames = 0;
@@ -1822,7 +1797,7 @@ function loop(){
     let maskInfo = { max: 0 };
     if (hasMask) {
       maskInfo = drawSilhouette(result.segmentationMasks[0]);
-      if (maskInfo.max <= 0.001) emptyMaskFrames++;
+      if ((maskInfo.max ?? 0) <= 0.001) emptyMaskFrames++;
       else emptyMaskFrames = 0;
 
       if (emptyMaskFrames > 45) {
@@ -1844,6 +1819,9 @@ function loop(){
       updateTimer(raw, ts, isRecording && !isFinalizingStop);
       const hands = drawHandAxis(raw, cssPoints);
 
+      // =========================
+      // ✅ REC STATS (läuft nur während Aufnahme)
+      // =========================
       if (isRecording && !isFinalizingStop) {
         recStats.frames++;
 
@@ -1902,17 +1880,10 @@ function loop(){
           prevHandTooWide = false;
           deepStreak = 0;
         }
-              // ===== Timing Hände-vor → Kick (lateKick) – ULTRA-ROBUST (occlusion-safe) =====
-        // Ziel: "zu spät" nur, wenn:
-        // 1) Armzug endet,
-        // 2) Hände sind WIRKLICH wieder vorn (Streamline),
-        // 3) Kick STARTET messbar erst deutlich später.
-        //
-        // Robustheit:
-        // - Kick-Start via (A) Knie-Flex-Drop ODER (B) Ankle-Speed (falls Knie/Bein verdeckt).
-        // - Nutzt Visibility-Gating, damit seitliche/oben-Perspektive nicht permanent false-positive triggert.
 
-        // ---- kleine State-Variablen persistent halten (global im Modul-Scope via window)
+        // ===== Timing Hände-vor → Kick (lateKick) – ULTRA-ROBUST (occlusion-safe) =====
+
+        // persistenter Zustand
         if (typeof window.__lk_prevKneeAL === "undefined") window.__lk_prevKneeAL = null;
         if (typeof window.__lk_prevKneeAR === "undefined") window.__lk_prevKneeAR = null;
         if (typeof window.__lk_prevAnkleLX === "undefined") window.__lk_prevAnkleLX = null;
@@ -1921,27 +1892,26 @@ function loop(){
         if (typeof window.__lk_prevAnkleRY === "undefined") window.__lk_prevAnkleRY = null;
         if (typeof window.__lk_prevTs === "undefined") window.__lk_prevTs = null;
 
-        // ---- 1) Armzug-Ende merken
-        if (prevIsPullPhase && !pullPhase) {
+        // 1) Armzug-Ende merken
+        const pullPhaseNow = (!glideActive) && isPullPhaseHeuristic(raw);
+        if (prevIsPullPhase && !pullPhaseNow) {
           lastArmEndTs = ts;
           lastHandsForwardTs = null;
         }
-        prevIsPullPhase = pullPhase;
+        prevIsPullPhase = pullPhaseNow;
 
-        // ---- 2) Hände wieder klar vorn (echte Streckung) erkennen
-        // Für side45/back45: wir verlangen Streamline-Signal + Beine eher gestreckt, sonst kein Startpunkt
+        // 2) Hände wieder klar vorn (echte Streckung) erkennen
         if (lastArmEndTs != null && lastHandsForwardTs == null) {
           const oh = armOverHeadRobust(raw);       // 0..1
           const legS = legsStraightScore(raw);     // 0..1
           const withinWindow = (ts - lastArmEndTs) <= 1100;
 
-          // etwas strenger als vorher, damit "Hände vorn" nicht zufällig im Arm-Rauschen gesetzt wird
           if (withinWindow && oh >= 0.68 && legS >= 0.58) {
             lastHandsForwardTs = ts;
           }
         }
 
-        // ---- 3) Kick-Start robust erkennen (Knie-Flex-Drop ODER Ankle-Speed)
+        // 3) Kick-Start robust erkennen (Knie-Flex-Drop ODER Ankle-Speed)
         const okVisRaw = (p) => (p && (typeof p.visibility !== "number" || p.visibility >= 0.25));
 
         const lh = raw[23], rh = raw[24];
@@ -1954,29 +1924,23 @@ function loop(){
         const prevAL = window.__lk_prevKneeAL;
         const prevAR = window.__lk_prevKneeAR;
 
-        // (A) Knie-Winkel Drop: nur wenn Winkel stabil genug ist
-        const DROP_DEG = 10;     // stärkerer Drop = weniger false
-        const KICK_ANG = 154;    // wirklich gebeugt, sonst nur Rauschen
+        const DROP_DEG = 10;
+        const KICK_ANG = 154;
 
         const kneeDropL = (aL != null && prevAL != null && (prevAL - aL) >= DROP_DEG && aL < KICK_ANG);
         const kneeDropR = (aR != null && prevAR != null && (prevAR - aR) >= DROP_DEG && aR < KICK_ANG);
 
-        // (B) Ankle-Speed: wenn Bein teilweise verdeckt ist, erkennt man Kick-Einsatz oft über "plötzliche Fußbewegung"
-        // Wir verwenden normalisierte coords, daher Speed-Schwelle hängt vom dt ab.
         const prevTs = window.__lk_prevTs;
         const dt = (prevTs != null) ? Math.max(1, ts - prevTs) : null;
 
         let ankleSpeedHit = false;
         if (dt != null) {
-          // Links
           if (la && okVisRaw(la) && window.__lk_prevAnkleLX != null && window.__lk_prevAnkleLY != null) {
             const vx = (la.x - window.__lk_prevAnkleLX) / dt;
             const vy = (la.y - window.__lk_prevAnkleLY) / dt;
             const v = Math.hypot(vx, vy);
-            // konservativ: nur bei deutlichem Impuls
             if (v > 0.00011) ankleSpeedHit = true;
           }
-          // Rechts
           if (ra && okVisRaw(ra) && window.__lk_prevAnkleRX != null && window.__lk_prevAnkleRY != null) {
             const vx = (ra.x - window.__lk_prevAnkleRX) / dt;
             const vy = (ra.y - window.__lk_prevAnkleRY) / dt;
@@ -1985,10 +1949,9 @@ function loop(){
           }
         }
 
-        // Kick-Start = KnieDrop ODER AnkleSpeedHit
         const kickStartNow = (kneeDropL || kneeDropR || ankleSpeedHit);
 
-        // ---- prev state updaten
+        // prev state updaten
         window.__lk_prevKneeAL = aL;
         window.__lk_prevKneeAR = aR;
 
@@ -1996,31 +1959,31 @@ function loop(){
         if (la && okVisRaw(la)) { window.__lk_prevAnkleLX = la.x; window.__lk_prevAnkleLY = la.y; }
         if (ra && okVisRaw(ra)) { window.__lk_prevAnkleRX = ra.x; window.__lk_prevAnkleRY = ra.y; }
 
-        // ---- 4) Delay auswerten (noch konservativer)
+        // 4) Delay auswerten (konservativ)
         if (lastHandsForwardTs != null) {
-          // Wenn wir zu lange warten ohne Kick -> Reset, damit kein Dauer-Spam entsteht
           if ((ts - lastHandsForwardTs) > 1850) {
             lastHandsForwardTs = null;
             lastArmEndTs = null;
           } else if (kickStartNow) {
             const delay = ts - lastHandsForwardTs;
 
-            // "zu spät" erst ab 800ms (konservativ) und nur im plausiblen Fenster
             if (delay > 800 && delay < 1550) {
               recStats.lateKickEvents++;
               recStats.lateKickDelaySumMs += delay;
               recStats.lateKickDelayN++;
             }
 
-            // Reset nach erkanntem Kick-Start
             lastHandsForwardTs = null;
             lastArmEndTs = null;
           }
         }
 
+      } // ✅ WICHTIG: Recording-Block sauber schließen (Buttons & Script bleiben aktiv)
+
       drawOverlay(
         `DEBUG: mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} score=${scoreEma.toFixed(2)} rec=${isRecording?1:0} preset=${filmingPreset.value}`
       );
+
     } else {
       drawOverlay(`DEBUG: lm=0 mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} rec=${isRecording?1:0}`);
     }
@@ -2117,7 +2080,6 @@ btnStop.addEventListener("click", ()=>{
         "• Tipp: länger filmen + stabile Perspektive."
       ];
 
-  // ✅ Overlay bleibt 3s sichtbar (und wird in Aufnahme mit aufgezeichnet)
   showTipsOverlayUntil = performance.now() + 3000;
 
   setTimeout(() => {
