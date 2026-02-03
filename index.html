@@ -1436,25 +1436,53 @@ const HAND_STREAK_FRAMES = 8;       // (optional)
 let headExtStreakStart = null;
 
 const recStats = {
-  frames:0,
-  kneeWide:0, kneeAsym:0, legsBent:0,
-  headExtAny:0,
-  headExtStreakMsMax:0,
-  headFlex:0,
-  avgKneeRatioSum:0, avgKneeRatioN:0,
+  // Gesamt
+  frames: 0,
 
-  armPullFrames: 0,
-  handWideFrames: 0,
-  handWideEvents: 0
+  // Beine – nur Rückhol-/Kick-Logik zählt
+  kneeWide: 0,              // Knie zu breit in Rückholphase
+  kneeAsym: 0,              // Beinschere (nur back45)
+  legsBent: 0,              // Beine nicht gestreckt in Gleitphase
+  avgKneeRatioSum: 0,
+  avgKneeRatioN: 0,
+
+  // Kopf / HWS
+  headExtAny: 0,
+  headExtStreakMsMax: 0,
+  headFlex: 0,
+
+  // Armzug – NUR Pull-Phase
+  armPullFrames: 0,         // Frames, die wirklich Armzug sind
+  handWideFrames: 0,        // davon: Handbreite > Schwelle
+  handWideEvents: 0,        // Events (false → true)
+  armTooDeepFrames: 0,      // NEU: Hände ziehen zu tief
+
+  // Stromlinie / Streckphase
+  streamlineGoodFrames: 0,  // NEU: klar stromlinienförmig
+
+  // Timing Arm-Ende → Kick
+  lateKickEvents: 0,        // NEU: Kick deutlich zu spät
+  lateKickDelaySumMs: 0,    // NEU: Summe der Verzögerungen
+  lateKickDelayN: 0         // NEU: Anzahl gemessener Delays
 };
 
 function resetRecStats() {
   for (const k of Object.keys(recStats)) recStats[k] = 0;
+
+  // Armzug / Handbreite
   handWideStreak = 0;
   prevHandTooWide = false;
+
+  // HWS
   headExtStreakStart = null;
   recStats.headExtStreakMsMax = 0;
+
+  // Timing Arm-Ende → Kick (Events)
+  prevIsPullPhase = false;
+  prevKneesBent = false;
+  lastArmEndTs = null;
 }
+
 
 function clearTipsUI() {
   tipsBox.style.display = "none";
