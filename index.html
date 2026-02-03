@@ -590,6 +590,15 @@ function setInputVideoVisible(visible) {
 setInputVideoVisible(false);
 showInputVideo?.addEventListener("change", () => setInputVideoVisible(showInputVideo.checked));
 
+// =========================
+// PERF TUNING
+// =========================
+const PERF = {
+  maskEveryNFrames: 2,        // Mask nur jedes 2. Frame neu
+  useVideoFrameCallback: true // requestVideoFrameCallback nutzen, falls verfügbar
+};
+let __frameIndex = 0;
+
 // Orientation + HiDPI
 function isPortraitUI() {
   const so = screen.orientation && screen.orientation.type;
@@ -608,6 +617,9 @@ function setupHiDPICanvas(cssW, cssH) {
   canvas.height = Math.round(cssH * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.imageSmoothingEnabled = false;
+
+  // smoothing reset bei Layoutwechsel
+  __smoothedInit = false;
 }
 function applyLayoutFromOrientation() {
   if (isPortraitUI()) setupHiDPICanvas(360, 640);
@@ -668,37 +680,75 @@ function elbowAngle(shoulder, elbow, wrist) {
   return angleBetween(u, v);
 }
 
-function mapLandmarksContain(rawLandmarks, vw, vh, cw, ch) {
+// =========================
+// CONTAIN TRANSFORM CACHE
+// =========================
+let __contain = { vw:0, vh:0, cw:0, ch:0, scale:1, offX:0, offY:0, dispW:0, dispH:0 };
+
+function computeContain(vw, vh, cw, ch) {
+  if (vw === __contain.vw && vh === __contain.vh && cw === __contain.cw && ch === __contain.ch) return __contain;
   const scale = Math.min(cw / vw, ch / vh);
   const dispW = vw * scale;
   const dispH = vh * scale;
   const offX = (cw - dispW) / 2;
   const offY = (ch - dispH) / 2;
-
-  return rawLandmarks.map(p => {
-    const px = p.x * vw;
-    const py = p.y * vh;
-    return { ...p, _cx: offX + px * scale, _cy: offY + py * scale };
-  });
+  __contain = { vw, vh, cw, ch, scale, offX, offY, dispW, dispH };
+  return __contain;
 }
 
-// EMA smoothing in CSS space (for points)
-let smoothedCss = null;
-function emaCss(cssPoints) {
+// =========================
+// LANDMARKS MAP (NO ALLOCS)
+// =========================
+let __cssPoints = Array.from({ length: 33 }, () => ({ _cx:0, _cy:0, visibility:1, presence:1 }));
+
+function mapLandmarksContainInplace(rawLandmarks, vw, vh, cw, ch) {
+  const t = computeContain(vw, vh, cw, ch);
+  const scale = t.scale, offX = t.offX, offY = t.offY;
+
+  for (let i = 0; i < rawLandmarks.length; i++) {
+    const p = rawLandmarks[i];
+    const px = p.x * vw;
+    const py = p.y * vh;
+
+    const out = __cssPoints[i];
+    out._cx = offX + px * scale;
+    out._cy = offY + py * scale;
+
+    if (typeof p.visibility === "number") out.visibility = p.visibility;
+    if (typeof p.presence === "number") out.presence = p.presence;
+  }
+  return __cssPoints;
+}
+
+// =========================
+// EMA SMOOTHING (INPLACE)
+// =========================
+let __smoothed = Array.from({ length: 33 }, () => ({ _cx:0, _cy:0, visibility:1, presence:1 }));
+let __smoothedInit = false;
+
+function emaCssInplace(cssPoints) {
   const a = Number(smooth.value);
   if (!cssPoints) return null;
-  if (!smoothedCss || smoothedCss.length !== cssPoints.length) {
-    smoothedCss = cssPoints.map(p => ({ ...p }));
-    return smoothedCss;
+
+  if (!__smoothedInit) {
+    for (let i=0;i<cssPoints.length;i++){
+      __smoothed[i]._cx = cssPoints[i]._cx;
+      __smoothed[i]._cy = cssPoints[i]._cy;
+      __smoothed[i].visibility = cssPoints[i].visibility;
+      __smoothed[i].presence = cssPoints[i].presence;
+    }
+    __smoothedInit = true;
+    return __smoothed;
   }
-  for (let i = 0; i < cssPoints.length; i++) {
-    const p = cssPoints[i], s = smoothedCss[i];
+
+  for (let i=0;i<cssPoints.length;i++){
+    const p = cssPoints[i], s = __smoothed[i];
     s._cx = a * s._cx + (1 - a) * p._cx;
     s._cy = a * s._cy + (1 - a) * p._cy;
-    if (typeof p.visibility === "number") s.visibility = p.visibility;
-    if (typeof p.presence === "number") s.presence = p.presence;
+    s.visibility = p.visibility;
+    s.presence = p.presence;
   }
-  return smoothedCss;
+  return __smoothed;
 }
 
 // Skeleton
@@ -736,22 +786,24 @@ function drawSkeletonCssPoints(cssPoints) {
   ctx.restore();
 }
 
-// Segmentation
+// =========================
+// Segmentation (REUSE + THROTTLE)
+// =========================
 const maskSrcCanvas = document.createElement("canvas");
 const maskSrcCtx = maskSrcCanvas.getContext("2d", { willReadFrequently: false });
 
+let __maskImageData = null;
+let __maskW = 0, __maskH = 0;
+let __lastMaskInfo = { max: 0 };
+
 function drawMaskContainFromSource(srcCanvas, vw, vh) {
-  const cw = CSS_W, ch = CSS_H;
-  const scale = Math.min(cw / vw, ch / vh);
-  const dispW = vw * scale;
-  const dispH = vh * scale;
-  const offX = (cw - dispW) / 2;
-  const offY = (ch - dispH) / 2;
-  ctx.drawImage(srcCanvas, offX, offY, dispW, dispH);
+  const t = computeContain(vw, vh, CSS_W, CSS_H);
+  ctx.drawImage(srcCanvas, t.offX, t.offY, t.dispW, t.dispH);
 }
 
 function renderMaskToCanvas(segMask) {
   if (!segMask) return { max: 0 };
+
   const mw = segMask.width ?? 0;
   const mh = segMask.height ?? 0;
   if (!mw || !mh) return { max: 0 };
@@ -761,36 +813,51 @@ function renderMaskToCanvas(segMask) {
     maskSrcCanvas.height = mh;
   }
 
+  if (!__maskImageData || mw !== __maskW || mh !== __maskH) {
+    __maskImageData = maskSrcCtx.createImageData(mw, mh);
+    __maskW = mw; __maskH = mh;
+  }
+
   const threshold = Number(silThresh.value) / 100;
   const alpha = Number(silOpacity.value);
+  const d = __maskImageData.data;
 
-  let dataF = null, dataU = null;
-  try { if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array(); } catch(_) {}
-  if (!dataF) { try { if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array(); } catch(_) {} }
+  let dataU = null;
+  try { if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array(); } catch(_) {}
 
-  const img = maskSrcCtx.createImageData(mw, mh);
-  const d = img.data;
+  let dataF = null;
+  if (!dataU) { try { if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array(); } catch(_) {} }
+
   let maxv = 0;
+  const n = mw * mh;
 
-  if (dataF && dataF.length >= mw*mh) {
-    for (let i = 0; i < mw*mh; i++) {
-      const v = dataF[i];
-      if (v > maxv) maxv = v;
-      const a = (v >= threshold) ? Math.round(255 * alpha) : 0;
-      const o = i*4;
-      d[o] = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a;
-    }
-  } else if (dataU && dataU.length >= mw*mh) {
-    for (let i = 0; i < mw*mh; i++) {
+  if (dataU && dataU.length >= n) {
+    const a255 = Math.round(255 * alpha);
+    for (let i=0, o=0; i<n; i++, o+=4) {
       const v = dataU[i] / 255;
       if (v > maxv) maxv = v;
-      const a = (v >= threshold) ? Math.round(255 * alpha) : 0;
-      const o = i*4;
-      d[o] = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a;
+
+      if (v >= threshold) {
+        d[o] = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a255;
+      } else {
+        d[o+3] = 0;
+      }
+    }
+  } else if (dataF && dataF.length >= n) {
+    const a255 = Math.round(255 * alpha);
+    for (let i=0, o=0; i<n; i++, o+=4) {
+      const v = dataF[i];
+      if (v > maxv) maxv = v;
+
+      if (v >= threshold) {
+        d[o] = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a255;
+      } else {
+        d[o+3] = 0;
+      }
     }
   }
 
-  maskSrcCtx.putImageData(img, 0, 0);
+  maskSrcCtx.putImageData(__maskImageData, 0, 0);
   return { max: maxv };
 }
 
@@ -800,9 +867,14 @@ function drawSilhouette(segMask) {
   const vh = video.videoHeight || 0;
   if (!vw || !vh) return { max: 0 };
 
-  const info = renderMaskToCanvas(segMask);
-  if (info.max > 0) drawMaskContainFromSource(maskSrcCanvas, vw, vh);
-  return info;
+  if ((__frameIndex % PERF.maskEveryNFrames) !== 0) {
+    if (__lastMaskInfo.max > 0) drawMaskContainFromSource(maskSrcCanvas, vw, vh);
+    return __lastMaskInfo;
+  }
+
+  __lastMaskInfo = renderMaskToCanvas(segMask);
+  if (__lastMaskInfo.max > 0) drawMaskContainFromSource(maskSrcCanvas, vw, vh);
+  return __lastMaskInfo;
 }
 
 // Head center (used for neck rendering)
@@ -1370,7 +1442,6 @@ function drawTipsOverlay(nowTs){
   const x = 12;
   const lineH = isPortrait ? 18 : 16;
 
-  // Titel + bis zu 4/3 Tipps
   const maxLines = isPortrait ? 5 : 4;
   const lines = [tipsOverlayTitle, ...tipsOverlayLines.slice(0, maxLines - 1)];
 
@@ -1717,7 +1788,6 @@ function isPullPhaseHeuristic(raw){
 
   const shoulderY = (ls.y + rs.y) / 2;
 
-  // Streamline → KEINE Zugphase
   if (armOverHeadRobust(raw) > 0.55) return false;
 
   const eL = elbowAngle(ls, le, lw);
@@ -1771,11 +1841,26 @@ function isStreamlineGood(raw){
   return (arms >= 0.72) && (legs >= 0.72);
 }
 
+// =========================
+// FRAME SCHEDULER
+// =========================
+function scheduleNextFrame() {
+  if (!running) return;
+
+  if (PERF.useVideoFrameCallback && typeof video.requestVideoFrameCallback === "function") {
+    video.requestVideoFrameCallback(() => loop());
+  } else {
+    rafId = requestAnimationFrame(loop);
+  }
+}
+
 // Loop
 let emptyMaskFrames = 0;
 
 function loop(){
   if(!running || !landmarker) return;
+
+  __frameIndex++;
 
   try{
     ctx.fillStyle = BG;
@@ -1783,7 +1868,7 @@ function loop(){
 
     if(video.videoWidth===0 || video.videoHeight===0){
       drawOverlay("DEBUG: video not ready");
-      rafId = requestAnimationFrame(loop);
+      scheduleNextFrame();
       return;
     }
 
@@ -1809,7 +1894,7 @@ function loop(){
     if (hasLandmarks) {
       const raw = result.landmarks[0];
       const vw = video.videoWidth, vh = video.videoHeight;
-      const cssPoints = emaCss(mapLandmarksContain(raw, vw, vh, CSS_W, CSS_H));
+      const cssPoints = emaCssInplace(mapLandmarksContainInplace(raw, vw, vh, CSS_W, CSS_H));
 
       drawSkeletonCssPoints(cssPoints);
 
@@ -1862,7 +1947,6 @@ function loop(){
         if (pullPhase) {
           recStats.armPullFrames++;
 
-          // ✅ "zu tief" nur, wenn 3 Frames am Stück wirklich unter Hüfte
           if (wristsTooDeep(raw)) deepStreak++;
           else deepStreak = 0;
 
@@ -1883,7 +1967,6 @@ function loop(){
 
         // ===== Timing Hände-vor → Kick (lateKick) – ULTRA-ROBUST (occlusion-safe) =====
 
-        // persistenter Zustand
         if (typeof window.__lk_prevKneeAL === "undefined") window.__lk_prevKneeAL = null;
         if (typeof window.__lk_prevKneeAR === "undefined") window.__lk_prevKneeAR = null;
         if (typeof window.__lk_prevAnkleLX === "undefined") window.__lk_prevAnkleLX = null;
@@ -1892,7 +1975,6 @@ function loop(){
         if (typeof window.__lk_prevAnkleRY === "undefined") window.__lk_prevAnkleRY = null;
         if (typeof window.__lk_prevTs === "undefined") window.__lk_prevTs = null;
 
-        // 1) Armzug-Ende merken
         const pullPhaseNow = (!glideActive) && isPullPhaseHeuristic(raw);
         if (prevIsPullPhase && !pullPhaseNow) {
           lastArmEndTs = ts;
@@ -1900,10 +1982,9 @@ function loop(){
         }
         prevIsPullPhase = pullPhaseNow;
 
-        // 2) Hände wieder klar vorn (echte Streckung) erkennen
         if (lastArmEndTs != null && lastHandsForwardTs == null) {
-          const oh = armOverHeadRobust(raw);       // 0..1
-          const legS = legsStraightScore(raw);     // 0..1
+          const oh = armOverHeadRobust(raw);
+          const legS = legsStraightScore(raw);
           const withinWindow = (ts - lastArmEndTs) <= 1100;
 
           if (withinWindow && oh >= 0.68 && legS >= 0.58) {
@@ -1911,7 +1992,6 @@ function loop(){
           }
         }
 
-        // 3) Kick-Start robust erkennen (Knie-Flex-Drop ODER Ankle-Speed)
         const okVisRaw = (p) => (p && (typeof p.visibility !== "number" || p.visibility >= 0.25));
 
         const lh = raw[23], rh = raw[24];
@@ -1951,7 +2031,6 @@ function loop(){
 
         const kickStartNow = (kneeDropL || kneeDropR || ankleSpeedHit);
 
-        // prev state updaten
         window.__lk_prevKneeAL = aL;
         window.__lk_prevKneeAR = aR;
 
@@ -1959,7 +2038,6 @@ function loop(){
         if (la && okVisRaw(la)) { window.__lk_prevAnkleLX = la.x; window.__lk_prevAnkleLY = la.y; }
         if (ra && okVisRaw(ra)) { window.__lk_prevAnkleRX = ra.x; window.__lk_prevAnkleRY = ra.y; }
 
-        // 4) Delay auswerten (konservativ)
         if (lastHandsForwardTs != null) {
           if ((ts - lastHandsForwardTs) > 1850) {
             lastHandsForwardTs = null;
@@ -1978,7 +2056,7 @@ function loop(){
           }
         }
 
-      } // ✅ WICHTIG: Recording-Block sauber schließen (Buttons & Script bleiben aktiv)
+      } // recording block end
 
       drawOverlay(
         `DEBUG: mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} score=${scoreEma.toFixed(2)} rec=${isRecording?1:0} preset=${filmingPreset.value}`
@@ -1988,7 +2066,7 @@ function loop(){
       drawOverlay(`DEBUG: lm=0 mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} rec=${isRecording?1:0}`);
     }
 
-    rafId = requestAnimationFrame(loop);
+    scheduleNextFrame();
   } catch(e){
     console.error(e);
     setStatus("Loop-Fehler: " + (e?.message || String(e)));
@@ -1997,6 +2075,8 @@ function loop(){
     ctx.fillStyle = "rgba(0,0,0,0.85)";
     ctx.font = "16px system-ui";
     ctx.fillText("Loop-Fehler: " + (e?.message || String(e)), 20, 40);
+
+    scheduleNextFrame();
   }
 }
 
@@ -2019,9 +2099,10 @@ btnInit.addEventListener("click", async ()=>{
     emptyMaskFrames = 0;
     resetNeckState();
     resetTimerState(true);
+    __smoothedInit = false;
 
     setStatus("bereit.");
-    rafId = requestAnimationFrame(loop);
+    scheduleNextFrame();
   } catch(e){
     console.error(e);
     setStatus("Fehler: " + (e?.message || String(e)));
@@ -2038,7 +2119,7 @@ btnSwitch.addEventListener("click", async ()=>{
     isBackCamera=!isBackCamera;
     await startCamera();
 
-    smoothedCss = null;
+    __smoothedInit = false;
     emptyMaskFrames = 0;
 
     clearTipsUI();
@@ -2046,7 +2127,7 @@ btnSwitch.addEventListener("click", async ()=>{
     resetTimerState(true);
 
     running=true;
-    rafId = requestAnimationFrame(loop);
+    scheduleNextFrame();
 
     btnSwitch.disabled=false;
     setStatus("Kamera gewechselt.");
@@ -2054,7 +2135,7 @@ btnSwitch.addEventListener("click", async ()=>{
     console.error(e);
     setStatus("Kamerawechsel-Fehler: " + (e?.message || String(e)));
     running=true;
-    rafId = requestAnimationFrame(loop);
+    scheduleNextFrame();
     btnSwitch.disabled=false;
   }
 });
@@ -2099,6 +2180,7 @@ btnReset.addEventListener("click", ()=>{
   setStatus("Slots zurückgesetzt.");
   clearTipsUI();
   resetNeckState();
+  __smoothedInit = false;
 });
 
 // Feedback: Meta automatisch füllen + async submit (ohne Seiten-Reload)
