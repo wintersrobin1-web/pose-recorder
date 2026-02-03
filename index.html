@@ -13,6 +13,7 @@
   --card: #ffffff;
   --border: #e5e7eb;
 
+  /* Header/Intro Box (nicht blau) */
   --introBg: #f8fafc;
   --introBorder: #e2e8f0;
   --accent: #111827;
@@ -28,6 +29,7 @@ body{
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 .hint { color: var(--muted); font-size: 14px; line-height: 1.45; max-width: 1100px; }
 
+/* Header */
 .header{
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -36,7 +38,12 @@ body{
   background: var(--card);
   max-width: 1100px;
 }
-.brand{ display:flex; flex-direction:column; gap: 2px; margin-bottom: 10px; }
+.brand{
+  display:flex;
+  flex-direction:column;
+  gap: 2px;
+  margin-bottom: 10px;
+}
 .brand .logo{
   font-weight: 900;
   letter-spacing: 1.6px;
@@ -65,6 +72,7 @@ body{
   font-size: 13.75px;
   line-height: 1.45;
   text-align: left;
+  text-justify: auto;
 }
 
 .stack{
@@ -127,7 +135,10 @@ button{
   font: inherit;
   color: #0b1220;
 }
-button.primary{ border-color: #0b1220; font-weight: 700; }
+button.primary{
+  border-color: #0b1220;
+  font-weight: 700;
+}
 button:disabled{ opacity: 0.5; }
 
 .btnRow{ display:flex; gap:10px; flex-wrap: wrap; }
@@ -343,7 +354,6 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
         <input id="neckHold" type="range" min="80" max="350" step="10" value="180">
         <span id="neckHoldVal" class="small">180</span>
       </div>
-
     </details>
   </details>
 
@@ -367,37 +377,58 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
 
       <details>
         <summary>Armzug zu breit</summary>
-        <p class="hint"><b>Indikator:</b> Hände öffnen sich deutlich über Schulterbreite. <b>Merksatz:</b> nach hinten drücken – weniger nach außen.</p>
+        <p class="hint">
+          <b>Indikator:</b> Hände öffnen sich in der Zugphase deutlich über Schulterbreite.<br>
+          <b>Merksatz:</b> Arme drücken vor allem nach hinten – weniger nach außen.
+        </p>
       </details>
 
       <details>
         <summary>Hände ziehen zu tief</summary>
-        <p class="hint"><b>Indikator:</b> Hände wandern deutlich unter Brusthöhe Richtung Hüfte. <b>Merksatz:</b> Druck nach hinten – nicht nach unten.</p>
+        <p class="hint">
+          <b>Indikator:</b> Hände wandern in der Zugphase deutlich unter Schulter-/Brusthöhe in Richtung Hüfte/Füße.<br>
+          <b>Merksatz:</b> Druck nach hinten – nicht nach unten.
+        </p>
       </details>
 
       <details>
         <summary>Streck-/Stromlinienphase fehlt</summary>
-        <p class="hint"><b>Indikator:</b> keine klare gestreckte Haltung nach dem Zug. <b>Merksatz:</b> Wenn nichts arbeitet, muss alles schlank sein.</p>
+        <p class="hint">
+          <b>Indikator:</b> Nach dem Armzug folgt selten eine klare, gestreckte Körperhaltung (Arme geschlossen/über Kopf, Beine gestreckt).<br>
+          <b>Merksatz:</b> Wenn nichts arbeitet, muss alles schlank sein.
+        </p>
       </details>
 
       <details>
         <summary>Beinschlag übernimmt zu spät</summary>
-        <p class="hint"><b>Indikator:</b> Pause nach Armschließen. <b>Merksatz:</b> Kick startet, wenn die Hände nach vorn gehen.</p>
+        <p class="hint">
+          <b>Indikator:</b> Nach dem Armschließen entsteht häufig eine Pause, bevor der Beinschlag einsetzt.<br>
+          <b>Merksatz:</b> Kick startet, wenn die Hände nach vorn gehen.
+        </p>
       </details>
 
       <details>
-        <summary>Knie ziehen zu breit an</summary>
-        <p class="hint"><b>Indikator:</b> Knieöffnung deutlich größer als Schulterbreite. <b>Merksatz:</b> Rückholen schmal – Kick kräftig.</p>
+        <summary>Knie ziehen zu breit an (Rückholphase)</summary>
+        <p class="hint">
+          <b>Indikator:</b> Knieöffnung in der Rückholphase deutlich größer als Schulterbreite.<br>
+          <b>Merksatz:</b> Rückholen schmal – Kick kräftig.
+        </p>
       </details>
 
       <details>
         <summary>Beinschere</summary>
-        <p class="hint"><b>Indikator:</b> asymmetrische Beinbewegung links/rechts. <b>Hinweis:</b> Nur bei Rückenansicht sinnvoll.</p>
+        <p class="hint">
+          <b>Indikator:</b> Deutlich asymmetrische Beinbewegung links/rechts über mehrere Frames.<br>
+          <b>Hinweis:</b> Nur bei Rückenansicht sinnvoll bewertbar.
+        </p>
       </details>
 
       <details>
         <summary>Gleitphase</summary>
-        <p class="hint"><b>Indikator:</b> nach dem Strecken zu kurz oder sehr lang ohne sinnvollen Übergang. <b>Merksatz:</b> kurz stabil gleiten – dann sauber einleiten.</p>
+        <p class="hint">
+          <b>Indikator:</b> Nach dem Strecken zu kurz oder (seltener) sehr lang ohne sinnvollen Übergang zur nächsten Phase.<br>
+          <b>Merksatz:</b> Kurz stabil gleiten – dann sauber einleiten.
+        </p>
       </details>
     </details>
   </details>
@@ -412,7 +443,9 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
     </div>
   </div>
 
-  <div><canvas id="canvas"></canvas></div>
+  <div>
+    <canvas id="canvas"></canvas>
+  </div>
 
   <div id="tipsBox" class="tipsBox">
     <h3>Techniktipps Brustschwimmen <span id="hintMeta" class="pill"></span></h3>
@@ -463,25 +496,11 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
 import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
 // =========================
-// Performance-Tuning (TRACKING)
-// =========================
-// 1) Pose-Modell: heavy -> full (schneller, i.d.R. stabil genug)
-const POSE_TASK_URL =
-  "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task";
-
-// 2) Segmentierung nicht jedes Frame rendern (großer FPS-Gewinn)
-const SEG_EVERY_N_FRAMES = 2; // 2 = jede 2. Frame; 3 = noch schneller
-// 3) Detektion nur so hoch wie nötig (du hast Slider, aber Startwerte wirken)
-const DEFAULT_CAM_W = 960;  // kleiner als 1280 für Speed
-const DEFAULT_CAM_H = 540;
-
-// Debug (optional)
-const DEBUG_ENABLED = false;
-
 // DOM
+// =========================
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d", { alpha: false });
+const ctx = canvas.getContext("2d");
 
 const btnInit = document.getElementById("btnInit");
 const btnSwitch = document.getElementById("btnSwitch");
@@ -492,7 +511,6 @@ const btnReset = document.getElementById("btnReset");
 
 const toggleSkeleton = document.getElementById("toggleSkeleton");
 const toggleSilhouette = document.getElementById("toggleSilhouette");
-
 const toggleNeck = document.getElementById("toggleNeck");
 const toggleLegCheck = document.getElementById("toggleLegCheck");
 const toggleHandAxis = document.getElementById("toggleHandAxis");
@@ -545,6 +563,9 @@ const feedbackForm = document.getElementById("feedbackForm");
 const fbMeta = document.getElementById("fbMeta");
 const fbStatus = document.getElementById("fbStatus");
 
+// =========================
+// Sliders
+// =========================
 function bindSlider(el, out, fmt=(v)=>Number(v).toFixed(2)) {
   const update = () => out.textContent = fmt(el.value);
   el.addEventListener("input", update);
@@ -565,6 +586,7 @@ bindSlider(neckRedExtra, neckRedExtraVal, v => String(Math.round(Number(v))));
 bindSlider(neckEma, neckEmaVal, v => Number(v).toFixed(2));
 bindSlider(neckHold, neckHoldVal, v => String(Math.round(Number(v))));
 
+// Input video visibility
 function setInputVideoVisible(visible) {
   if (visible) video.classList.remove("videoHidden");
   else video.classList.add("videoHidden");
@@ -572,7 +594,9 @@ function setInputVideoVisible(visible) {
 setInputVideoVisible(false);
 showInputVideo?.addEventListener("change", () => setInputVideoVisible(showInputVideo.checked));
 
-// Orientation + HiDPI
+// =========================
+// Orientation + HiDPI Canvas
+// =========================
 function isPortraitUI() {
   const so = screen.orientation && screen.orientation.type;
   if (typeof so === "string") return so.includes("portrait");
@@ -594,6 +618,7 @@ function setupHiDPICanvas(cssW, cssH) {
 function applyLayoutFromOrientation() {
   if (isPortraitUI()) setupHiDPICanvas(360, 640);
   else setupHiDPICanvas(720, 405);
+  setStatus("Ausrichtung: " + (isPortraitUI() ? "Hochformat" : "Querformat"));
 }
 window.addEventListener("resize", applyLayoutFromOrientation);
 window.addEventListener("orientationchange", applyLayoutFromOrientation);
@@ -601,7 +626,9 @@ applyLayoutFromOrientation();
 
 const BG = "#bfe7ff";
 
+// =========================
 // Pose connections
+// =========================
 const POSE_CONNECTIONS = [
   [0,1],[1,2],[2,3],[3,7],
   [0,4],[4,5],[5,6],[6,8],
@@ -614,7 +641,9 @@ const POSE_CONNECTIONS = [
   [24,26],[26,28],[28,30],[30,32]
 ];
 
+// =========================
 // Helpers
+// =========================
 const dist = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
 const distPx = (a,b)=>Math.hypot(a._cx-b._cx, a._cy-b._cy);
 const distXPx = (a,b)=>Math.abs(a._cx - b._cx);
@@ -663,7 +692,9 @@ function mapLandmarksContain(rawLandmarks, vw, vh, cw, ch) {
   });
 }
 
+// =========================
 // EMA smoothing (CSS points)
+// =========================
 let smoothedCss = null;
 function emaCss(cssPoints) {
   const a = Number(smooth.value);
@@ -682,7 +713,9 @@ function emaCss(cssPoints) {
   return smoothedCss;
 }
 
+// =========================
 // Skeleton
+// =========================
 function drawSkeletonCssPoints(cssPoints) {
   if (!toggleSkeleton.checked || !cssPoints) return;
   const lw = Math.round(Number(skelLine.value));
@@ -718,17 +751,16 @@ function drawSkeletonCssPoints(cssPoints) {
 }
 
 // =========================
-// Segmentation (Performance-Optimiert)
+// Segmentation (Performance: throttled + cached)
 // =========================
 const maskSrcCanvas = document.createElement("canvas");
 const maskSrcCtx = maskSrcCanvas.getContext("2d", { willReadFrequently: false });
 
-let cachedMaskDrawOk = false;
-let cachedMaskVW = 0, cachedMaskVH = 0;
-let cachedMaskMax = 0;
-
-// Reuse ImageData (verhindert createImageData pro Frame)
-let maskImgData = null;
+let maskImageData = null;          // cached ImageData
+let lastMaskDrawTs = 0;            // throttle
+let lastMaskMax = 0;               // for debug / empty detection
+let cachedMaskReady = false;       // draw cached even if skip convert
+let emptyMaskFrames = 0;
 
 function drawMaskContainFromSource(srcCanvas, vw, vh) {
   const cw = CSS_W, ch = CSS_H;
@@ -741,84 +773,95 @@ function drawMaskContainFromSource(srcCanvas, vw, vh) {
 }
 
 function renderMaskToCanvas(segMask) {
-  if (!segMask) return { max: 0, ok: false };
+  if (!segMask) return { max: 0 };
   const mw = segMask.width ?? 0;
   const mh = segMask.height ?? 0;
-  if (!mw || !mh) return { max: 0, ok: false };
+  if (!mw || !mh) return { max: 0 };
 
   if (maskSrcCanvas.width !== mw || maskSrcCanvas.height !== mh) {
     maskSrcCanvas.width = mw;
     maskSrcCanvas.height = mh;
-    maskImgData = null; // neu anlegen
+    maskImageData = null; // reset cache
   }
 
   const threshold = Number(silThresh.value) / 100;
   const alpha = Number(silOpacity.value);
 
-  let dataU = null;
-  let dataF = null;
-  try { if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array(); } catch (_) {}
-  if (!dataU) { try { if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array(); } catch (_) {} }
+  let dataF = null, dataU = null;
+  try { if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array(); } catch(_) {}
+  if (!dataF) { try { if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array(); } catch(_) {} }
 
-  if (!maskImgData || maskImgData.width !== mw || maskImgData.height !== mh) {
-    maskImgData = maskSrcCtx.createImageData(mw, mh);
+  if (!maskImageData || maskImageData.width !== mw || maskImageData.height !== mh) {
+    maskImageData = maskSrcCtx.createImageData(mw, mh);
   }
-  const d = maskImgData.data;
+  const d = maskImageData.data;
 
   let maxv = 0;
-  const N = mw * mh;
 
-  if (dataU && dataU.length >= N) {
-    // Uint8 ist meist schneller
-    for (let i = 0; i < N; i++) {
-      const v = dataU[i] / 255;
-      if (v > maxv) maxv = v;
-      const a = (v >= threshold) ? Math.round(255 * alpha) : 0;
-      const o = i * 4;
-      d[o] = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a;
-    }
-  } else if (dataF && dataF.length >= N) {
-    for (let i = 0; i < N; i++) {
+  // Gold RGBA (fix)
+  const R = 255, G = 215, B = 0;
+  const Aon = Math.round(255 * alpha);
+
+  if (dataF && dataF.length >= mw*mh) {
+    for (let i = 0; i < mw*mh; i++) {
       const v = dataF[i];
       if (v > maxv) maxv = v;
-      const a = (v >= threshold) ? Math.round(255 * alpha) : 0;
-      const o = i * 4;
-      d[o] = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a;
+      const o = i*4;
+      d[o] = R; d[o+1] = G; d[o+2] = B;
+      d[o+3] = (v >= threshold) ? Aon : 0;
     }
-  } else {
-    return { max: 0, ok: false };
+  } else if (dataU && dataU.length >= mw*mh) {
+    for (let i = 0; i < mw*mh; i++) {
+      const v = dataU[i] / 255;
+      if (v > maxv) maxv = v;
+      const o = i*4;
+      d[o] = R; d[o+1] = G; d[o+2] = B;
+      d[o+3] = (v >= threshold) ? Aon : 0;
+    }
   }
 
-  maskSrcCtx.putImageData(maskImgData, 0, 0);
-  return { max: maxv, ok: true };
+  maskSrcCtx.putImageData(maskImageData, 0, 0);
+  return { max: maxv };
 }
 
-function drawSilhouette(segMask, frameIndex) {
-  if (!toggleSilhouette.checked) return { max: cachedMaskMax, ok: cachedMaskDrawOk };
+function drawSilhouette(segMask, nowTs) {
+  if (!toggleSilhouette.checked) return { max: 0 };
 
   const vw = video.videoWidth || 0;
   const vh = video.videoHeight || 0;
-  if (!vw || !vh) return { max: cachedMaskMax, ok: cachedMaskDrawOk };
+  if (!vw || !vh) return { max: 0 };
 
-  // Nur jedes N-te Frame neu rendern
-  const shouldUpdate = (frameIndex % SEG_EVERY_N_FRAMES === 0);
+  // Performance: only rebuild pixel mask at most every ~70ms (≈14 fps for mask)
+  const THROTTLE_MS = 70;
 
-  if (shouldUpdate) {
-    const info = renderMaskToCanvas(segMask);
-    cachedMaskDrawOk = info.ok;
-    cachedMaskMax = info.max;
-    cachedMaskVW = vw; cachedMaskVH = vh;
+  let info = { max: lastMaskMax || 0 };
+
+  if (segMask && (nowTs - lastMaskDrawTs >= THROTTLE_MS || !cachedMaskReady)) {
+    info = renderMaskToCanvas(segMask);
+    lastMaskMax = info.max ?? 0;
+    lastMaskDrawTs = nowTs;
+    cachedMaskReady = true;
+
+    // empty detection
+    if (lastMaskMax <= 0.001) emptyMaskFrames++;
+    else emptyMaskFrames = 0;
+
+    if (emptyMaskFrames > 45) {
+      toggleSilhouette.checked = false;
+      setStatus("Hinweis: Segmentierung liefert leere Werte → deaktiviert.");
+    }
   }
 
-  // cached Mask zeichnen (wenn vorhanden)
-  if (cachedMaskDrawOk && cachedMaskMax > 0) {
-    drawMaskContainFromSource(maskSrcCanvas, cachedMaskVW, cachedMaskVH);
+  // draw cached mask canvas even if we skipped conversion this frame
+  if (cachedMaskReady) {
+    drawMaskContainFromSource(maskSrcCanvas, vw, vh);
   }
-
-  return { max: cachedMaskMax, ok: cachedMaskDrawOk };
+  return info;
 }
 
+// =========================
 // Head center
+// =========================
 function headCenterNorm(raw) {
   const le = raw[7], re = raw[8];
   const lEye = raw[2], rEye = raw[5];
@@ -834,7 +877,7 @@ function headCenterCss(cssPoints) {
   return null;
 }
 
-// Profile likely heuristic
+// Profile heuristic
 function isProfileLikely(raw){
   const ls = raw[11], rs = raw[12];
   if(!ls || !rs) return false;
@@ -853,7 +896,9 @@ function estimateFacingSign(raw, head, shoulder) {
   return 1;
 }
 
-// --- HWS state
+// =========================
+// HWS State + Draw
+// =========================
 let neckAngleEma = null;
 let neckState = "unknown";
 let neckSince = 0;
@@ -904,6 +949,7 @@ function drawNeckAxis(rawNorm, cssPoints, nowTs) {
     const neutralManual = Number(neckNeutral.value);
     neutral = (neckNeutralAuto != null) ? neckNeutralAuto : neutralManual;
 
+    // auto-neutral nur im Stand preset (optional)
     if (filmingPreset.value === "stand") {
       const d0 = neckAngleEma - neutralManual;
       if (Math.abs(d0) < 22 && neckCalibSamples.length < 45) {
@@ -971,7 +1017,9 @@ function drawNeckAxis(rawNorm, cssPoints, nowTs) {
   return { neckDeg: (profile ? neckAngleEma : null), state: neckState, neutral, d, profile, facing };
 }
 
+// =========================
 // Knee/leg checks
+// =========================
 function colorForRatio(r) {
   if (r <= 1.35) return "rgba(0,170,0,0.95)";
   if (r <= 1.55) return "rgba(255,140,0,0.95)";
@@ -1014,16 +1062,16 @@ function drawLegChecks(raw, cssPoints) {
   return { kneeRatio, kneeDiff: diff, kneeAngles: [aL, aR], valid: true };
 }
 
+// =========================
 // Hand axis
+// =========================
 function colorForHandRatio(r) {
   if (r <= 2.10) return "rgba(0,170,0,0.95)";
   if (r <= 2.50) return "rgba(255,140,0,0.95)";
   return "rgba(220,0,0,0.95)";
 }
 
-// =========================
-// TIMER (dein bestehender Code bleibt, unverändert)
-// =========================
+// TIMER state
 let glideActive = false, glideStart = 0, currentElapsed = 0;
 let scoreEma = 0, scoreStableSince = null;
 let stopScoreSince = null;
@@ -1034,6 +1082,7 @@ let lastTorso = null;
 const glideTimes = [];
 const fmt = (ms)=> (ms/1000).toFixed(3) + " s";
 
+// Robust: "Arm über Kopf / Streamline" (ein Arm reicht)
 function armOverHeadRobust(raw) {
   const ls = raw[11], rs = raw[12];
   const le = raw[13], re = raw[14];
@@ -1116,9 +1165,11 @@ function computeGlideScore(raw) {
 function resetTimerState(alsoSlots=false){
   glideActive = false; glideStart = 0; currentElapsed = 0;
   scoreEma = 0; scoreStableSince = null;
+
   stopScoreSince = null;
   stopMoveSince  = null;
   ignoreStopUntil = 0;
+
   lastTorso = null;
   if(alsoSlots) glideTimes.length = 0;
 }
@@ -1142,6 +1193,7 @@ function updateTimer(raw, now, isRecording){
   if (scoreEma === 0) scoreEma = sNow;
   else scoreEma = alpha*scoreEma + (1-alpha)*sNow;
 
+  // STOP signals
   const lh = raw[23], rh = raw[24], lk = raw[25], rk = raw[26], la = raw[27], ra = raw[28];
   const aL = kneeAngle(lh, lk, la);
   const aR = kneeAngle(rh, rk, ra);
@@ -1151,8 +1203,10 @@ function updateTimer(raw, now, isRecording){
   const armsDropped = armScore < 0.48;
   const movementStop = kneesBend || armsDropped;
 
+  // START
   if(!glideActive){
     currentElapsed = 0;
+
     if(scoreEma >= startThr && glideTimes.length < 4){
       if(scoreStableSince == null) scoreStableSince = now;
 
@@ -1172,6 +1226,7 @@ function updateTimer(raw, now, isRecording){
     return;
   }
 
+  // RUN
   currentElapsed = now - glideStart;
 
   if(currentElapsed >= hardMaxMs){
@@ -1185,6 +1240,7 @@ function updateTimer(raw, now, isRecording){
 
   if(now < ignoreStopUntil) return;
 
+  // STOP 1: movement
   if(movementStop){
     if(stopMoveSince == null) stopMoveSince = now;
 
@@ -1200,6 +1256,7 @@ function updateTimer(raw, now, isRecording){
     stopMoveSince = null;
   }
 
+  // STOP 2: score under threshold
   if(scoreEma <= stopThr){
     if(stopScoreSince == null) stopScoreSince = now;
 
@@ -1216,6 +1273,7 @@ function updateTimer(raw, now, isRecording){
   }
 }
 
+// Hand-axis drawing + measurement (GATED: only when NOT glideActive)
 function drawHandAxis(raw, cssPoints) {
   if (toggleTimer.checked && glideActive) return { handRatio: null, gated: true };
   if (!toggleHandAxis.checked || !raw || !cssPoints) return { handRatio: null, gated: false };
@@ -1250,7 +1308,11 @@ function drawHandAxis(raw, cssPoints) {
   return { handRatio, gated: false };
 }
 
+// =========================
 // Overlay
+// =========================
+const DEBUG_ENABLED = false;
+
 function drawOverlay(debugText=""){
   if(!toggleTimer.checked) {
     if (DEBUG_ENABLED && debugText) drawDebugFooter(debugText);
@@ -1279,9 +1341,12 @@ function drawOverlay(debugText=""){
   ctx.fill(); ctx.stroke();
 
   ctx.fillStyle="white";
+
+  // time
   ctx.font = isPortrait ? "800 24px system-ui" : "800 20px system-ui";
   ctx.fillText(glideActive ? fmt(currentElapsed) : "0.000 s", x+12, y+(isPortrait?34:28));
 
+  // title
   ctx.font = isPortrait ? "700 13px system-ui" : "700 12.5px system-ui";
   ctx.fillText("Timer – Gleitphase", x+12, y+(isPortrait?54:46));
 
@@ -1321,12 +1386,10 @@ function drawDebugFooter(text) {
   ctx.fillStyle = "rgba(0,0,0,0.25)";
   ctx.strokeStyle = "rgba(255,255,255,0.25)";
   ctx.lineWidth = 1;
-
   ctx.beginPath();
   if (ctx.roundRect) ctx.roundRect(x, y, w, h, 8);
   else {
-    ctx.moveTo(x+8,y); ctx.arcTo(x+w,y,x+w,y+h,8); ctx.arcTo(x+w,y+h,x,y+h,8);
-    ctx.arcTo(x,y+h,x,y,8); ctx.arcTo(x,y,x+w,y,8); ctx.closePath();
+    ctx.moveTo(x+8,y); ctx.arcTo(x+w,y,x+w,y+h,8); ctx.arcTo(x+w,y+h,x,y+h,8); ctx.arcTo(x,y+h,x,y,8); ctx.arcTo(x,y,x+w,y,8); ctx.closePath();
   }
   ctx.fill(); ctx.stroke();
   ctx.fillStyle = "rgba(255,255,255,0.95)";
@@ -1350,7 +1413,7 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
 }
 
 // =========================
-// Recording + Tips (dein Code bleibt; minimal angepasst)
+// Recording + Tips (UI + overlay-in-video)
 // =========================
 let recorder=null, recordedChunks=[], lastBlob=null;
 let isRecording = false;
@@ -1403,7 +1466,65 @@ function drawTipsOverlay(nowTs){
   ctx.restore();
 }
 
-// Minimal: Tips UI Helpers (dein original bleibt inhaltlich)
+// =========================
+// Tip-Engine (reliable, performant)
+// =========================
+let prevIsPullPhase = false;
+let lastArmEndTs = null;
+let lastHandsForwardTs = null;
+
+let prevHandTooWide = false;
+const HAND_RED_THR = 2.50;
+
+let headExtStreakStart = null;
+let deepStreak = 0;
+
+// lateKick state (no window globals)
+let lk_prevKneeAL = null, lk_prevKneeAR = null;
+let lk_prevAnkleLX = null, lk_prevAnkleLY = null;
+let lk_prevAnkleRX = null, lk_prevAnkleRY = null;
+let lk_prevTs = null;
+
+const recStats = {
+  frames: 0,
+
+  kneeWide: 0,
+  kneeAsym: 0,
+  legsBent: 0,
+
+  headExtAny: 0,
+  headExtStreakMsMax: 0,
+  headFlex: 0,
+
+  armPullFrames: 0,
+  handWideFrames: 0,
+  handWideEvents: 0,
+  armTooDeepFrames: 0,
+  streamlineGoodFrames: 0,
+
+  lateKickEvents: 0,
+  lateKickDelaySumMs: 0,
+  lateKickDelayN: 0
+};
+
+function resetRecStats() {
+  for (const k of Object.keys(recStats)) recStats[k] = 0;
+
+  prevHandTooWide = false;
+  headExtStreakStart = null;
+
+  prevIsPullPhase = false;
+  lastArmEndTs = null;
+  lastHandsForwardTs = null;
+
+  deepStreak = 0;
+
+  lk_prevKneeAL = null; lk_prevKneeAR = null;
+  lk_prevAnkleLX = null; lk_prevAnkleLY = null;
+  lk_prevAnkleRX = null; lk_prevAnkleRY = null;
+  lk_prevTs = null;
+}
+
 function clearTipsUI() {
   tipsBox.style.display = "none";
   hintList.innerHTML = "";
@@ -1411,10 +1532,145 @@ function clearTipsUI() {
   hintMeta.textContent = "";
 }
 
-// (Dein kompletter Stats/Tip-Code war riesig – der läuft weiter, ist aber nicht trackingkritisch)
-// Damit du 1:1 kompatibel bleibst, lassen wir ihn wie gehabt in deiner Version.
-// -> Für Performance ist entscheidend: heavy->full + seg gating + cam resolution.
+/* Armzug – Phase */
+function isPullPhaseHeuristic(raw){
+  const ls = raw[11], rs = raw[12];
+  const le = raw[13], re = raw[14];
+  const lw = raw[15], rw = raw[16];
+  if(!ls || !rs) return false;
 
+  const shoulderY = (ls.y + rs.y) / 2;
+
+  // Streamline => keine Zugphase
+  if (armOverHeadRobust(raw) > 0.55) return false;
+
+  const eL = elbowAngle(ls, le, lw);
+  const eR = elbowAngle(rs, re, rw);
+
+  const wristDownL = lw ? (lw.y > shoulderY + 0.035) : false;
+  const wristDownR = rw ? (rw.y > shoulderY + 0.035) : false;
+
+  const elbowBentL = (eL != null) ? (eL < 165) : false;
+  const elbowBentR = (eR != null) ? (eR < 165) : false;
+
+  return ( (wristDownL && elbowBentL) || (wristDownR && elbowBentR) );
+}
+
+/* Hände zu tief – sehr konservativ */
+function wristsTooDeep(raw){
+  const ls = raw[11], rs = raw[12];
+  const lh = raw[23], rh = raw[24];
+  const lw = raw[15], rw = raw[16];
+  if (!ls || !rs || !lh || !rh || (!lw && !rw)) return false;
+
+  const sh = { x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2 };
+  const hp = { x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2 };
+
+  let ax = { x: hp.x - sh.x, y: hp.y - sh.y };
+  const L = Math.hypot(ax.x, ax.y);
+  if (L < 1e-6) return false;
+  ax = { x: ax.x / L, y: ax.y / L };
+
+  const proj = (p) => ( (p.x - sh.x)*ax.x + (p.y - sh.y)*ax.y );
+  const hipT = proj(hp);
+  const margin = 0.10 * L;
+
+  const leftDeep  = lw ? (proj(lw) >= hipT - margin) : false;
+  const rightDeep = rw ? (proj(rw) >= hipT - margin) : false;
+
+  return leftDeep || rightDeep;
+}
+
+/* Stromlinie – konservativ */
+function isStreamlineGood(raw){
+  const arms = armOverHeadRobust(raw);
+  const legs = legsStraightScore(raw);
+  return (arms >= 0.72) && (legs >= 0.72);
+}
+
+function getTopIssuesUnified(maxN = 3) {
+  if (!toggleHintBox.checked) return { meta:"", intro:"", issues:[] };
+
+  if (recStats.frames < 25) {
+    return {
+      meta: `${recStats.frames} Frames`,
+      intro: "Aufnahme war sehr kurz – bitte länger filmen.",
+      issues: [{
+        score: 1,
+        title: "Aufnahme zu kurz",
+        tip: "Bitte länger filmen (mehrere Zyklen) + stabile Perspektive."
+      }].slice(0, maxN)
+    };
+  }
+
+  const p = (n)=> n / Math.max(1, recStats.frames);
+  const thr = 0.22;
+  const issues = [];
+
+  if (p(recStats.kneeWide) >= thr)
+    issues.push({score:p(recStats.kneeWide), title:"Knie ziehen zu breit an (Rückholphase)", tip:"Knie schmal (≈ schulterbreit) anziehen. Rückholen kompakt – Kick dann kräftig nach hinten."});
+
+  if (filmingPreset.value==="back45" && p(recStats.kneeAsym) >= thr)
+    issues.push({score:p(recStats.kneeAsym), title:"Beinschere (Asymmetrie)", tip:"Beinbewegung links/rechts wirkte über mehrere Frames asymmetrisch."});
+
+  if (p(recStats.legsBent) >= thr)
+    issues.push({score:p(recStats.legsBent), title:"Beine nicht gestreckt in der Gleitphase", tip:"Nach dem Beinschlag vollständig strecken und kurz stabil gleiten."});
+
+  const armPullDen = Math.max(1, recStats.armPullFrames);
+  const handWideShare = recStats.handWideFrames / armPullDen;
+  if (recStats.handWideEvents >= 2 || handWideShare >= 0.18)
+    issues.push({score:Math.max(0.38, handWideShare), title:"Armzug sehr breit", tip:"Hände weniger weit nach außen öffnen."});
+
+  const deepShare = recStats.armTooDeepFrames / armPullDen;
+  if (deepShare >= 0.22 && recStats.armPullFrames >= 14)
+    issues.push({score:deepShare, title:"Hände ziehen zu tief", tip:"Hände beim Armzug nur bis ca. auf Brusthöhe ziehen, dann wieder in die Streckung."});
+
+  const streamShare = recStats.streamlineGoodFrames / Math.max(1, recStats.frames);
+  if (streamShare <= 0.12 && recStats.frames >= 40)
+    issues.push({score:Math.min(1,(0.16-streamShare)/0.16), title:"Streck-/Stromlinienphase fehlt", tip:"Nach dem Arbeiten klare Stromlinienhaltung herstellen (schlank machen)."});
+
+  if (recStats.lateKickEvents >= 2)
+    issues.push({score:0.5, title:"Beinschlag übernimmt zu spät", tip:"Kick startet, wenn die Hände wieder nach vorn gehen."});
+
+  issues.sort((a,b)=>b.score-a.score);
+  return {
+    meta: `${recStats.frames} Frames`,
+    intro: "In dieser Aufnahme waren folgende Punkte auffällig:",
+    issues: issues.slice(0, maxN)
+  };
+}
+
+function showTechTipsFromStats() {
+  clearTipsUI();
+
+  const pack = getTopIssuesUnified(3);
+  if (!pack.issues || pack.issues.length === 0) return;
+
+  hintMeta.textContent = pack.meta;
+  hintText.textContent = pack.intro;
+
+  for (const it of pack.issues) {
+    const li = document.createElement("li");
+    li.innerHTML = `<b>${it.title}</b> – ${it.tip}`;
+    hintList.appendChild(li);
+  }
+  tipsBox.style.display = "block";
+}
+
+function buildOverlayTipsFromStats() {
+  const pack = getTopIssuesUnified(3);
+  if (!pack.issues || pack.issues.length === 0) {
+    return [
+      "• Keine klaren Auffälligkeiten erkannt.",
+      "• Tipp: länger filmen + stabile Perspektive."
+    ];
+  }
+  return pack.issues.map(it => `• ${it.title} – ${it.tip}`);
+}
+
+// =========================
+// MIME helper
+// =========================
 function pickMimeType(){
   const candidates=[
     'video/mp4;codecs="avc1.42E01E"',
@@ -1430,6 +1686,7 @@ function pickMimeType(){
 
 function startRecordingCanvas(){
   recordedChunks=[]; lastBlob=null; btnShare.disabled=true;
+  resetRecStats();
   isRecording = true;
 
   resetTimerState(true);
@@ -1448,7 +1705,7 @@ function startRecordingCanvas(){
     lastBlob = new Blob(recordedChunks,{type});
     btnShare.disabled = !lastBlob;
     setStatus("Aufnahme fertig (" + (lastBlob.type.includes("mp4") ? "MP4" : "WebM") + ").");
-    // deine Tipps kannst du hier weiterhin zeigen
+    showTechTipsFromStats(); // ✅ zuverlässig wieder da
   };
   recorder.start(200);
 }
@@ -1509,6 +1766,10 @@ async function shareOrDownload(){
 let landmarker = null;
 let running = false;
 let rafId = null;
+let usingRVFC = false;
+
+const POSE_TASK_URL =
+  "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task";
 
 async function createLandmarker(){
   setStatus("Lade Tasks-WASM …");
@@ -1516,12 +1777,9 @@ async function createLandmarker(){
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
   );
 
-  setStatus("Lade Pose Landmarker (full) …");
+  setStatus("Lade Pose Landmarker heavy …");
   landmarker = await PoseLandmarker.createFromOptions(fileset, {
-    baseOptions: {
-      modelAssetPath: POSE_TASK_URL
-      // delegate: "GPU"  // optional: manche Browser profitieren; wenn Probleme auftreten -> auskommentieren
-    },
+    baseOptions: { modelAssetPath: POSE_TASK_URL },
     runningMode: "VIDEO",
     numPoses: 1,
     outputSegmentationMasks: true,
@@ -1544,7 +1802,9 @@ detConf.addEventListener("change", updateLandmarkerThresholds);
 presConf.addEventListener("change", updateLandmarkerThresholds);
 trackConf.addEventListener("change", updateLandmarkerThresholds);
 
+// =========================
 // Camera
+// =========================
 let isBackCamera = true;
 let stream = null;
 
@@ -1554,8 +1814,8 @@ async function startCamera(){
     audio:false,
     video:{
       facingMode: isBackCamera ? "environment" : "user",
-      width:{ideal: DEFAULT_CAM_W},
-      height:{ideal: DEFAULT_CAM_H}
+      width:{ideal:1280},
+      height:{ideal:720}
     }
   });
   video.srcObject = stream;
@@ -1579,17 +1839,9 @@ function stopCamera(){
 }
 
 // =========================
-// Loop (Tracking Performance)
+// Loop (Performance: requestVideoFrameCallback if available)
 // =========================
-let frameIndex = 0;
-let emptyMaskFrames = 0;
-
-// FPS / timing (optional)
-let lastFpsT = performance.now();
-let fps = 0, fpsN = 0;
-let lastInferMs = 0;
-
-function loop(){
+function tick(nowTs){
   if(!running || !landmarker) return;
 
   try{
@@ -1597,45 +1849,26 @@ function loop(){
     ctx.fillRect(0, 0, CSS_W, CSS_H);
 
     if(video.videoWidth===0 || video.videoHeight===0){
-      drawOverlay(DEBUG_ENABLED ? "DEBUG: video not ready" : "");
-      rafId = requestAnimationFrame(loop);
+      drawOverlay("DEBUG: video not ready");
+      scheduleNext();
       return;
     }
 
     const ts = performance.now();
-
-    // FPS calc
-    fpsN++;
-    if (ts - lastFpsT >= 500) {
-      fps = Math.round((fpsN * 1000) / (ts - lastFpsT));
-      fpsN = 0;
-      lastFpsT = ts;
-    }
-
-    const t0 = performance.now();
     const result = landmarker.detectForVideo(video, ts);
-    lastInferMs = Math.round(performance.now() - t0);
 
-    drawTipsOverlay(ts);
-
+    // Mask first (anonym layer)
     const hasMask = !!(result?.segmentationMasks?.length);
-    const hasLandmarks = !!(result?.landmarks?.length && result.landmarks[0]?.length);
-
-    // Segmentation (gated & cached)
-    let maskInfo = { max: 0, ok: false };
-    if (hasMask) {
-      maskInfo = drawSilhouette(result.segmentationMasks[0], frameIndex);
-      if ((maskInfo.max ?? 0) <= 0.001) emptyMaskFrames++;
-      else emptyMaskFrames = 0;
-
-      if (emptyMaskFrames > 60) {
-        toggleSilhouette.checked = false;
-        setStatus("Hinweis: Segmentierung liefert leere Werte → deaktiviert.");
-      }
-    } else {
-      // wenn keine Masken kommen, cached mask nicht zeichnen
-      cachedMaskDrawOk = false;
+    let maskInfo = { max: 0 };
+    if (hasMask && toggleSilhouette.checked) {
+      maskInfo = drawSilhouette(result.segmentationMasks[0], ts);
+    } else if (toggleSilhouette.checked && cachedMaskReady) {
+      // draw cached if user toggled mask on but frame has no new mask
+      drawSilhouette(null, ts);
+      maskInfo.max = lastMaskMax || 0;
     }
+
+    const hasLandmarks = !!(result?.landmarks?.length && result.landmarks[0]?.length);
 
     if (hasLandmarks) {
       const raw = result.landmarks[0];
@@ -1644,22 +1877,157 @@ function loop(){
 
       drawSkeletonCssPoints(cssPoints);
 
-      // HWS + Beine + Hand-Achse + Timer
-      drawNeckAxis(raw, cssPoints, ts);
-      drawLegChecks(raw, cssPoints);
+      const neck = drawNeckAxis(raw, cssPoints, ts);
+      const legs = drawLegChecks(raw, cssPoints);
 
       updateTimer(raw, ts, isRecording && !isFinalizingStop);
-      drawHandAxis(raw, cssPoints);
+      const hands = drawHandAxis(raw, cssPoints);
+
+      // === REC STATS (nur wenn recording) ===
+      if (isRecording && !isFinalizingStop) {
+        recStats.frames++;
+
+        // Knee width
+        if (legs.valid && legs.kneeRatio != null) {
+          if (legs.kneeRatio > 1.55) recStats.kneeWide++;
+        }
+
+        // Asymmetry (nur in back45 sinnvoll)
+        if (filmingPreset.value === "back45" && legs.valid) {
+          if (legs.kneeDiff != null && legs.kneeDiff > 25) recStats.kneeAsym++;
+        }
+
+        // Legs bent during glide
+        if (toggleTimer.checked && glideActive && legs.valid) {
+          const [aL, aR] = legs.kneeAngles || [null,null];
+          const bent = ((aL != null && aL < 155) || (aR != null && aR < 155));
+          if (bent) recStats.legsBent++;
+        }
+
+        // Streamline share
+        if (isStreamlineGood(raw)) recStats.streamlineGoodFrames++;
+
+        // Neck flex/ext during glide
+        if (toggleTimer.checked && glideActive && neck?.profile && neck?.state) {
+          if (neck.state === "redFlex") recStats.headFlex++;
+          if (neck.state === "redExt") {
+            recStats.headExtAny++;
+            if (headExtStreakStart == null) headExtStreakStart = ts;
+            const streak = ts - headExtStreakStart;
+            if (streak > recStats.headExtStreakMsMax) recStats.headExtStreakMsMax = streak;
+          } else {
+            headExtStreakStart = null;
+          }
+        } else {
+          headExtStreakStart = null;
+        }
+
+        // Arm pull phase stats (NOT in glide)
+        const pullPhaseNow = (!glideActive) && isPullPhaseHeuristic(raw);
+        if (pullPhaseNow) {
+          recStats.armPullFrames++;
+
+          // Deep wrists (3-frame streak)
+          if (wristsTooDeep(raw)) deepStreak++;
+          else deepStreak = 0;
+          if (deepStreak >= 3) recStats.armTooDeepFrames++;
+
+          // Hands too wide
+          if (hands.handRatio != null) {
+            const tooWideNow = hands.handRatio > HAND_RED_THR;
+            if (tooWideNow && !prevHandTooWide) recStats.handWideEvents++;
+            prevHandTooWide = tooWideNow;
+            if (tooWideNow) recStats.handWideFrames++;
+          } else {
+            prevHandTooWide = false;
+          }
+        } else {
+          prevHandTooWide = false;
+          deepStreak = 0;
+        }
+
+        // Late kick detection (robust but efficient)
+        // 1) end of pull
+        if (prevIsPullPhase && !pullPhaseNow) {
+          lastArmEndTs = ts;
+          lastHandsForwardTs = null;
+        }
+        prevIsPullPhase = pullPhaseNow;
+
+        // 2) hands clearly forward again
+        if (lastArmEndTs != null && lastHandsForwardTs == null) {
+          const oh = armOverHeadRobust(raw);
+          const legS = legsStraightScore(raw);
+          const withinWindow = (ts - lastArmEndTs) <= 1100;
+          if (withinWindow && oh >= 0.68 && legS >= 0.58) {
+            lastHandsForwardTs = ts;
+          }
+        }
+
+        // 3) kick start (knee drop or ankle speed)
+        const lh = raw[23], rh = raw[24];
+        const lk = raw[25], rk = raw[26];
+        const la = raw[27], ra = raw[28];
+
+        const aL = (lh && lk && la) ? kneeAngle(lh, lk, la) : null;
+        const aR = (rh && rk && ra) ? kneeAngle(rh, rk, ra) : null;
+
+        const DROP_DEG = 10;
+        const KICK_ANG = 154;
+        const kneeDropL = (aL != null && lk_prevKneeAL != null && (lk_prevKneeAL - aL) >= DROP_DEG && aL < KICK_ANG);
+        const kneeDropR = (aR != null && lk_prevKneeAR != null && (lk_prevKneeAR - aR) >= DROP_DEG && aR < KICK_ANG);
+
+        const dt = (lk_prevTs != null) ? Math.max(1, ts - lk_prevTs) : null;
+        let ankleSpeedHit = false;
+        if (dt != null) {
+          if (la && lk_prevAnkleLX != null && lk_prevAnkleLY != null) {
+            const vx = (la.x - lk_prevAnkleLX) / dt;
+            const vy = (la.y - lk_prevAnkleLY) / dt;
+            if (Math.hypot(vx, vy) > 0.00011) ankleSpeedHit = true;
+          }
+          if (ra && lk_prevAnkleRX != null && lk_prevAnkleRY != null) {
+            const vx = (ra.x - lk_prevAnkleRX) / dt;
+            const vy = (ra.y - lk_prevAnkleRY) / dt;
+            if (Math.hypot(vx, vy) > 0.00011) ankleSpeedHit = true;
+          }
+        }
+
+        const kickStartNow = (kneeDropL || kneeDropR || ankleSpeedHit);
+
+        lk_prevKneeAL = aL; lk_prevKneeAR = aR;
+        lk_prevTs = ts;
+        if (la) { lk_prevAnkleLX = la.x; lk_prevAnkleLY = la.y; }
+        if (ra) { lk_prevAnkleRX = ra.x; lk_prevAnkleRY = ra.y; }
+
+        // 4) evaluate delay
+        if (lastHandsForwardTs != null) {
+          if ((ts - lastHandsForwardTs) > 1850) {
+            lastHandsForwardTs = null;
+            lastArmEndTs = null;
+          } else if (kickStartNow) {
+            const delay = ts - lastHandsForwardTs;
+            if (delay > 800 && delay < 1550) {
+              recStats.lateKickEvents++;
+              recStats.lateKickDelaySumMs += delay;
+              recStats.lateKickDelayN++;
+            }
+            lastHandsForwardTs = null;
+            lastArmEndTs = null;
+          }
+        }
+      }
+
+      // Overlay last (above everything)
+      drawOverlay(
+        `DEBUG: mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} score=${scoreEma.toFixed(2)} rec=${isRecording?1:0} preset=${filmingPreset.value}`
+      );
+
+    } else {
+      drawOverlay(`DEBUG: lm=0 mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} rec=${isRecording?1:0}`);
     }
 
-    const dbg = DEBUG_ENABLED
-      ? `fps=${fps} infer=${lastInferMs}ms segN=${SEG_EVERY_N_FRAMES} mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)}`
-      : "";
-
-    drawOverlay(dbg);
-
-    frameIndex++;
-    rafId = requestAnimationFrame(loop);
+    // tips overlay (recorded)
+    drawTipsOverlay(ts);
 
   } catch(e){
     console.error(e);
@@ -1669,6 +2037,17 @@ function loop(){
     ctx.fillStyle = "rgba(0,0,0,0.85)";
     ctx.font = "16px system-ui";
     ctx.fillText("Loop-Fehler: " + (e?.message || String(e)), 20, 40);
+  }
+
+  scheduleNext();
+}
+
+function scheduleNext(){
+  if(!running) return;
+  if (usingRVFC && typeof video.requestVideoFrameCallback === "function") {
+    video.requestVideoFrameCallback((_, meta) => tick(meta?.mediaTime ? performance.now() : performance.now()));
+  } else {
+    rafId = requestAnimationFrame(tick);
   }
 }
 
@@ -1691,12 +2070,16 @@ btnInit.addEventListener("click", async ()=>{
 
     clearTipsUI();
     emptyMaskFrames = 0;
-    cachedMaskDrawOk = false;
+    cachedMaskReady = false;
+    lastMaskDrawTs = 0;
+    lastMaskMax = 0;
+
     resetNeckState();
     resetTimerState(true);
 
+    usingRVFC = (typeof video.requestVideoFrameCallback === "function");
     setStatus("bereit.");
-    rafId = requestAnimationFrame(loop);
+    scheduleNext();
 
   } catch(e){
     console.error(e);
@@ -1716,14 +2099,16 @@ btnSwitch.addEventListener("click", async ()=>{
 
     smoothedCss = null;
     emptyMaskFrames = 0;
-    cachedMaskDrawOk = false;
+    cachedMaskReady = false;
+    lastMaskDrawTs = 0;
+    lastMaskMax = 0;
 
     clearTipsUI();
     resetNeckState();
     resetTimerState(true);
 
     running=true;
-    rafId = requestAnimationFrame(loop);
+    scheduleNext();
 
     btnSwitch.disabled=false;
     setStatus("Kamera gewechselt.");
@@ -1732,7 +2117,7 @@ btnSwitch.addEventListener("click", async ()=>{
     console.error(e);
     setStatus("Kamerawechsel-Fehler: " + (e?.message || String(e)));
     running=true;
-    rafId = requestAnimationFrame(loop);
+    scheduleNext();
     btnSwitch.disabled=false;
   }
 });
@@ -1748,11 +2133,9 @@ btnStop.addEventListener("click", ()=>{
 
   isFinalizingStop = true;
 
+  // ✅ echte Tipps als Overlay (3s) – danach stop
   tipsOverlayTitle = "Techniktipps (Brust)";
-  tipsOverlayLines = [
-    "• Analyse läuft …",
-    "• (Overlay 3 Sekunden im Video)"
-  ];
+  tipsOverlayLines = buildOverlayTipsFromStats();
   showTipsOverlayUntil = performance.now() + 3000;
 
   setTimeout(() => {
@@ -1772,9 +2155,12 @@ btnReset.addEventListener("click", ()=>{
   setStatus("Slots zurückgesetzt.");
   clearTipsUI();
   resetNeckState();
+  resetRecStats();
 });
 
-// Feedback
+// =========================
+// Feedback submit (async, no reload)
+// =========================
 function buildFeedbackMeta() {
   const parts = [];
   parts.push(`preset=${filmingPreset.value}`);
@@ -1786,8 +2172,6 @@ function buildFeedbackMeta() {
   parts.push(`track=${Number(trackConf.value).toFixed(2)}`);
   parts.push(`ua=${navigator.userAgent}`);
   parts.push(`ui=${isPortraitUI()?"portrait":"landscape"}`);
-  parts.push(`cam=${video.videoWidth}x${video.videoHeight}`);
-  parts.push(`segN=${SEG_EVERY_N_FRAMES}`);
   return parts.join(" | ");
 }
 
@@ -1815,7 +2199,6 @@ feedbackForm?.addEventListener("submit", async (ev) => {
       fbStatus.className = "fbStatus err";
       fbStatus.textContent = "Senden fehlgeschlagen. Bitte später erneut versuchen.";
     }
-
   } catch (e) {
     fbStatus.className = "fbStatus err";
     fbStatus.textContent = "Netzwerkfehler. Bitte später erneut versuchen.";
