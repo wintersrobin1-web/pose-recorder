@@ -1436,16 +1436,21 @@ function drawTipsOverlay(nowTs){
   const pad = 12;
   const boxW = Math.min(CSS_W - 24, isPortrait ? 520 : 860);
   const x = 12;
-  const y = CSS_H - (isPortrait ? 220 : 170);
   const lineH = isPortrait ? 18 : 16;
+
+  // mehr als 1 Tipp sichtbar machen
+  const maxLines = isPortrait ? 5 : 4; // Titel + 4/3 Tipps
+  const lines = [tipsOverlayTitle, ...tipsOverlayLines.slice(0, maxLines - 1)];
+
+  const boxH = pad*2 + 10 + lines.length*lineH;
+
+  // y so setzen, dass Box komplett im Canvas bleibt
+  const y = Math.max(12, CSS_H - boxH - 12);
 
   ctx.save();
   ctx.fillStyle = "rgba(0,0,0,0.55)";
   ctx.strokeStyle = "rgba(255,255,255,0.35)";
   ctx.lineWidth = 2;
-
-  const lines = [tipsOverlayTitle, ...tipsOverlayLines.slice(0,3)];
-  const boxH = pad*2 + 10 + lines.length*lineH;
 
   ctx.beginPath();
   if (ctx.roundRect) ctx.roundRect(x, y, boxW, boxH, 14);
@@ -1469,6 +1474,7 @@ function drawTipsOverlay(nowTs){
 
   ctx.restore();
 }
+
 
 // ✅ fehlende Variablen, die du in resetRecStats() nutzt:
 let prevIsPullPhase = false;
@@ -1914,15 +1920,16 @@ function wristsTooDeep(raw){
 
   const hipY = (lh.y + rh.y) / 2;
 
-  // Trigger erst, wenn Handgelenk wirklich "an der Hüfte" ist:
-  // y wächst nach unten → nahe Hüfte = y >= (hipY - kleiner Puffer)
-  const nearHipMargin = 0.008; // ~0.8% Bildhöhe: konservativ, reduziert False Positives
+  // STRIKT: erst zählen, wenn Handgelenk wirklich auf/unter Hüfthöhe ist.
+  // y wächst nach unten → "unter Hüfte" = hipY + Margin
+  const belowHipMargin = 0.015; // 1.5% Bildhöhe -> viel weniger sensibel
 
-  const leftNearHip  = lw ? (lw.y >= hipY - nearHipMargin) : false;
-  const rightNearHip = rw ? (rw.y >= hipY - nearHipMargin) : false;
+  const leftDeep  = lw ? (lw.y >= hipY + belowHipMargin) : false;
+  const rightDeep = rw ? (rw.y >= hipY + belowHipMargin) : false;
 
-  return leftNearHip || rightNearHip;
+  return leftDeep || rightDeep;
 }
+
 
 // Streamline "gut" (für recStats.streamlineGoodFrames)
 // bewusst konservativ: zählt nur, wenn Arme klar vorn/über Kopf UND Beine eher gestreckt sind
