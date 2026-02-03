@@ -1425,6 +1425,7 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
 // Recording + tips
 let recorder=null, recordedChunks=[], lastBlob=null;
 let isRecording = false;
+let isFinalizingStop = false; // ✅ hinzufügen
 
 // ✅ wird im loop() und beim Stop gebraucht (sonst ReferenceError)
 let isFinalizingStop = false;
