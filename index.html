@@ -7,13 +7,12 @@
 
 <style>
 :root{
---bg: #bfe7ff;
---ink: #0f172a;
---muted: #475569;
---card: #ffffff;
---border: #e5e7eb;
+  --bg: #bfe7ff;
+  --ink: #0f172a;
+  --muted: #475569;
+  --card: #ffffff;
+  --border: #e5e7eb;
 
-```
   /* Header/Intro Box (nicht blau) */
   --introBg: #f8fafc;
   --introBorder: #e2e8f0;
@@ -72,7 +71,7 @@ body{
   color: #1f2a33;
   font-size: 13.75px;
   line-height: 1.45;
-  text-align: left; /* linksbündig */
+  text-align: left;
   text-justify: auto;
 }
 
@@ -219,287 +218,283 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
 .fbStatus.err{ color: #a10000; }
 
 #status{ margin-top: 12px; max-width: 1100px; }
-
-```
-
 </style>
 </head>
 
 <body>
 <div class="header">
-<div class="brand">
-<div class="logo">MOTAXIS</div>
-<div class="sub">Anonyme Bewegungsanalyse</div>
-</div>
-<div class="introBox">
-<p>
-Beta-Version zur anonymen Aufnahme und Analyse von Skelettachsen und Bewegungen (Pose-Landmarks).
-Bislang optimiert für Brustschwimmen. Auswertungen sind experimentell und können je nach Aufnahmebedingungen variieren.
-</p>
-</div>
+  <div class="brand">
+    <div class="logo">MOTAXIS</div>
+    <div class="sub">Anonyme Bewegungsanalyse</div>
+  </div>
+  <div class="introBox">
+    <p>
+      Beta-Version zur anonymen Aufnahme und Analyse von Skelettachsen und Bewegungen (Pose-Landmarks).
+      Bislang optimiert für Brustschwimmen. Auswertungen sind experimentell und können je nach Aufnahmebedingungen variieren.
+    </p>
+  </div>
 </div>
 
 <video id="video" class="videoHidden" playsinline autoplay muted></video>
 
 <div class="stack">
-<div class="block">
-<div class="blockTitle">Kamera</div>
-<div class="btnRow">
-<button id="btnInit" class="primary wide">Kamera aktivieren</button>
-<button id="btnSwitch" disabled class="wide">Kamera wechseln (Rück)</button>
-</div>
-</div>
 
-```
-<!-- Anzeige by default ausgeklappt -->
-<details id="displayBox" open>
-  <summary>Anzeige (allgemein)</summary>
-
-  <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
-    <label><input type="checkbox" id="toggleSkeleton" checked /> Skelett</label>
-    <label><input type="checkbox" id="toggleSilhouette" checked /> Segmentierung</label>
-
-    <select id="filmingPreset" title="Aufnahmeposition">
-      <option value="stand" selected>Stand</option>
-      <option value="side45">45° seitlich</option>
-      <option value="back45">45° hinten</option>
-    </select>
+  <div class="block">
+    <div class="blockTitle">Kamera</div>
+    <div class="btnRow">
+      <button id="btnInit" class="primary wide">Kamera aktivieren</button>
+      <button id="btnSwitch" disabled class="wide">Kamera wechseln (Rück)</button>
+    </div>
   </div>
 
-  <!-- Erweiterte Einstellungen NICHT open -->
-  <details id="advancedBox" style="margin-top:10px;">
-    <summary>Erweiterte Einstellungen</summary>
+  <!-- Anzeige by default ausgeklappt -->
+  <details id="displayBox" open>
+    <summary>Anzeige (allgemein)</summary>
 
-    <div class="rangeWrap">
-      <span>Input-Video anzeigen</span>
-      <label style="border:none; padding:0; border-radius:0;">
-        <input type="checkbox" id="showInputVideo" />
-        <span class="small">anzeigen</span>
-      </label>
-      <span class="hint" style="max-width:none;">(Optional – Output bleibt anonym.)</span>
+    <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
+      <label><input type="checkbox" id="toggleSkeleton" checked /> Skelett</label>
+      <label><input type="checkbox" id="toggleSilhouette" checked /> Segmentierung</label>
+
+      <select id="filmingPreset" title="Aufnahmeposition">
+        <option value="stand" selected>Stand</option>
+        <option value="side45">45° seitlich</option>
+        <option value="back45">45° hinten</option>
+      </select>
     </div>
 
-    <div class="rangeWrap">
-      <span>Segmentierung – Deckkraft</span>
-      <input id="silOpacity" type="range" min="0" max="1" step="0.05" value="0.40">
-      <span id="silOpacityVal" class="small">0.40</span>
-    </div>
+    <!-- Erweiterte Einstellungen NICHT open -->
+    <details id="advancedBox" style="margin-top:10px;">
+      <summary>Erweiterte Einstellungen</summary>
 
-    <div class="rangeWrap">
-      <span>Segmentierung – Schwelle</span>
-      <input id="silThresh" type="range" min="0" max="100" step="1" value="70">
-      <span id="silThreshVal" class="small">70</span>
-    </div>
+      <div class="rangeWrap">
+        <span>Input-Video anzeigen</span>
+        <label style="border:none; padding:0; border-radius:0;">
+          <input type="checkbox" id="showInputVideo" />
+          <span class="small">anzeigen</span>
+        </label>
+        <span class="hint" style="max-width:none;">(Optional – Output bleibt anonym.)</span>
+      </div>
 
-    <div class="rangeWrap">
-      <span>Skelett – Linienstärke</span>
-      <input id="skelLine" type="range" min="1" max="10" step="1" value="3">
-      <span id="skelLineVal" class="small">3</span>
-    </div>
+      <div class="rangeWrap">
+        <span>Segmentierung – Deckkraft</span>
+        <input id="silOpacity" type="range" min="0" max="1" step="0.05" value="0.40">
+        <span id="silOpacityVal" class="small">0.40</span>
+      </div>
 
-    <div class="rangeWrap">
-      <span>Skelett – Punkt-Radius</span>
-      <input id="skelDot" type="range" min="1" max="10" step="1" value="4">
-      <span id="skelDotVal" class="small">4</span>
-    </div>
+      <div class="rangeWrap">
+        <span>Segmentierung – Schwelle</span>
+        <input id="silThresh" type="range" min="0" max="100" step="1" value="70">
+        <span id="silThreshVal" class="small">70</span>
+      </div>
 
-    <div class="rangeWrap">
-      <span>Detection (min)</span>
-      <input id="detConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
-      <span id="detVal" class="small">0.50</span>
-    </div>
+      <div class="rangeWrap">
+        <span>Skelett – Linienstärke</span>
+        <input id="skelLine" type="range" min="1" max="10" step="1" value="3">
+        <span id="skelLineVal" class="small">3</span>
+      </div>
 
-    <div class="rangeWrap">
-      <span>Presence (min)</span>
-      <input id="presConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
-      <span id="presVal" class="small">0.50</span>
-    </div>
+      <div class="rangeWrap">
+        <span>Skelett – Punkt-Radius</span>
+        <input id="skelDot" type="range" min="1" max="10" step="1" value="4">
+        <span id="skelDotVal" class="small">4</span>
+      </div>
 
-    <div class="rangeWrap">
-      <span>Tracking (min)</span>
-      <input id="trackConf" type="range" min="0.3" max="0.95" step="0.01" value="0.55">
-      <span id="trackVal" class="small">0.55</span>
-    </div>
+      <div class="rangeWrap">
+        <span>Detection (min)</span>
+        <input id="detConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
+        <span id="detVal" class="small">0.50</span>
+      </div>
 
-    <div class="rangeWrap">
-      <span>Glättung (EMA)</span>
-      <input id="smooth" type="range" min="0" max="0.9" step="0.05" value="0.55">
-      <span id="smoothVal" class="small">0.55</span>
-    </div>
+      <div class="rangeWrap">
+        <span>Presence (min)</span>
+        <input id="presConf" type="range" min="0.3" max="0.95" step="0.01" value="0.50">
+        <span id="presVal" class="small">0.50</span>
+      </div>
 
-    <div class="rangeWrap">
-      <span>HWS – Grün-Toleranz (°)</span>
-      <input id="neckTol" type="range" min="6" max="35" step="1" value="14">
-      <span id="neckTolVal" class="small">14</span>
-    </div>
+      <div class="rangeWrap">
+        <span>Tracking (min)</span>
+        <input id="trackConf" type="range" min="0.3" max="0.95" step="0.01" value="0.55">
+        <span id="trackVal" class="small">0.55</span>
+      </div>
 
-    <div class="rangeWrap">
-      <span>HWS – Neutral-Offset (°)</span>
-      <input id="neckNeutral" type="range" min="-10" max="25" step="1" value="12">
-      <span id="neckNeutralVal" class="small">12</span>
-    </div>
+      <div class="rangeWrap">
+        <span>Glättung (EMA)</span>
+        <input id="smooth" type="range" min="0" max="0.9" step="0.05" value="0.55">
+        <span id="smoothVal" class="small">0.55</span>
+      </div>
 
-    <div class="rangeWrap">
-      <span>HWS – Rot-Schwelle extra (°)</span>
-      <input id="neckRedExtra" type="range" min="0" max="20" step="1" value="6">
-      <span id="neckRedExtraVal" class="small">6</span>
-    </div>
+      <div class="rangeWrap">
+        <span>HWS – Grün-Toleranz (°)</span>
+        <input id="neckTol" type="range" min="6" max="35" step="1" value="14">
+        <span id="neckTolVal" class="small">14</span>
+      </div>
 
-    <div class="rangeWrap">
-      <span>HWS – Glättung (EMA)</span>
-      <input id="neckEma" type="range" min="0.60" max="0.90" step="0.01" value="0.82">
-      <span id="neckEmaVal" class="small">0.82</span>
-    </div>
+      <div class="rangeWrap">
+        <span>HWS – Neutral-Offset (°)</span>
+        <input id="neckNeutral" type="range" min="-10" max="25" step="1" value="12">
+        <span id="neckNeutralVal" class="small">12</span>
+      </div>
 
-    <div class="rangeWrap">
-      <span>HWS – Hold (ms)</span>
-      <input id="neckHold" type="range" min="80" max="350" step="10" value="180">
-      <span id="neckHoldVal" class="small">180</span>
-    </div>
+      <div class="rangeWrap">
+        <span>HWS – Rot-Schwelle extra (°)</span>
+        <input id="neckRedExtra" type="range" min="0" max="20" step="1" value="6">
+        <span id="neckRedExtraVal" class="small">6</span>
+      </div>
 
+      <div class="rangeWrap">
+        <span>HWS – Glättung (EMA)</span>
+        <input id="neckEma" type="range" min="0.60" max="0.90" step="0.01" value="0.82">
+        <span id="neckEmaVal" class="small">0.82</span>
+      </div>
+
+      <div class="rangeWrap">
+        <span>HWS – Hold (ms)</span>
+        <input id="neckHold" type="range" min="80" max="350" step="10" value="180">
+        <span id="neckHoldVal" class="small">180</span>
+      </div>
+
+    </details>
   </details>
-</details>
 
-<details id="breastTools">
-  <summary>Brustschwimmen-Tools (spezifisch)</summary>
+  <details id="breastTools">
+    <summary>Brustschwimmen-Tools (spezifisch)</summary>
 
-  <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
-    <label><input type="checkbox" id="toggleNeck" checked /> HWS-Achse</label>
-    <label><input type="checkbox" id="toggleLegCheck" checked /> Knie/Beine-Check</label>
-    <label><input type="checkbox" id="toggleHandAxis" checked /> Hand-Achse (Armzug)</label>
-    <label><input type="checkbox" id="toggleTimer" checked /> Timer – Gleitphase</label>
-    <label><input type="checkbox" id="toggleHintBox" checked /> Techniktipps nach Stop</label>
+    <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
+      <label><input type="checkbox" id="toggleNeck" checked /> HWS-Achse</label>
+      <label><input type="checkbox" id="toggleLegCheck" checked /> Knie/Beine-Check</label>
+      <label><input type="checkbox" id="toggleHandAxis" checked /> Hand-Achse (Armzug)</label>
+      <label><input type="checkbox" id="toggleTimer" checked /> Timer – Gleitphase</label>
+      <label><input type="checkbox" id="toggleHintBox" checked /> Techniktipps nach Stop</label>
+    </div>
+
+    <details style="margin-top:10px;">
+      <summary>Technik-Checkliste (Brust)</summary>
+
+      <p class="hint">
+        Hinweise sind experimentell. Am besten beurteilbar in <b>45° seitlich</b> oder <b>45° hinten</b>.
+      </p>
+
+      <details>
+        <summary>Armzug zu breit</summary>
+        <p class="hint">
+          <b>Indikator:</b> Hände öffnen sich in der Zugphase deutlich über Schulterbreite.<br>
+          <b>Merksatz:</b> Arme drücken vor allem nach hinten – weniger nach außen.
+        </p>
+      </details>
+
+      <details>
+        <summary>Hände ziehen zu tief</summary>
+        <p class="hint">
+          <b>Indikator:</b> Hände wandern in der Zugphase deutlich unter Schulter-/Brusthöhe in Richtung Hüfte/Füße.<br>
+          <b>Merksatz:</b> Druck nach hinten – nicht nach unten.
+        </p>
+      </details>
+
+      <details>
+        <summary>Streck-/Stromlinienphase fehlt</summary>
+        <p class="hint">
+          <b>Indikator:</b> Nach dem Armzug folgt selten eine klare, gestreckte Körperhaltung (Arme geschlossen/über Kopf, Beine gestreckt).<br>
+          <b>Merksatz:</b> Wenn nichts arbeitet, muss alles schlank sein.
+        </p>
+      </details>
+
+      <details>
+        <summary>Beinschlag übernimmt zu spät</summary>
+        <p class="hint">
+          <b>Indikator:</b> Nach dem Armschließen entsteht häufig eine Pause, bevor der Beinschlag einsetzt.<br>
+          <b>Merksatz:</b> Kick startet, wenn die Hände nach vorn gehen.
+        </p>
+      </details>
+
+      <details>
+        <summary>Knie ziehen zu breit an (Rückholphase)</summary>
+        <p class="hint">
+          <b>Indikator:</b> Knieöffnung in der Rückholphase deutlich größer als Schulterbreite.<br>
+          <b>Merksatz:</b> Rückholen schmal – Kick kräftig.
+        </p>
+      </details>
+
+      <details>
+        <summary>Beinschere</summary>
+        <p class="hint">
+          <b>Indikator:</b> Deutlich asymmetrische Beinbewegung links/rechts über mehrere Frames.<br>
+          <b>Hinweis:</b> Nur bei Rückenansicht sinnvoll bewertbar.
+        </p>
+      </details>
+
+      <details>
+        <summary>Gleitphase</summary>
+        <p class="hint">
+          <b>Indikator:</b> Nach dem Strecken zu kurz oder (seltener) sehr lang ohne sinnvollen Übergang zur nächsten Phase.<br>
+          <b>Merksatz:</b> Kurz stabil gleiten – dann sauber einleiten.
+        </p>
+      </details>
+    </details>
+  </details><!-- ✅ WICHTIG: breastTools schließen -->
+
+  <div class="block">
+    <div class="blockTitle">Aufnahme</div>
+    <div class="btnRow">
+      <button id="btnRec" disabled class="wide">Aufnahme starten</button>
+      <button id="btnStop" disabled>Stop</button>
+      <button id="btnShare" disabled>Teilen/Speichern</button>
+      <button id="btnReset" disabled class="wide">Slots zurücksetzen</button>
+    </div>
   </div>
-<details style="margin-top:10px;">
-  <summary>Technik-Checkliste (Brust)</summary>
 
-  <p class="hint">
-    Hinweise sind experimentell. Am besten beurteilbar in <b>45° seitlich</b> oder <b>45° hinten</b>.
-  </p>
-
-  <details>
-    <summary> Armzug zu breit</summary>
-    <p class="hint">
-      <b>Indikator:</b> Hände öffnen sich in der Zugphase deutlich über Schulterbreite.<br>
-      <b>Merksatz:</b> Arme drücken vor allem nach hinten – weniger nach außen.
-    </p>
-  </details>
-
-  <details>
-    <summary> Hände ziehen zu tief</summary>
-    <p class="hint">
-      <b>Indikator:</b> Hände wandern in der Zugphase deutlich unter Schulter-/Brusthöhe in Richtung Hüfte/Füße.<br>
-      <b>Merksatz:</b> Druck nach hinten – nicht nach unten.
-    </p>
-  </details>
-
-  <details>
-    <summary> Streck-/Stromlinienphase fehlt</summary>
-    <p class="hint">
-      <b>Indikator:</b> Nach dem Armzug folgt selten eine klare, gestreckte Körperhaltung (Arme geschlossen/über Kopf, Beine gestreckt).<br>
-      <b>Merksatz:</b> Wenn nichts arbeitet, muss alles schlank sein.
-    </p>
-  </details>
-
-  <details>
-    <summary> Beinschlag übernimmt zu spät</summary>
-    <p class="hint">
-      <b>Indikator:</b> Nach dem Armschließen entsteht häufig eine Pause, bevor der Beinschlag einsetzt.<br>
-      <b>Merksatz:</b> Kick startet, wenn die Hände nach vorn gehen.
-    </p>
-  </details>
-
-  <details>
-    <summary> Knie ziehen zu breit an (Rückholphase)</summary>
-    <p class="hint">
-      <b>Indikator:</b> Knieöffnung in der Rückholphase deutlich größer als Schulterbreite.<br>
-      <b>Merksatz:</b> Rückholen schmal – Kick kräftig.
-    </p>
-  </details>
-
-  <details>
-    <summary> Beinschere </summary>
-    <p class="hint">
-      <b>Indikator:</b> Deutlich asymmetrische Beinbewegung links/rechts über mehrere Frames.<br>
-      <b>Hinweis:</b> Nur bei Rückenansicht sinnvoll bewertbar.
-    </p>
-  </details>
-
-  <details>
-    <summary> Gleitphase</summary>
-    <p class="hint">
-      <b>Indikator:</b> Nach dem Strecken zu kurz oder (seltener) sehr lang ohne sinnvollen Übergang zur nächsten Phase.<br>
-      <b>Merksatz:</b> Kurz stabil gleiten – dann sauber einleiten.
-    </p>
-  </details>
-</details>
-
-<div class="block">
-  <div class="blockTitle">Aufnahme</div>
-  <div class="btnRow">
-    <button id="btnRec" disabled class="wide">Aufnahme starten</button>
-    <button id="btnStop" disabled>Stop</button>
-    <button id="btnShare" disabled>Teilen/Speichern</button>
-    <button id="btnReset" disabled class="wide">Slots zurücksetzen</button>
-  </div>
-</div>
-
-<div>
-  <canvas id="canvas"></canvas>
-</div>
-
-<div id="tipsBox" class="tipsBox">
-  <h3>Techniktipps Brustschwimmen <span id="hintMeta" class="pill"></span></h3>
-  <div class="hint" id="hintText"></div>
-  <ul id="hintList"></ul>
-</div>
-
-<!-- FEEDBACK (standardmäßig zugeklappt) -->
-<details id="feedbackBox">
-  <summary>Feedback / Fehler melden</summary>
-  <div class="hint" style="margin-top:8px; max-width: 820px;">
-    Wenn dir ein Fehler auffällt oder du eine sinnvolle Verbesserungsidee hast, schick sie hier ab.
-    (Das Formular sendet über Formspree an das MOTAXIS-Postfach.)
+  <div>
+    <canvas id="canvas"></canvas>
   </div>
 
-  <form
-    id="feedbackForm"
-    class="fbWrap"
-    action="<https://formspree.io/f/mzdbqzog>"
-    method="POST"
-  >
-    <div class="fbRow">
-      <div class="fbFine">Deine E-Mail (optional, falls Rückfragen)</div>
-      <input type="email" name="email" placeholder="name@beispiel.de" autocomplete="email" />
+  <div id="tipsBox" class="tipsBox">
+    <h3>Techniktipps Brustschwimmen <span id="hintMeta" class="pill"></span></h3>
+    <div class="hint" id="hintText"></div>
+    <ul id="hintList"></ul>
+  </div>
+
+  <!-- FEEDBACK (standardmäßig zugeklappt) -->
+  <details id="feedbackBox">
+    <summary>Feedback / Fehler melden</summary>
+    <div class="hint" style="margin-top:8px; max-width: 820px;">
+      Wenn dir ein Fehler auffällt oder du eine sinnvolle Verbesserungsidee hast, schick sie hier ab.
+      (Das Formular sendet über Formspree an das MOTAXIS-Postfach.)
     </div>
 
-    <div class="fbRow">
-      <div class="fbFine">Nachricht</div>
-      <textarea name="message" placeholder="Was ist passiert? (Gerät/Browser, Aufnahmewinkel, Schritte zum Reproduzieren, ggf. Screenshot-Beschreibung)"></textarea>
-    </div>
+    <form
+      id="feedbackForm"
+      class="fbWrap"
+      action="https://formspree.io/f/mzdbqzog"
+      method="POST"
+    >
+      <div class="fbRow">
+        <div class="fbFine">Deine E-Mail (optional, falls Rückfragen)</div>
+        <input type="email" name="email" placeholder="name@beispiel.de" autocomplete="email" />
+      </div>
 
-    <input type="hidden" name="app" value="MOTAXIS" />
-    <input type="hidden" name="version" value="2025-12-30" />
-    <input type="hidden" id="fbMeta" name="meta" value="" />
+      <div class="fbRow">
+        <div class="fbFine">Nachricht</div>
+        <textarea name="message" placeholder="Was ist passiert? (Gerät/Browser, Aufnahmewinkel, Schritte zum Reproduzieren, ggf. Screenshot-Beschreibung)"></textarea>
+      </div>
 
-    <div class="btnRow" style="max-width: 420px;">
-      <button id="btnFbSend" type="submit" class="primary">Senden</button>
-    </div>
+      <input type="hidden" name="app" value="MOTAXIS" />
+      <input type="hidden" name="version" value="2025-12-30" />
+      <input type="hidden" id="fbMeta" name="meta" value="" />
 
-    <div id="fbStatus" class="fbStatus"></div>
-  </form>
-</details>
+      <div class="btnRow" style="max-width: 420px;">
+        <button id="btnFbSend" type="submit" class="primary">Senden</button>
+      </div>
 
-```
+      <div id="fbStatus" class="fbStatus"></div>
+    </form>
+  </details>
 
-</div>
+</div><!-- /.stack -->
 
 <p class="hint mono" id="status">Status: bereit</p>
 
 <script type="module">
 import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
-```
 // DOM
 const video = document.getElementById("video");
 const canvas = document.getElementById("canvas");
@@ -850,9 +845,9 @@ function estimateFacingSign(raw, head, shoulder) {
   return 1;
 }
 
-// --- HWS state: ALWAYS draw line, but only color-evaluate when profile
+// --- HWS state
 let neckAngleEma = null;
-let neckState = "unknown"; // green | amber | redFlex | redExt | neutral
+let neckState = "unknown";
 let neckSince = 0;
 let neckNeutralAuto = null;
 let neckCalibSamples = [];
@@ -885,7 +880,6 @@ function drawNeckAxis(rawNorm, cssPoints, nowTs) {
   const profile = isProfileLikely(rawNorm);
   const facing  = estimateFacingSign(rawNorm, head, shoulder);
 
-  // Compute angle ONLY if profile; otherwise keep neutral display
   let ang = null;
   let neutral = null;
   let d = null;
@@ -943,7 +937,7 @@ function drawNeckAxis(rawNorm, cssPoints, nowTs) {
     neckSince = 0;
   }
 
-  // Draw axis ALWAYS (neutral grey if not profile)
+  // Draw axis ALWAYS
   const cssLs = cssPoints[11], cssRs = cssPoints[12];
   const cssShoulder = (cssLs && cssRs) ? { _cx:(cssLs._cx+cssRs._cx)/2, _cy:(cssLs._cy+cssRs._cy)/2 } : null;
   const cssHead = headCenterCss(cssPoints);
@@ -1013,7 +1007,7 @@ function drawLegChecks(raw, cssPoints) {
   return { kneeRatio, kneeDiff: diff, kneeAngles: [aL, aR], valid: true };
 }
 
-// Hand axis (only OUTSIDE glide phase + more tolerance):
+// Hand axis
 function colorForHandRatio(r) {
   if (r <= 2.10) return "rgba(0,170,0,0.95)";
   if (r <= 2.50) return "rgba(255,140,0,0.95)";
@@ -1023,16 +1017,10 @@ function colorForHandRatio(r) {
 // =========================
 // TIMER (UPDATED / OPTIMAL)
 // =========================
-
-// Timer state (robust + recording-gated + stable stops)
 let glideActive = false, glideStart = 0, currentElapsed = 0;
 let scoreEma = 0, scoreStableSince = null;
-
-// getrennte Holds: verhindert "Start -> sofort Stop -> Slot"
 let stopScoreSince = null;
 let stopMoveSince  = null;
-
-// kurze Sperrzeit direkt nach Start (verhindert Flacker-Stop)
 let ignoreStopUntil = 0;
 
 let lastTorso = null;
@@ -1065,7 +1053,7 @@ function armOverHeadRobust(raw) {
   return Math.max(leftScore, rightScore);
 }
 
-// (deine aktuelle armsStreamlineScore bleibt für Debug/Analyse erhalten)
+// (bleibt für Debug)
 function armsStreamlineScore(raw) {
   const ls = raw[11], rs = raw[12];
   const lh = raw[23], rh = raw[24];
@@ -1196,7 +1184,6 @@ function updateTimer(raw, now, isRecording){
   const stopHoldMs  = (p === "side45") ? 220 : 230;
 
   const hardMaxMs = (p === "stand") ? 5000 : 6500;
-
   const alpha = (p === "side45") ? 0.62 : 0.60;
 
   const sNow = computeGlideScore(raw);
@@ -1426,63 +1413,57 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
 let recorder=null, recordedChunks=[], lastBlob=null;
 let isRecording = false;
 
-// Hand detection (only during arm pull phase i.e. outside glideActive)
-let prevHandTooWide = false;       // <-- NEU: Flanken-Tracking
-let handWideStreak = 0;            // (optional) lässt du drin, falls du es später wieder brauchst
-const HAND_RED_THR = 2.50;          // Schwelle bleibt identisch
-const HAND_STREAK_FRAMES = 8;       // (optional)
+// ✅ fehlende Variablen, die du in resetRecStats() nutzt:
+let prevIsPullPhase = false;
+let prevKneesBent = false;
+let lastArmEndTs = null;
 
-// HWS extension streak (count tip only if long or frequent)
+// Hand detection (only during arm pull phase i.e. outside glideActive)
+let prevHandTooWide = false;
+let handWideStreak = 0;
+const HAND_RED_THR = 2.50;
+const HAND_STREAK_FRAMES = 8;
+
+// HWS extension streak
 let headExtStreakStart = null;
 
 const recStats = {
-  // Gesamt
   frames: 0,
 
-  // Beine – nur Rückhol-/Kick-Logik zählt
-  kneeWide: 0,              // Knie zu breit in Rückholphase
-  kneeAsym: 0,              // Beinschere (nur back45)
-  legsBent: 0,              // Beine nicht gestreckt in Gleitphase
+  kneeWide: 0,
+  kneeAsym: 0,
+  legsBent: 0,
   avgKneeRatioSum: 0,
   avgKneeRatioN: 0,
 
-  // Kopf / HWS
   headExtAny: 0,
   headExtStreakMsMax: 0,
   headFlex: 0,
 
-  // Armzug – NUR Pull-Phase
-  armPullFrames: 0,         // Frames, die wirklich Armzug sind
-  handWideFrames: 0,        // davon: Handbreite > Schwelle
-  handWideEvents: 0,        // Events (false → true)
-  armTooDeepFrames: 0,      // NEU: Hände ziehen zu tief
+  armPullFrames: 0,
+  handWideFrames: 0,
+  handWideEvents: 0,
+  armTooDeepFrames: 0,      // ✅ wird jetzt gezählt
+  streamlineGoodFrames: 0,  // ✅ wird jetzt gezählt
 
-  // Stromlinie / Streckphase
-  streamlineGoodFrames: 0,  // NEU: klar stromlinienförmig
-
-  // Timing Arm-Ende → Kick
-  lateKickEvents: 0,        // NEU: Kick deutlich zu spät
-  lateKickDelaySumMs: 0,    // NEU: Summe der Verzögerungen
-  lateKickDelayN: 0         // NEU: Anzahl gemessener Delays
+  lateKickEvents: 0,        // ✅ wird jetzt gezählt
+  lateKickDelaySumMs: 0,
+  lateKickDelayN: 0
 };
 
 function resetRecStats() {
   for (const k of Object.keys(recStats)) recStats[k] = 0;
 
-  // Armzug / Handbreite
   handWideStreak = 0;
   prevHandTooWide = false;
 
-  // HWS
   headExtStreakStart = null;
   recStats.headExtStreakMsMax = 0;
 
-  // Timing Arm-Ende → Kick (Events)
   prevIsPullPhase = false;
   prevKneesBent = false;
   lastArmEndTs = null;
 }
-
 
 function clearTipsUI() {
   tipsBox.style.display = "none";
@@ -1490,6 +1471,7 @@ function clearTipsUI() {
   hintText.textContent = "";
   hintMeta.textContent = "";
 }
+
 function showTechTipsFromStats() {
   clearTipsUI();
 
@@ -1500,9 +1482,6 @@ function showTechTipsFromStats() {
   const thr = 0.22;
   const issues = [];
 
-  // -----------------------
-  // Knie breit NUR Rückholphase (wird bereits beim Zählen gefiltert)
-  // -----------------------
   if (p(recStats.kneeWide) >= thr) {
     issues.push({
       score: p(recStats.kneeWide),
@@ -1511,9 +1490,6 @@ function showTechTipsFromStats() {
     });
   }
 
-  // -----------------------
-  // Beinschere / Asymmetrie NUR back45 + vorsichtig formuliert
-  // -----------------------
   if (filmingPreset.value === "back45") {
     if (p(recStats.kneeAsym) >= thr) {
       issues.push({
@@ -1524,9 +1500,6 @@ function showTechTipsFromStats() {
     }
   }
 
-  // -----------------------
-  // Beine nicht gestreckt in der Gleitphase
-  // -----------------------
   if (p(recStats.legsBent) >= thr) {
     issues.push({
       score: p(recStats.legsBent),
@@ -1535,9 +1508,6 @@ function showTechTipsFromStats() {
     });
   }
 
-  // -----------------------
-  // Armzug sehr breit: nur Pull-Phase (armPullFrames), side45 konservativer + mehr Events nötig
-  // -----------------------
   const armPullDen = Math.max(1, recStats.armPullFrames);
   const handWideShare = recStats.handWideFrames / armPullDen;
 
@@ -1556,9 +1526,6 @@ function showTechTipsFromStats() {
     });
   }
 
-  // -----------------------
-  // Arme zu tief: neuer Indikator armTooDeepFrames (nur Pull-Phase gezählt)
-  // -----------------------
   const deepShare = recStats.armTooDeepFrames / Math.max(1, recStats.armPullFrames);
   if (deepShare >= 0.20 && recStats.armPullFrames >= 12) {
     issues.push({
@@ -1568,9 +1535,6 @@ function showTechTipsFromStats() {
     });
   }
 
-  // -----------------------
-  // Streck-/Stromlinienphase fehlt: Streamline-Index (streamlineGoodFrames)
-  // -----------------------
   const streamShare = recStats.streamlineGoodFrames / Math.max(1, recStats.frames);
   if (streamShare <= 0.12 && recStats.frames >= 40) {
     issues.push({
@@ -1580,9 +1544,6 @@ function showTechTipsFromStats() {
     });
   }
 
-  // -----------------------
-  // Beinschlag übernimmt zu spät: Arm-Ende -> Kick Heuristik (lateKickEvents)
-  // -----------------------
   if (recStats.lateKickEvents >= 2) {
     const avgDelay = recStats.lateKickDelayN > 0
       ? (recStats.lateKickDelaySumMs / recStats.lateKickDelayN)
@@ -1597,9 +1558,6 @@ function showTechTipsFromStats() {
     });
   }
 
-  // -----------------------
-  // HWS (wie bei dir, unverändert)
-  // -----------------------
   const extShare = p(recStats.headExtAny);
   const extStreak = recStats.headExtStreakMsMax || 0;
   if (extShare >= thr || extStreak >= 700) {
@@ -1618,9 +1576,6 @@ function showTechTipsFromStats() {
     });
   }
 
-  // -----------------------
-  // Gleitphase: kurz + zusätzlich "zu langes Verharren gestreckt"
-  // -----------------------
   const shortGlides = glideTimes.filter(t => (t/1000) < 0.8).length;
   if (glideTimes.length > 0 && shortGlides >= 1) {
     issues.push({
@@ -1640,9 +1595,6 @@ function showTechTipsFromStats() {
     });
   }
 
-  // -----------------------
-  // Ausgabe (wie bei dir)
-  // -----------------------
   issues.sort((a,b)=> b.score - a.score);
   const top = issues.slice(0,3);
   if (top.length === 0) return;
@@ -1667,7 +1619,6 @@ function showTechTipsFromStats() {
   tipsBox.style.display = "block";
 }
 
-
 function pickMimeType(){
   const candidates=[
     'video/mp4;codecs="avc1.42E01E"',
@@ -1686,7 +1637,6 @@ function startRecordingCanvas(){
   resetRecStats();
   isRecording = true;
 
-  // ✅ wichtig: Timer + Slots sauber resetten (nur während Aufnahme aktiv)
   resetTimerState(true);
   clearTipsUI();
 
@@ -1736,12 +1686,12 @@ let running = false;
 let rafId = null;
 
 const POSE_TASK_URL =
-  "<https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task>";
+  "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task";
 
 async function createLandmarker(){
   setStatus("Lade Tasks-WASM …");
   const fileset = await FilesetResolver.forVisionTasks(
-    "<https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm>"
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
   );
 
   setStatus("Lade Pose Landmarker heavy …");
@@ -1803,6 +1753,62 @@ function stopCamera(){
   video.srcObject=null;
 }
 
+// === Zusätzliche Heuristiken für recStats-Zähler ===
+function getKneesBent(raw){
+  const lh = raw[23], rh = raw[24], lk = raw[25], rk = raw[26], la = raw[27], ra = raw[28];
+  const aL = kneeAngle(lh, lk, la);
+  const aR = kneeAngle(rh, rk, ra);
+  const bent = ((aL != null && aL < 158) || (aR != null && aR < 158));
+  return { bent, aL, aR };
+}
+
+// Pull-Phase Heuristik (außerhalb glide):
+function isPullPhaseHeuristic(raw){
+  const ls = raw[11], rs = raw[12];
+  const le = raw[13], re = raw[14];
+  const lw = raw[15], rw = raw[16];
+  if(!ls || !rs) return false;
+
+  const shoulderY = (ls.y + rs.y) / 2;
+
+  // Arme nicht über Kopf (sonst eher Streck-/Gleit)
+  const oh = armOverHeadRobust(raw);
+  if (oh > 0.55) return false;
+
+  // Handgelenke eher "unten" (Richtung Brust/Hüfte) + Ellbogen gebeugt
+  const eL = elbowAngle(ls, le, lw);
+  const eR = elbowAngle(rs, re, rw);
+
+  const wristDownL = lw ? (lw.y > shoulderY + 0.02) : false;
+  const wristDownR = rw ? (rw.y > shoulderY + 0.02) : false;
+
+  const elbowBentL = (eL != null) ? (eL < 165) : false;
+  const elbowBentR = (eR != null) ? (eR < 165) : false;
+
+  return ( (wristDownL && elbowBentL) || (wristDownR && elbowBentR) );
+}
+
+function wristsTooDeep(raw){
+  const lh = raw[23], rh = raw[24];
+  const lw = raw[15], rw = raw[16];
+  if(!lh || !rh || (!lw && !rw)) return false;
+  const hipY = (lh.y + rh.y) / 2;
+
+  // "zu tief" ≈ Handgelenke unter Hüfthöhe (+ kleiner Puffer)
+  const m = 0.02;
+  const leftDeep = lw ? (lw.y > hipY + m) : false;
+  const rightDeep = rw ? (rw.y > hipY + m) : false;
+  return leftDeep || rightDeep;
+}
+
+function isStreamlineGood(raw){
+  // klare Stromlinie: ArmOverHead hoch + Beine gestreckt + Körper lang
+  const a = armOverHeadRobust(raw);
+  const l = legsStraightScore(raw);
+  const b = bodyLongScore(raw);
+  return (a >= 0.70 && l >= 0.70 && b >= 0.55);
+}
+
 // Loop
 let emptyMaskFrames = 0;
 
@@ -1847,7 +1853,7 @@ function loop(){
       const neck = drawNeckAxis(raw, cssPoints, ts);
       const legs = drawLegChecks(raw, cssPoints);
 
-      // Update timer BEFORE hands (so glideActive is current for gating)
+      // Timer BEFORE hands (so glideActive is current)
       updateTimer(raw, ts, isRecording);
 
       const hands = drawHandAxis(raw, cssPoints);
@@ -1855,6 +1861,7 @@ function loop(){
       if (isRecording) {
         recStats.frames++;
 
+        // Knie/Schulter (Rückholphase-Kriterium bleibt wie vorher)
         if (legs.valid && legs.kneeRatio != null) {
           recStats.avgKneeRatioSum += legs.kneeRatio;
           recStats.avgKneeRatioN++;
@@ -1865,12 +1872,19 @@ function loop(){
           if (legs.kneeDiff != null && legs.kneeDiff > 25) recStats.kneeAsym++;
         }
 
+        // Beine nicht gestreckt in Gleitphase
         if (toggleTimer.checked && glideActive && legs.valid) {
           const [aL, aR] = legs.kneeAngles || [null,null];
           const bent = ((aL != null && aL < 155) || (aR != null && aR < 155));
           if (bent) recStats.legsBent++;
         }
 
+        // Stromlinie gut (unabhängig: zählt pro Frame)
+        if (isStreamlineGood(raw)) {
+          recStats.streamlineGoodFrames++;
+        }
+
+        // HWS
         if (toggleTimer.checked && glideActive && neck?.profile && neck?.state) {
           if (neck.state === "redFlex") recStats.headFlex++;
           if (neck.state === "redExt") {
@@ -1885,23 +1899,57 @@ function loop(){
           headExtStreakStart = null;
         }
 
-        if (!glideActive && hands.handRatio != null) {
+        // ===== Pull-Phase Heuristik + neue Zähler =====
+        const pullPhase = (!glideActive) && isPullPhaseHeuristic(raw);
+
+        // PullFrames zählen unabhängig von hands.handRatio (robuster)
+        if (pullPhase) {
           recStats.armPullFrames++;
 
-          const tooWideNow = hands.handRatio > HAND_RED_THR;
-
-          // Event zählen, wenn es "neu rot" wird (false -> true)
-          if (tooWideNow && !prevHandTooWide) {
-            recStats.handWideEvents++;
+          // "zu tief" in Pull-Phase
+          if (wristsTooDeep(raw)) {
+            recStats.armTooDeepFrames++;
           }
-          prevHandTooWide = tooWideNow;
 
-          // Optional weiterhin "rote Frames" zählen (für Anteil/Score)
-          if (tooWideNow) recStats.handWideFrames++;
+          // Handbreite: nur wenn Ratio da ist
+          if (hands.handRatio != null) {
+            const tooWideNow = hands.handRatio > HAND_RED_THR;
+
+            if (tooWideNow && !prevHandTooWide) {
+              recStats.handWideEvents++;
+            }
+            prevHandTooWide = tooWideNow;
+
+            if (tooWideNow) recStats.handWideFrames++;
+          } else {
+            prevHandTooWide = false;
+          }
         } else {
-          // wenn keine HandRatio oder in Gleitphase: Flankenstatus zurücksetzen
           prevHandTooWide = false;
         }
+
+        // ===== Timing Arm-Ende → Kick (lateKick) =====
+        // Arm-Ende: true -> false
+        if (prevIsPullPhase && !pullPhase) {
+          lastArmEndTs = ts;
+        }
+        prevIsPullPhase = pullPhase;
+
+        // Kick-Start: kneesBent false -> true
+        const kb = getKneesBent(raw);
+        if (!prevKneesBent && kb.bent) {
+          if (lastArmEndTs != null) {
+            const delay = ts - lastArmEndTs;
+
+            // "zu spät": > 350ms (aber nur plausibler Bereich)
+            if (delay > 350 && delay < 1500) {
+              recStats.lateKickEvents++;
+              recStats.lateKickDelaySumMs += delay;
+              recStats.lateKickDelayN++;
+            }
+          }
+        }
+        prevKneesBent = kb.bent;
       }
 
       const handDbg = (hands && hands.handRatio != null)
@@ -1909,7 +1957,6 @@ function loop(){
         : `hand/shoulderX=—`;
 
       const gateDbg = (hands && hands.gated) ? "handGate=1" : "handGate=0";
-
       const aDbg = armsStreamlineScore(raw).toFixed(2);
 
       drawOverlay(
@@ -1938,7 +1985,6 @@ btnInit.addEventListener("click", async ()=>{
     applyLayoutFromOrientation();
     setStatus("Initialisiere …");
 
-    // iOS/Safari: erst Kamera im User-Gesture-Kontext starten
     await startCamera();
     await createLandmarker();
 
@@ -2056,9 +2102,6 @@ feedbackForm?.addEventListener("submit", async (ev) => {
     fbStatus.textContent = "Netzwerkfehler. Bitte später erneut versuchen.";
   }
 });
-
-```
-
 </script>
 </body>
 </html>
