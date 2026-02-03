@@ -723,31 +723,9 @@ function drawSkeletonCssPoints(cssPoints) {
 
   ctx.restore();
 }
-/* =========================
-   SEGMENTATION (ORIGINAL-STYLE / CRISP):
-   - harte Schwelle (keine Löcherfüllung)
-   - kein temporales EMA (kein Schmieren)
-   - kein bilinear scaling (keine Unschärfe)
-   - KEIN Auto-Invert (stabil, wie am Anfang)
-   - Körper = GELB, Hintergrund bleibt BLAU
-   ========================= */
-
+// Segmentation
 const maskSrcCanvas = document.createElement("canvas");
 const maskSrcCtx = maskSrcCanvas.getContext("2d", { willReadFrequently: false });
-
-// Falls du mal eine Quelle hast, die wirklich invertiert ist:
-// -> einmalig auf true setzen. Standard: false.
-let FORCE_INVERT_MASK = false;
-
-function readMaskToArr01(segMask, mw, mh) {
-  let dataF = null, dataU = null;
-  try { if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array(); } catch(_) {}
-  if (!dataF) { try { if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array(); } catch(_) {} }
-
-  if (dataF && dataF.length >= mw*mh) return { arr: dataF, isFloat: true };
-  if (dataU && dataU.length >= mw*mh) return { arr: dataU, isFloat: false };
-  return { arr: null, isFloat: false };
-}
 
 function drawMaskContainFromSource(srcCanvas, vw, vh) {
   const cw = CSS_W, ch = CSS_H;
@@ -756,16 +734,11 @@ function drawMaskContainFromSource(srcCanvas, vw, vh) {
   const dispH = vh * scale;
   const offX = (cw - dispW) / 2;
   const offY = (ch - dispH) / 2;
-
-  ctx.save();
-  ctx.imageSmoothingEnabled = false; // CRISP
   ctx.drawImage(srcCanvas, offX, offY, dispW, dispH);
-  ctx.restore();
 }
 
 function renderMaskToCanvas(segMask) {
   if (!segMask) return { max: 0 };
-
   const mw = segMask.width ?? 0;
   const mh = segMask.height ?? 0;
   if (!mw || !mh) return { max: 0 };
@@ -775,35 +748,33 @@ function renderMaskToCanvas(segMask) {
     maskSrcCanvas.height = mh;
   }
 
-  const threshold = Number(silThresh.value) / 100;  // harte Schwelle
-  const alphaMax  = Number(silOpacity.value);
+  const threshold = Number(silThresh.value) / 100;
+  const alpha = Number(silOpacity.value);
 
-  const { arr, isFloat } = readMaskToArr01(segMask, mw, mh);
-  if (!arr) return { max: 0 };
+  let dataF = null, dataU = null;
+  try { if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array(); } catch(_) {}
+  if (!dataF) { try { if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array(); } catch(_) {} }
 
   const img = maskSrcCtx.createImageData(mw, mh);
   const d = img.data;
-
   let maxv = 0;
 
-  for (let i = 0; i < mw*mh; i++) {
-    let v = arr[i];
-    v = isFloat ? v : (v / 255);
-    if (v > maxv) maxv = v;
-
-    // Person=1, Hintergrund=0 (wie am Anfang)
-    let m = (v >= threshold) ? 1 : 0;
-    if (FORCE_INVERT_MASK) m = 1 - m;
-
-    const o = i * 4;
-
-    // GELB (Körper)
-    d[o]   = 255;
-    d[o+1] = 215;
-    d[o+2] = 0;
-
-    // Alpha nur da, wo Person ist
-    d[o+3] = Math.round(255 * alphaMax * m);
+  if (dataF && dataF.length >= mw*mh) {
+    for (let i = 0; i < mw*mh; i++) {
+      const v = dataF[i];
+      if (v > maxv) maxv = v;
+      const a = (v >= threshold) ? Math.round(255 * alpha) : 0;
+      const o = i*4;
+      d[o] = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a;
+    }
+  } else if (dataU && dataU.length >= mw*mh) {
+    for (let i = 0; i < mw*mh; i++) {
+      const v = dataU[i] / 255;
+      if (v > maxv) maxv = v;
+      const a = (v >= threshold) ? Math.round(255 * alpha) : 0;
+      const o = i*4;
+      d[o] = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a;
+    }
   }
 
   maskSrcCtx.putImageData(img, 0, 0);
@@ -812,7 +783,6 @@ function renderMaskToCanvas(segMask) {
 
 function drawSilhouette(segMask) {
   if (!toggleSilhouette.checked || !segMask) return { max: 0 };
-
   const vw = video.videoWidth || 0;
   const vh = video.videoHeight || 0;
   if (!vw || !vh) return { max: 0 };
@@ -821,18 +791,6 @@ function drawSilhouette(segMask) {
   if (info.max > 0) drawMaskContainFromSource(maskSrcCanvas, vw, vh);
   return info;
 }
-
-// Kompatibilität: dein Loop ruft das auf
-function drawSilhouetteFromMask(segMask, rawPoseOrNull) {
-  return drawSilhouette(segMask);
-}
-
-// Kompatibilität: wird bei Reset/Kamerawechsel aufgerufen
-function resetMaskEma() {
-  // nichts zu resetten (kein EMA) – aber Funktion muss existieren
-  return;
-}
-
 // Head center
 function headCenterNorm(raw) {
   const le = raw[7], re = raw[8];
