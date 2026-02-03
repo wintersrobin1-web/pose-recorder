@@ -1437,146 +1437,17 @@ function drawHandAxis(raw, cssPoints) {
   return { handRatio, gated: false };
 }
 // ===== DEBUG =====
-const DEBUG_CANVAS = false; // standardmäßig AUS
+if (typeof window.DEBUG_CANVAS === "undefined") window.DEBUG_CANVAS = false; // standardmäßig AUS
 
 // Overlay (Timer sichtbar) + Debug (standardmäßig versteckt)
 function drawOverlay(debugText = "") {
   // Debug-Footer NUR wenn explizit aktiviert
-  if (DEBUG_CANVAS && debugText) {
+if (window.DEBUG_CANVAS && debugText) {
     drawDebugFooter(debugText);
   }
 
   // Timer-Overlay nur wenn aktiv
   if (!toggleTimer.checked) return;
-
-  const isPortrait = CSS_H > CSS_W;
-  const x = 12, y = 12;
-  const w = isPortrait ? Math.min(420, CSS_W - 24) : Math.min(680, CSS_W - 24);
-  const h = isPortrait ? 140 : 90;
-  const r = 14;
-
-  ctx.save();
-  ctx.fillStyle = "rgba(0,0,0,0.40)";
-  ctx.strokeStyle = "rgba(255,255,255,0.55)";
-  ctx.lineWidth = 2;
-
-  const rr = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x, y + h, x, y, rr);
-  ctx.arcTo(x, y, x + w, y, rr);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.fillStyle = "white";
-  ctx.shadowBlur = 0;
-
-  // Hauptzeit
-  ctx.font = isPortrait ? "800 28px system-ui" : "800 24px system-ui";
-  ctx.fillText(
-    glideActive ? fmt(currentElapsed) : "0.000 s",
-    x + 12,
-    y + (isPortrait ? 36 : 30)
-  );
-
-  // Subtitle
-  ctx.font = "700 12px system-ui";
-  const presetLabel =
-    filmingPreset.value === "stand"
-      ? "Stand"
-      : filmingPreset.value === "side45"
-      ? "45° seitlich"
-      : "45° hinten";
-
-  ctx.fillText(
-    `Timer – Streck-/Gleitphase (experimentell) | Aufnahme: ${presetLabel}`,
-    x + 12,
-    y + (isPortrait ? 56 : 48)
-  );
-
-  // Slots
-  ctx.font = isPortrait ? "14px system-ui" : "13px system-ui";
-  if (isPortrait) {
-    const baseY = y + 80;
-    for (let i = 0; i < 4; i++) {
-      const t = glideTimes[i] != null ? fmt(glideTimes[i]) : "—";
-      ctx.fillText(`Slot ${i + 1}: ${t}`, x + 12, baseY + i * 16);
-    }
-  } else {
-    const lineY = y + 72;
-    let cx = x + 12;
-    for (let i = 0; i < 4; i++) {
-      const t = glideTimes[i] != null ? fmt(glideTimes[i]) : "—";
-      const txt = `S${i + 1}: ${t}`;
-      ctx.fillText(txt, cx, lineY);
-      cx += ctx.measureText(txt).width + 18;
-      if (cx > x + w - 80) break;
-    }
-  }
-
-  ctx.restore();
-}
-
-
-  const isPortrait = CSS_H > CSS_W;
-  const x = 12, y = 12;
-  const w = isPortrait ? Math.min(420, CSS_W-24) : Math.min(680, CSS_W-24);
-  const h = isPortrait ? 140 : 90;
-  const r = 14;
-
-  ctx.save();
-  ctx.fillStyle="rgba(0,0,0,0.40)";
-  ctx.strokeStyle="rgba(255,255,255,0.55)";
-  ctx.lineWidth=2;
-
-  const rr=Math.min(r,w/2,h/2);
-  ctx.beginPath();
-  ctx.moveTo(x+rr,y);
-  ctx.arcTo(x+w,y,x+w,y+h,rr);
-  ctx.arcTo(x+w,y+h,x,y+h,rr);
-  ctx.arcTo(x,y+h,x,y,rr);
-  ctx.arcTo(x,y,x+w,y,rr);
-  ctx.closePath();
-  ctx.fill(); ctx.stroke();
-
-  ctx.fillStyle="white";
-  ctx.shadowBlur=0;
-
-  ctx.font = isPortrait ? "800 28px system-ui" : "800 24px system-ui";
-  ctx.fillText(glideActive ? fmt(currentElapsed) : "0.000 s", x+12, y+(isPortrait?36:30));
-
-  ctx.font="700 12px system-ui";
-  const presetLabel = filmingPreset.value==="stand" ? "Stand" : (filmingPreset.value==="side45" ? "45° seitlich" : "45° hinten");
-  ctx.fillText(`Timer – Streck-/Gleitphase (experimentell) | Aufnahme: ${presetLabel}`, x+12, y+(isPortrait?56:48));
-
-  ctx.font = isPortrait ? "14px system-ui" : "13px system-ui";
-  if (isPortrait) {
-    const baseY = y + 80;
-    for (let i=0;i<4;i++){
-      const t = glideTimes[i]!=null ? fmt(glideTimes[i]) : "—";
-      ctx.fillText(`Slot ${i+1}: ${t}`, x+12, baseY + i*16);
-    }
-  } else {
-    const lineY = y + 72;
-    const parts = [];
-    for (let i=0;i<4;i++){
-      const t = glideTimes[i]!=null ? fmt(glideTimes[i]) : "—";
-      parts.push(`S${i+1}: ${t}`);
-    }
-    let cx = x + 12;
-    for (const p of parts) {
-      ctx.fillText(p, cx, lineY);
-      cx += ctx.measureText(p).width + 18;
-      if (cx > x + w - 80) break;
-    }
-  }
-
-  ctx.restore();
-  if (debugText) drawDebugFooter(debugText);
-}
 
 function drawDebugFooter(text) {
   const pad = 8;
