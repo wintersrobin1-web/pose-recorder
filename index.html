@@ -1474,6 +1474,7 @@ function drawTipsOverlay(nowTs){
 let prevIsPullPhase = false;
 let prevKneesBent = false;
 let lastArmEndTs = null;
+let lastHandsForwardTs = null;
 
 // Hand detection (only during arm pull phase i.e. outside glideActive)
 let prevHandTooWide = false;
@@ -1578,7 +1579,7 @@ function showTechTipsFromStats() {
     issues.push({
       score: deepShare,
       title: "Hände ziehen zu tief",
-      tip: "In der Zugphase wanderten die Hände häufig sehr tief Richtung Hüfte/Füße. Druck mehr nach hinten geben – nicht nach unten."
+      tip: "In der Zugphase wanderten die Hände häufig weit nach hinten Richtung Hüfte."
     });
   }
 
@@ -1691,7 +1692,7 @@ function buildOverlayTipsFromStats() {
     issues.push({s:handShare, t:"• Armzug weniger weit nach außen öffnen."});
 
   if (recStats.armTooDeepFrames / Math.max(1, recStats.armPullFrames) >= 0.20)
-    issues.push({s:0.4, t:"• Armzug: Druck nach hinten – nicht nach unten."});
+    issues.push({s:0.4, t:"• Hände ziehen weit nach hinten Richtung Hüfte."});
 
   if (recStats.streamlineGoodFrames / Math.max(1, recStats.frames) <= 0.12)
     issues.push({s:0.3, t:"• Nach dem Arbeiten klare Stromlinie herstellen."});
@@ -1909,20 +1910,19 @@ function wristsTooDeep(raw){
   const lh = raw[23], rh = raw[24];
   const lw = raw[15], rw = raw[16];
   if(!lh || !rh || (!lw && !rw)) return false;
+
   const hipY = (lh.y + rh.y) / 2;
 
-  const m = 0.02;
-  const leftDeep = lw ? (lw.y > hipY + m) : false;
-  const rightDeep = rw ? (rw.y > hipY + m) : false;
-  return leftDeep || rightDeep;
+  // Trigger erst, wenn Handgelenk wirklich "an der Hüfte" ist:
+  // y wächst nach unten → nahe Hüfte = y >= (hipY - kleiner Puffer)
+  const nearHipMargin = 0.008; // ~0.8% Bildhöhe: konservativ, reduziert False Positives
+
+  const leftNearHip  = lw ? (lw.y >= hipY - nearHipMargin) : false;
+  const rightNearHip = rw ? (rw.y >= hipY - nearHipMargin) : false;
+
+  return leftNearHip || rightNearHip;
 }
 
-function isStreamlineGood(raw){
-  const a = armOverHeadRobust(raw);
-  const l = legsStraightScore(raw);
-  const b = bodyLongScore(raw);
-  return (a >= 0.70 && l >= 0.70 && b >= 0.55);
-}
 
 // Loop
 let emptyMaskFrames = 0;
@@ -2025,22 +2025,46 @@ function loop(){
         } else {
           prevHandTooWide = false;
         }
+        // ===== Timing Hände-vor → Kick (lateKick) =====
+        // Late-Kick nur zählen, wenn:
+        // 1) Armzug endet
+        // 2) Hände gehen wieder klar nach vorn (Streamline-Proxy)
+        // 3) Kick setzt danach deutlich verzögert ein
 
-        if (prevIsPullPhase && !pullPhase) lastArmEndTs = ts;
+        if (prevIsPullPhase && !pullPhase) {
+          lastArmEndTs = ts;
+          lastHandsForwardTs = null;
+        }
         prevIsPullPhase = pullPhase;
+
+        // Hände wieder nach vorn (nach Arm-Ende)
+        if (lastArmEndTs != null && lastHandsForwardTs == null) {
+          const oh = armOverHeadRobust(raw);
+          if (oh >= 0.62 && (ts - lastArmEndTs) <= 900) {
+            lastHandsForwardTs = ts;
+          }
+        }
 
         const kb = getKneesBent(raw);
         if (!prevKneesBent && kb.bent) {
-          if (lastArmEndTs != null) {
-            const delay = ts - lastArmEndTs;
-            if (delay > 350 && delay < 1500) {
+          if (lastHandsForwardTs != null) {
+            const delay = ts - lastHandsForwardTs;
+
+            // deutlich verspätet → erst dann triggern
+            if (delay > 520 && delay < 1500) {
               recStats.lateKickEvents++;
               recStats.lateKickDelaySumMs += delay;
               recStats.lateKickDelayN++;
             }
+
+            // Reset nach Kick (keine Mehrfachzählung)
+            lastHandsForwardTs = null;
+            lastArmEndTs = null;
           }
         }
         prevKneesBent = kb.bent;
+    
+
       }
 
       drawOverlay(
