@@ -229,7 +229,7 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
   </div>
   <div class="introBox">
     <p>
-      Beta-Version zur anonymen Aufnahme und Analyse von Skelettachsen und Bewegungen (Pose-Landmarks).
+      Beta-Version zur anonymen Aufnahme und Analyse von Skelettachsen und Bewegungen.
       Bislang optimiert für Brustschwimmen. Auswertungen sind experimentell und können je nach Aufnahmebedingungen variieren.
     </p>
   </div>
@@ -478,7 +478,7 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
       </div>
 
       <input type="hidden" name="app" value="MOTAXIS" />
-      <input type="hidden" name="version" value="2025-12-30" />
+      <input type="hidden" name="version" value="2026-02-03" />
       <input type="hidden" id="fbMeta" name="meta" value="" />
 
       <div class="btnRow" style="max-width: 420px;">
@@ -517,15 +517,6 @@ const toggleHandAxis = document.getElementById("toggleHandAxis");
 const toggleTimer = document.getElementById("toggleTimer");
 const toggleHintBox = document.getElementById("toggleHintBox");
 const filmingPreset = document.getElementById("filmingPreset");
-
-function getPresetLabel() {
-  switch (filmingPreset.value) {
-    case "side45": return "Schräg seitlich (leicht von oben)";
-    case "back45": return "Schräg von hinten (leicht von oben)";
-    case "stand":  return "Frontal (Stand)";
-    default:       return filmingPreset.value;
-  }
-}
 
 const showInputVideo = document.getElementById("showInputVideo");
 
@@ -654,13 +645,11 @@ function angleBetween(u, v) {
   const c = Math.max(-1, Math.min(1, dot/(nu*nv)));
   return Math.acos(c) * 180/Math.PI;
 }
-
 function signedAngleDeg(a, b) {
   const cross = a.x*b.y - a.y*b.x;
   const dot   = a.x*b.x + a.y*b.y;
   return Math.atan2(cross, dot) * 180/Math.PI;
 }
-
 function normVec(v){
   const n = Math.hypot(v.x, v.y) || 1;
   return { x: v.x/n, y: v.y/n };
@@ -672,7 +661,6 @@ function kneeAngle(hip, knee, ankle) {
   const v = { x: ankle.x - knee.x, y: ankle.y - knee.y };
   return angleBetween(u, v);
 }
-
 function elbowAngle(shoulder, elbow, wrist) {
   if (!shoulder || !elbow || !wrist) return null;
   const u = { x: shoulder.x - elbow.x, y: shoulder.y - elbow.y };
@@ -745,7 +733,6 @@ function drawSkeletonCssPoints(cssPoints) {
     ctx.arc(p._cx, p._cy, r, 0, Math.PI*2);
     ctx.fill();
   }
-
   ctx.restore();
 }
 
@@ -840,7 +827,6 @@ function isProfileLikely(raw){
   if(!ls || !rs) return false;
   return Math.abs(ls.x - rs.x) < 0.055;
 }
-
 function estimateFacingSign(raw, head, shoulder) {
   const nose = raw[0];
   if (nose && head) {
@@ -889,14 +875,13 @@ function drawNeckAxis(rawNorm, cssPoints, nowTs) {
   const profile = isProfileLikely(rawNorm);
   const facing  = estimateFacingSign(rawNorm, head, shoulder);
 
-  let ang = null;
   let neutral = null;
   let d = null;
 
   if (profile) {
     const neckV = normVec({ x: head.x - shoulder.x, y: head.y - shoulder.y });
     const up = { x: 0, y: -1 };
-    ang = signedAngleDeg(up, neckV);
+    let ang = signedAngleDeg(up, neckV);
     if (facing < 0) ang = -ang;
 
     const alpha = Number(neckEma.value);
@@ -1060,58 +1045,6 @@ function armOverHeadRobust(raw) {
   const rightScore = rightWristUp ? 1.0 : (rightElbowUp ? 0.7 : 0.0);
 
   return Math.max(leftScore, rightScore);
-}
-
-// (bleibt für Debug)
-function armsStreamlineScore(raw) {
-  const ls = raw[11], rs = raw[12];
-  const lh = raw[23], rh = raw[24];
-  const le = raw[13], re = raw[14];
-  const lw = raw[15], rw = raw[16];
-
-  if (!ls || !rs || !lh || !rh) return 0;
-
-  const sh = { x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2 };
-  const hp = { x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2 };
-
-  let axis = { x: sh.x - hp.x, y: sh.y - hp.y };
-  const axisLen = Math.hypot(axis.x, axis.y) || 1e-6;
-  axis = { x: axis.x/axisLen, y: axis.y/axisLen };
-
-  const torsoLen = dist(sh, hp) || 1e-6;
-
-  const leftElbowAng  = kneeAngle(ls, le, lw);
-  const rightElbowAng = kneeAngle(rs, re, rw);
-
-  const elbowScore = (ang) => {
-    if (ang == null) return 0;
-    if (ang <= 150) return 0;
-    if (ang >= 170) return 1;
-    return (ang - 150) / (170 - 150);
-  };
-
-  const oneArmScore = (w, s, eAng) => {
-    if (!w || !s) return 0;
-    const v = { x: w.x - s.x, y: w.y - s.y };
-    const along = (v.x*axis.x + v.y*axis.y) / torsoLen;
-    const perp = Math.abs(v.x*(-axis.y) + v.y*(axis.x)) / torsoLen;
-
-    const alongScore = (along <= 0.45) ? 0
-      : (along >= 0.95) ? 1
-      : (along - 0.45) / (0.95 - 0.45);
-
-    const perpPenalty =
-      (perp <= 0.85) ? 1 :
-      (perp >= 1.25) ? 0.55 :
-      1 - (perp - 0.85)/(1.25-0.85)*0.45;
-
-    return alongScore * perpPenalty * (0.55 + 0.45*elbowScore(eAng));
-  };
-
-  const left  = oneArmScore(lw, ls, leftElbowAng);
-  const right = oneArmScore(rw, rs, rightElbowAng);
-
-  return Math.max(left, right);
 }
 
 function legsStraightScore(raw) {
@@ -1346,7 +1279,6 @@ function drawOverlay(debugText=""){
   ctx.fill(); ctx.stroke();
 
   ctx.fillStyle="white";
-  ctx.shadowBlur=0;
 
   // 1) große Zeit
   ctx.font = isPortrait ? "800 24px system-ui" : "800 20px system-ui";
@@ -1421,7 +1353,7 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
 // Recording + tips
 let recorder=null, recordedChunks=[], lastBlob=null;
 let isRecording = false;
-let isFinalizingStop = false; // <- NUR EINMAL!
+let isFinalizingStop = false;
 
 // Post-Stop Tips Overlay (wird im Video mit aufgenommen)
 let showTipsOverlayUntil = 0;
@@ -1438,13 +1370,11 @@ function drawTipsOverlay(nowTs){
   const x = 12;
   const lineH = isPortrait ? 18 : 16;
 
-  // mehr als 1 Tipp sichtbar machen
-  const maxLines = isPortrait ? 5 : 4; // Titel + 4/3 Tipps
+  // Titel + bis zu 4/3 Tipps
+  const maxLines = isPortrait ? 5 : 4;
   const lines = [tipsOverlayTitle, ...tipsOverlayLines.slice(0, maxLines - 1)];
 
   const boxH = pad*2 + 10 + lines.length*lineH;
-
-  // y so setzen, dass Box komplett im Canvas bleibt
   const y = Math.max(12, CSS_H - boxH - 12);
 
   ctx.save();
@@ -1471,23 +1401,24 @@ function drawTipsOverlay(nowTs){
     ty += lineH;
     ctx.fillText(lines[i], x+pad, ty);
   }
-
   ctx.restore();
 }
 
-
-// ✅ fehlende Variablen, die du in resetRecStats() nutzt:
+// ✅ State für Timing/Events
 let prevIsPullPhase = false;
 let prevKneesBent = false;
 let lastArmEndTs = null;
 let lastHandsForwardTs = null;
 
-// Hand detection (only during arm pull phase i.e. outside glideActive)
+// Hand detection
 let prevHandTooWide = false;
 const HAND_RED_THR = 2.50;
 
 // HWS extension streak
 let headExtStreakStart = null;
+
+// ✅ weniger sensibel: "zu tief" nur wenn über mehrere Frames wirklich auf/unter Hüfte
+let deepStreak = 0;
 
 const recStats = {
   frames: 0,
@@ -1517,7 +1448,6 @@ function resetRecStats() {
   for (const k of Object.keys(recStats)) recStats[k] = 0;
 
   prevHandTooWide = false;
-
   headExtStreakStart = null;
   recStats.headExtStreakMsMax = 0;
 
@@ -1525,6 +1455,8 @@ function resetRecStats() {
   prevKneesBent = false;
   lastArmEndTs = null;
   lastHandsForwardTs = null;
+
+  deepStreak = 0;
 }
 
 function clearTipsUI() {
@@ -1533,6 +1465,7 @@ function clearTipsUI() {
   hintText.textContent = "";
   hintMeta.textContent = "";
 }
+
 function getTopIssuesUnified(maxN = 3) {
   if (!toggleHintBox.checked) return { meta:"", intro:"", issues:[] };
 
@@ -1567,23 +1500,21 @@ function getTopIssuesUnified(maxN = 3) {
     issues.push({score:Math.max(0.38, handWideShare), title:"Armzug sehr breit", tip:"Hände weniger weit nach außen öffnen, Ellbogen eher hoch führen."});
 
   const deepShare = recStats.armTooDeepFrames / armPullDen;
-  if (deepShare >= 0.20 && recStats.armPullFrames >= 12)
-    issues.push({score:deepShare, title:"Hände ziehen zu tief", tip:"Hände wandern deutlich bis zur Hüfte nach hinten."});
+  if (deepShare >= 0.22 && recStats.armPullFrames >= 14)
+    issues.push({score:deepShare, title:"Hände ziehen zu tief", tip:"Nur wenn die Hände wirklich deutlich bis zur Hüfte nach hinten rutschen: Druck nach hinten – nicht nach unten."});
 
   const streamShare = recStats.streamlineGoodFrames / Math.max(1, recStats.frames);
   if (streamShare <= 0.12 && recStats.frames >= 40)
-    issues.push({score:Math.min(1,(0.16-streamShare)/0.16), title:"Streck-/Stromlinienphase fehlt", tip:"Nach dem Arbeiten klare Stromlinienhaltung herstellen."});
+    issues.push({score:Math.min(1,(0.16-streamShare)/0.16), title:"Streck-/Stromlinienphase fehlt", tip:"Nach dem Arbeiten klare Stromlinienhaltung herstellen (schlank machen)."});    
 
   if (recStats.lateKickEvents >= 2)
     issues.push({score:0.5, title:"Beinschlag übernimmt zu spät", tip:"Kick startet, wenn die Hände wieder nach vorn gehen."});
 
   issues.sort((a,b)=>b.score-a.score);
-  const top = issues.slice(0, maxN);
-
   return {
     meta: `${recStats.frames} Frames`,
     intro: "In dieser Aufnahme waren folgende Punkte auffällig:",
-    issues: top
+    issues: issues.slice(0, maxN)
   };
 }
 
@@ -1601,130 +1532,6 @@ function showTechTipsFromStats() {
     li.innerHTML = `<b>${it.title}</b> – ${it.tip}`;
     hintList.appendChild(li);
   }
-
-  tipsBox.style.display = "block";
-}
-
-
-  if (filmingPreset.value === "back45") {
-    if (p(recStats.kneeAsym) >= thr) {
-      issues.push({
-        score: p(recStats.kneeAsym),
-        title: "Beinschere (Asymmetrie)",
-        tip: "Über mehrere Frames wirkte die Beinbewegung links/rechts asymmetrisch. In Rückenansicht am ehesten beurteilbar – ggf. bewusst symmetrisch rückholen/kicken und gegenprüfen."
-      });
-    }
-  }
-
-  if (p(recStats.legsBent) >= thr) {
-    issues.push({
-      score: p(recStats.legsBent),
-      title: "Beine nicht gestreckt in der Gleitphase",
-      tip: "Nach dem Beinschlag vollständig strecken und kurz stabil gleiten – das reduziert Bremsfläche."
-    });
-  }
-
-  const armPullDen = Math.max(1, recStats.armPullFrames);
-  const handWideShare = recStats.handWideFrames / armPullDen;
-
-  if (recStats.handWideEvents >= 2 || handWideShare >= 0.18) {
-    issues.push({
-      score: Math.max(0.38, handWideShare),
-      title: "Armzug sehr breit",
-      tip: "In der Zugphase wurden die Hände mehrfach deutlich zu weit geöffnet. Öffnung moderater halten, Ellbogen eher „hoch“ führen."
-    });
-  }
-
-  const deepShare = recStats.armTooDeepFrames / Math.max(1, recStats.armPullFrames);
-  if (deepShare >= 0.20 && recStats.armPullFrames >= 12) {
-    issues.push({
-      score: deepShare,
-      title: "Hände ziehen zu tief",
-      tip: "In der Zugphase wanderten die Hände häufig weit nach hinten Richtung Hüfte."
-    });
-  }
-
-  const streamShare = recStats.streamlineGoodFrames / Math.max(1, recStats.frames);
-  if (streamShare <= 0.12 && recStats.frames >= 40) {
-    issues.push({
-      score: Math.min(1, (0.16 - streamShare) / 0.16),
-      title: "Streck-/Stromlinienphase fehlt",
-      tip: "Nach dem Arbeiten war selten eine klare Stromlinienhaltung erkennbar. Wenn nichts arbeitet: schlank machen."
-    });
-  }
-
-  if (recStats.lateKickEvents >= 2) {
-    const avgDelay = recStats.lateKickDelayN > 0
-      ? (recStats.lateKickDelaySumMs / recStats.lateKickDelayN)
-      : null;
-
-    issues.push({
-      score: Math.min(1, 0.35 + 0.15 * Math.min(4, recStats.lateKickEvents)),
-      title: "Beinschlag übernimmt zu spät",
-      tip: avgDelay
-        ? `Zwischen Arm-Ende und Kick war häufig eine deutliche Pause (Ø ~${Math.round(avgDelay)} ms). Kick startet, wenn die Hände nach vorn gehen.`
-        : "Zwischen Arm-Ende und Kick war häufig eine deutliche Pause. Kick startet, wenn die Hände nach vorn gehen."
-    });
-  }
-
-  const extShare = p(recStats.headExtAny);
-  const extStreak = recStats.headExtStreakMsMax || 0;
-  if (extShare >= thr || extStreak >= 700) {
-    issues.push({
-      score: Math.max(extShare, Math.min(1, extStreak/1500)),
-      title:"Kopf häufig/zu lange überstreckt (HWS)",
-      tip:"Neutral halten: Nacken lang, Blick schräg nach unten/vorn."
-    });
-  }
-
-  if (p(recStats.headFlex) >= thr) {
-    issues.push({
-      score:p(recStats.headFlex),
-      title:"Kopf zu tief (HWS-Flexion)",
-      tip:"Kopf neutral: Blick leicht nach vorn/unten, nicht „Kinn auf Brust“."
-    });
-  }
-
-  const shortGlides = glideTimes.filter(t => (t/1000) < 0.8).length;
-  if (glideTimes.length > 0 && shortGlides >= 1) {
-    issues.push({
-      score: 0.30,
-      title: "Gleitphase sehr kurz",
-      tip: "Länger gleiten: nach dem Strecken ruhig halten, bevor die nächste Phase startet."
-    });
-  }
-
-  const longThr = (filmingPreset.value === "stand") ? 3.2 : 2.8;
-  const longGlides = glideTimes.filter(t => (t/1000) > longThr).length;
-  if (glideTimes.length > 0 && longGlides >= 1) {
-    issues.push({
-      score: 0.28,
-      title: "Gleitphase sehr lang",
-      tip: `Mindestens eine Gleitphase war sehr lang (> ${longThr.toFixed(1)} s).`
-    });
-  }
-
-  issues.sort((a,b)=> b.score - a.score);
-  const top = issues.slice(0,3);
-  if (top.length === 0) return;
-
-  const avgKnee = (recStats.avgKneeRatioN > 0)
-    ? (recStats.avgKneeRatioSum / recStats.avgKneeRatioN)
-    : null;
-
-  hintMeta.textContent =
-    `${recStats.frames} Frames` +
-    (avgKnee ? ` • Ø Knie/Schulter ${avgKnee.toFixed(2)}×` : "") +
-    (recStats.armPullFrames ? ` • Zugphase ${recStats.armPullFrames}F` : "");
-
-  hintText.textContent = "In dieser Aufnahme waren folgende Punkte über mehrere Frames auffällig:";
-
-  for (const it of top) {
-    const li = document.createElement("li");
-    li.innerHTML = `<b>${it.title}</b> – ${it.tip}`;
-    hintList.appendChild(li);
-  }
-
   tipsBox.style.display = "block";
 }
 
@@ -1737,42 +1544,7 @@ function buildOverlayTipsFromStats() {
       "• Tipp: länger filmen + stabile Perspektive."
     ];
   }
-
   return pack.issues.map(it => `• ${it.title} – ${it.tip}`);
-}
-
-
-  const p = (n)=> n / Math.max(1, recStats.frames);
-  const thr = 0.22;
-  const issues = [];
-
-  if (p(recStats.kneeWide) >= thr)
-    issues.push({s:p(recStats.kneeWide), t:"• Knie schmaler rückholen (≈ schulterbreit)."});
-
-  if (filmingPreset.value==="back45" && p(recStats.kneeAsym) >= thr)
-    issues.push({s:p(recStats.kneeAsym), t:"• Beinschere: links/rechts symmetrischer kicken."});
-
-  if (p(recStats.legsBent) >= thr)
-    issues.push({s:p(recStats.legsBent), t:"• In der Gleitphase Beine vollständig strecken."});
-
-  const handShare = recStats.handWideFrames / Math.max(1, recStats.armPullFrames);
-  if (handShare >= 0.18)
-    issues.push({s:handShare, t:"• Armzug weniger weit nach außen öffnen."});
-
-  if (recStats.armTooDeepFrames / Math.max(1, recStats.armPullFrames) >= 0.20)
-    issues.push({s:0.4, t:"• Hände ziehen weit nach hinten Richtung Hüfte."});
-
-  if (recStats.streamlineGoodFrames / Math.max(1, recStats.frames) <= 0.12)
-    issues.push({s:0.3, t:"• Nach dem Arbeiten klare Stromlinie herstellen."});
-
-  if (recStats.lateKickEvents >= 2)
-    issues.push({s:0.5, t:"• Kick früher starten (wenn Hände nach vorn gehen)."});
-
-  if (p(recStats.headExtAny) >= thr)
-    issues.push({s:0.4, t:"• Kopf neutral halten (Nacken lang)."});
-
-  issues.sort((a,b)=>b.s-a.s);
-  return issues.slice(0,3).map(o=>o.t);
 }
 
 function pickMimeType(){
@@ -1828,12 +1600,10 @@ async function shareOrDownload(){
     const fileName = `bewegungsanalyse_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`;
     const file = new File([lastBlob], fileName, { type });
 
-    // Desktop-Erkennung → dort IMMER Download
     const isDesktop =
       matchMedia("(pointer:fine)").matches &&
       !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-    // Mobile / unterstützte Browser → Share versuchen
     if (!isDesktop && navigator.share && navigator.canShare) {
       let can = false;
       try { can = navigator.canShare({ files: [file] }); } catch(_) {}
@@ -1844,9 +1614,7 @@ async function shareOrDownload(){
       }
     }
 
-    // Fallback: Download (Desktop + alle anderen Fälle)
     const url = URL.createObjectURL(lastBlob);
-
     const a = document.createElement("a");
     a.href = url;
     a.download = fileName;
@@ -1855,7 +1623,6 @@ async function shareOrDownload(){
     a.click();
     a.remove();
 
-    // Safari / restriktive Desktop-Browser → Blob im neuen Tab öffnen
     setTimeout(() => {
       try { window.open(url, "_blank", "noopener,noreferrer"); } catch(_) {}
     }, 250);
@@ -1867,7 +1634,6 @@ async function shareOrDownload(){
     setStatus("Teilen/Speichern fehlgeschlagen: " + (e?.message || String(e)));
   }
 }
-
 
 // MediaPipe
 let landmarker = null;
@@ -1974,6 +1740,7 @@ function isPullPhaseHeuristic(raw){
   return ( (wristDownL && elbowBentL) || (wristDownR && elbowBentR) );
 }
 
+// ✅ weniger sensibel: wirklich "bis Hüfte" + mehrere Frames
 function wristsTooDeep(raw){
   const lh = raw[23], rh = raw[24];
   const lw = raw[15], rw = raw[16];
@@ -1981,9 +1748,8 @@ function wristsTooDeep(raw){
 
   const hipY = (lh.y + rh.y) / 2;
 
-  // STRIKT: erst zählen, wenn Handgelenk wirklich auf/unter Hüfthöhe ist.
-  // y wächst nach unten → "unter Hüfte" = hipY + Margin
-  const belowHipMargin = 0.015; // 1.5% Bildhöhe -> viel weniger sensibel
+  // STRIKT: erst wenn Handgelenk deutlich auf/unter Hüfte
+  const belowHipMargin = 0.030; // 3% Bildhöhe -> deutlich strenger
 
   const leftDeep  = lw ? (lw.y >= hipY + belowHipMargin) : false;
   const rightDeep = rw ? (rw.y >= hipY + belowHipMargin) : false;
@@ -1991,19 +1757,10 @@ function wristsTooDeep(raw){
   return leftDeep || rightDeep;
 }
 
-
-// Streamline "gut" (für recStats.streamlineGoodFrames)
-// bewusst konservativ: zählt nur, wenn Arme klar vorn/über Kopf UND Beine eher gestreckt sind
 function isStreamlineGood(raw){
   if(!raw) return false;
-
-  // 0..1 (armOverHeadRobust): 1.0 = Wrist über Kopf, 0.7 = Ellbogen hoch, 0 = nichts
   const arms = armOverHeadRobust(raw);
-
-  // 0..1 (legsStraightScore): 1.0 = Knie sehr gestreckt
   const legs = legsStraightScore(raw);
-
-  // konservative Schwellen → weniger False-Positives
   return (arms >= 0.70) && (legs >= 0.70);
 }
 
@@ -2095,7 +1852,11 @@ function loop(){
         if (pullPhase) {
           recStats.armPullFrames++;
 
-          if (wristsTooDeep(raw)) recStats.armTooDeepFrames++;
+          // ✅ "zu tief" nur, wenn 3 Frames am Stück wirklich unter Hüfte
+          if (wristsTooDeep(raw)) deepStreak++;
+          else deepStreak = 0;
+
+          if (deepStreak >= 3) recStats.armTooDeepFrames++;
 
           if (hands.handRatio != null) {
             const tooWideNow = hands.handRatio > HAND_RED_THR;
@@ -2107,20 +1868,16 @@ function loop(){
           }
         } else {
           prevHandTooWide = false;
+          deepStreak = 0;
         }
-        // ===== Timing Hände-vor → Kick (lateKick) =====
-        // Late-Kick nur zählen, wenn:
-        // 1) Armzug endet
-        // 2) Hände gehen wieder klar nach vorn (Streamline-Proxy)
-        // 3) Kick setzt danach deutlich verzögert ein
 
+        // ===== Timing Hände-vor → Kick (lateKick) =====
         if (prevIsPullPhase && !pullPhase) {
           lastArmEndTs = ts;
           lastHandsForwardTs = null;
         }
         prevIsPullPhase = pullPhase;
 
-        // Hände wieder nach vorn (nach Arm-Ende)
         if (lastArmEndTs != null && lastHandsForwardTs == null) {
           const oh = armOverHeadRobust(raw);
           if (oh >= 0.62 && (ts - lastArmEndTs) <= 900) {
@@ -2133,21 +1890,17 @@ function loop(){
           if (lastHandsForwardTs != null) {
             const delay = ts - lastHandsForwardTs;
 
-            // deutlich verspätet → erst dann triggern
             if (delay > 520 && delay < 1500) {
               recStats.lateKickEvents++;
               recStats.lateKickDelaySumMs += delay;
               recStats.lateKickDelayN++;
             }
 
-            // Reset nach Kick (keine Mehrfachzählung)
             lastHandsForwardTs = null;
             lastArmEndTs = null;
           }
         }
         prevKneesBent = kb.bent;
-    
-
       }
 
       drawOverlay(
@@ -2249,6 +2002,7 @@ btnStop.addEventListener("click", ()=>{
         "• Tipp: länger filmen + stabile Perspektive."
       ];
 
+  // ✅ Overlay bleibt 3s sichtbar (und wird in Aufnahme mit aufgezeichnet)
   showTipsOverlayUntil = performance.now() + 3000;
 
   setTimeout(() => {
