@@ -246,7 +246,6 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
     </div>
   </div>
 
-  <!-- Anzeige by default ausgeklappt -->
   <details id="displayBox" open>
     <summary>Anzeige (allgemein)</summary>
 
@@ -255,7 +254,6 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
       <label><input type="checkbox" id="toggleSilhouette" checked /> Segmentierung</label>
     </div>
 
-    <!-- Kameraperspektive -->
     <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
       <div style="font-weight:800; color:#0b1220; padding: 2px 0;">Kameraperspektive</div>
       <select id="filmingPreset" title="Aufnahmeposition">
@@ -265,7 +263,6 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
       </select>
     </div>
 
-    <!-- Erweiterte Einstellungen NICHT open -->
     <details id="advancedBox" style="margin-top:10px;">
       <summary>Erweiterte Einstellungen</summary>
 
@@ -450,7 +447,6 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
     <ul id="hintList"></ul>
   </div>
 
-  <!-- FEEDBACK -->
   <details id="feedbackBox">
     <summary>Feedback / Fehler melden</summary>
     <div class="hint" style="margin-top:8px; max-width: 820px;">
@@ -475,7 +471,7 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
       </div>
 
       <input type="hidden" name="app" value="MOTAXIS" />
-      <input type="hidden" name="version" value="2026-02-02c" />
+      <input type="hidden" name="version" value="2026-02-03-selfieSeg" />
       <input type="hidden" id="fbMeta" name="meta" value="" />
 
       <div class="btnRow" style="max-width: 420px;">
@@ -491,7 +487,11 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
 <p class="hint mono" id="status">Status: bereit</p>
 
 <script type="module">
-import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+import {
+  FilesetResolver,
+  PoseLandmarker,
+  ImageSegmenter
+} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
 // DOM
 const video = document.getElementById("video");
@@ -730,9 +730,16 @@ function drawSkeletonCssPoints(cssPoints) {
   ctx.restore();
 }
 
-// Segmentation (aus PoseLandmarker)
+// =========================
+// Segmentation (SelfieSeg) – bessere Maske
+// =========================
 const maskSrcCanvas = document.createElement("canvas");
 const maskSrcCtx = maskSrcCanvas.getContext("2d", { willReadFrequently: false });
+
+function smoothstep(edge0, edge1, x) {
+  const t = Math.max(0, Math.min(1, (x - edge0) / Math.max(1e-6, (edge1 - edge0))));
+  return t*t*(3 - 2*t);
+}
 
 function drawMaskContainFromSource(srcCanvas, vw, vh) {
   const cw = CSS_W, ch = CSS_H;
@@ -741,7 +748,12 @@ function drawMaskContainFromSource(srcCanvas, vw, vh) {
   const dispH = vh * scale;
   const offX = (cw - dispW) / 2;
   const offY = (ch - dispH) / 2;
+
+  // Bilinear smoothing beim Hochskalieren -> weniger Treppchen
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
   ctx.drawImage(srcCanvas, offX, offY, dispW, dispH);
+  ctx.restore();
 }
 
 function renderMaskToCanvas(segMask) {
@@ -755,8 +767,11 @@ function renderMaskToCanvas(segMask) {
     maskSrcCanvas.height = mh;
   }
 
-  const threshold = Number(silThresh.value) / 100;
-  const alpha = Number(silOpacity.value);
+  const threshold = Number(silThresh.value) / 100;   // 0..1
+  const alphaBase = Number(silOpacity.value);        // 0..1
+
+  // Feather: statt Hard Cut eine kleine Übergangszone
+  const feather = 0.14; // 0.10–0.20 ist meistens gut
 
   let dataF = null, dataU = null;
   try { if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array(); } catch(_) {}
@@ -768,17 +783,24 @@ function renderMaskToCanvas(segMask) {
 
   if (dataF && dataF.length >= mw*mh) {
     for (let i = 0; i < mw*mh; i++) {
-      const v = dataF[i];
+      const v = dataF[i]; // 0..1 confidence
       if (v > maxv) maxv = v;
-      const a = (v >= threshold) ? Math.round(255 * alpha) : 0;
+
+      // Soft Alpha: ab threshold hoch, dann in feather-zone ansteigend
+      const w = smoothstep(threshold, Math.min(1, threshold + feather), v);
+      const a = Math.round(255 * alphaBase * w);
+
       const o = i*4;
       d[o] = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a;
     }
   } else if (dataU && dataU.length >= mw*mh) {
     for (let i = 0; i < mw*mh; i++) {
-      const v = dataU[i] / 255;
+      const v = dataU[i] / 255; // categoryMask oder uint8 confidence
       if (v > maxv) maxv = v;
-      const a = (v >= threshold) ? Math.round(255 * alpha) : 0;
+
+      const w = smoothstep(threshold, Math.min(1, threshold + feather), v);
+      const a = Math.round(255 * alphaBase * w);
+
       const o = i*4;
       d[o] = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a;
     }
@@ -1097,9 +1119,9 @@ function computeGlideScore(raw) {
 
 // ===== Streamline index STRICTER (für Tipp-Logik)
 function streamlineIndex(raw){
-  const arms = armOverHeadRobust(raw); // 0..1
-  const legs = legsStraightScore(raw); // 0..1
-  const body = bodyLongScore(raw); // 0..1
+  const arms = armOverHeadRobust(raw);
+  const legs = legsStraightScore(raw);
+  const body = bodyLongScore(raw);
   return (0.50*arms + 0.38*legs + 0.12*body);
 }
 
@@ -1117,7 +1139,6 @@ function isArmPullPhase(raw){
 
   const over = armOverHeadRobust(raw) >= 0.68;
 
-  // "Arbeitszone" (Landtest): Hände unter Kopf, aber nicht komplett unten hängen
   const inWorkZone = wristY > (headY + 0.02);
   const notTooHigh = wristY > (shoulderY - 0.12);
 
@@ -1134,35 +1155,28 @@ function armsTooDeep(raw){
   const hipY = (lh.y + rh.y)/2;
   const wristY = (lw.y + rw.y)/2;
 
-  // sensibler (damit am Land/seitlich 45° besser triggert)
   const p = filmingPreset.value;
   const dyShoulderThr = (p === "side45") ? 0.08 : (p === "stand" ? 0.10 : 0.09);
 
-  // "Richtung Hüfte/Füße" (weniger streng, damit es überhaupt triggert)
   const nearHip = wristY > (hipY - 0.07);
 
   return ( (wristY - shoulderY) > dyShoulderThr ) && nearHip;
 }
 
-// ===== Timing Arm->Bein (Beinschlag zu spät) – robuster: 2 Trigger für Arm-Ende
+// ===== Timing Arm->Bein (Beinschlag zu spät) – robuster
 let lastArmEndTs = null;
 let prevArmOver = 0;
-
-let prevHandSpanNorm = null;
-let hadWideHands = false;
-
 let prevMinKnee = null;
+let hadWideHands = false;
 
 function resetTimingState(){
   lastArmEndTs = null;
   prevArmOver = 0;
-  prevHandSpanNorm = null;
-  hadWideHands = false;
   prevMinKnee = null;
+  hadWideHands = false;
 }
 
 function detectArmEndEvent(raw, ts){
-  // Trigger A: Arms "go streamline" (armOver crossing up)
   const a = armOverHeadRobust(raw);
   const p = filmingPreset.value;
   const thr = (p === "stand") ? 0.62 : 0.66;
@@ -1170,10 +1184,9 @@ function detectArmEndEvent(raw, ts){
   const eventA = (prevArmOver < thr && a >= thr);
   prevArmOver = a;
 
-  // Trigger B: Hands go from wide -> closed (works better on land)
+  let eventB = false;
   const lw = raw[15], rw = raw[16];
   const ls = raw[11], rs = raw[12];
-  let eventB = false;
   if (lw && rw && ls && rs) {
     const shoulderW = Math.abs(ls.x - rs.x);
     const handSpan  = Math.abs(lw.x - rw.x);
@@ -1194,7 +1207,6 @@ function detectArmEndEvent(raw, ts){
 }
 
 function detectKickExtensionEvent(raw, ts){
-  // Kick = deutliche Knie-Extension (Min-Knie-Winkel steigt stark)
   const lh = raw[23], rh = raw[24], lk = raw[25], rk = raw[26], la = raw[27], ra = raw[28];
   const aL = kneeAngle(lh, lk, la);
   const aR = kneeAngle(rh, rk, ra);
@@ -1205,7 +1217,7 @@ function detectKickExtensionEvent(raw, ts){
   if(prevMinKnee == null){ prevMinKnee = minA; return false; }
 
   const p = filmingPreset.value;
-  const rise = (p === "side45") ? 14 : 16; // sensibler
+  const rise = (p === "side45") ? 14 : 16;
   const event = (prevMinKnee < 160) && (minA - prevMinKnee >= rise) && (minA >= 165);
 
   prevMinKnee = minA;
@@ -1235,14 +1247,12 @@ function updateTimer(raw, now, isRecording){
   const stopHoldMs  = (p === "side45") ? 220 : 230;
 
   const hardMaxMs = (p === "stand") ? 5000 : 6500;
-
   const alpha = (p === "side45") ? 0.62 : 0.60;
 
   const sNow = computeGlideScore(raw);
   if (scoreEma == null) scoreEma = sNow;
   else scoreEma = alpha*scoreEma + (1-alpha)*sNow;
 
-  // STOP-Signale
   const lh = raw[23], rh = raw[24], lk = raw[25], rk = raw[26], la = raw[27], ra = raw[28];
   const aL = kneeAngle(lh, lk, la);
   const aR = kneeAngle(rh, rk, ra);
@@ -1252,7 +1262,6 @@ function updateTimer(raw, now, isRecording){
   const armsDropped = armScore < 0.48;
   const movementStop = kneesBend || armsDropped;
 
-  // START
   if(!glideActive){
     currentElapsed = 0;
 
@@ -1275,7 +1284,6 @@ function updateTimer(raw, now, isRecording){
     return;
   }
 
-  // RUN
   currentElapsed = now - glideStart;
 
   if(currentElapsed >= hardMaxMs){
@@ -1289,7 +1297,6 @@ function updateTimer(raw, now, isRecording){
 
   if(now < ignoreStopUntil) return;
 
-  // STOP 1: Bewegung
   if(movementStop){
     if(stopMoveSince == null) stopMoveSince = now;
 
@@ -1305,7 +1312,6 @@ function updateTimer(raw, now, isRecording){
     stopMoveSince = null;
   }
 
-  // STOP 2: Score unter Schwelle
   if(scoreEma <= stopThr){
     if(stopScoreSince == null) stopScoreSince = now;
 
@@ -1511,7 +1517,6 @@ function showTechTipsFromStats() {
   const preset = filmingPreset.value;
   const issues = [];
 
-  // 1) Knie breit in Rückholphase
   const recDen = Math.max(1, recStats.kneeRecoveryFrames);
   const kneeRecShare = recStats.kneeWideRecoveryFrames / recDen;
   const kneeRecThr = (preset === "back45") ? 0.18 : 0.22;
@@ -1523,7 +1528,6 @@ function showTechTipsFromStats() {
     });
   }
 
-  // 2) Armzug breit (nur Zugphase)
   const armPullDen = Math.max(1, recStats.armPullFrames);
   const handWideShare = recStats.handWideFrames / armPullDen;
   const minEvents = (preset === "side45") ? 3 : 2;
@@ -1537,7 +1541,6 @@ function showTechTipsFromStats() {
     });
   }
 
-  // 3) Arm zu tief (nur Zugphase) – sensibler
   const deepShare = recStats.armTooDeepFrames / Math.max(1, recStats.armPullFrames);
   const deepThr = (preset === "side45") ? 0.14 : 0.18;
   if (recStats.armPullFrames >= 18 && deepShare >= deepThr) {
@@ -1548,7 +1551,6 @@ function showTechTipsFromStats() {
     });
   }
 
-  // 4) Stromlinien-/Streckphase fehlt (strenger)
   const streamShare = recStats.streamlineGoodFrames / Math.max(1, recStats.frames);
   const streamMiss = recStats.streamlineMissFrames / Math.max(1, recStats.frames);
 
@@ -1561,7 +1563,6 @@ function showTechTipsFromStats() {
     });
   }
 
-  // 5) Beinschlag zu spät (Arm-Ende -> Knie-Extension) – sensibler
   if (recStats.lateKickN >= 2) {
     const avgDt = recStats.lateKickDtSum / Math.max(1, recStats.lateKickN);
     const dtThr = (preset === "side45") ? 420 : (preset === "stand" ? 500 : 460);
@@ -1575,7 +1576,6 @@ function showTechTipsFromStats() {
     }
   }
 
-  // 6) Beinschere nur back45 (intern), aber Nutzertext neutral
   if (preset === "back45") {
     const scShare = recStats.scissorLikelyFrames / Math.max(1, recStats.frames);
     if (scShare >= 0.18) {
@@ -1672,12 +1672,15 @@ async function shareOrDownload(){
   setStatus("Download gestartet ("+ext.toUpperCase()+").");
 }
 
-// MediaPipe
+// =========================
+// MediaPipe Tasks
+// =========================
 let landmarker = null;
+let segmenter = null;
 let running = false;
 let rafId = null;
 
-// bevorzugt lokale Models (GitHub Pages: docs/models/*), fallback remote
+// bevorzugt lokale Models
 const LOCAL_TASK_CANDIDATES = [
   "models/pose_landmarker_full.task",
   "models/pose_landmarker_heavy.task",
@@ -1688,12 +1691,21 @@ const LOCAL_TASK_CANDIDATES = [
 const REMOTE_TASK_URL =
   "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task";
 
-async function createLandmarker(){
+// SelfieSeg lokal/remote
+const LOCAL_SELFIESEG = "models/selfie_segmentation.tflite";
+const REMOTE_SELFIESEG =
+  "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/1/selfie_segmenter.tflite";
+
+let fileset = null;
+
+async function createTasks(){
   setStatus("Lade Tasks-WASM …");
-  const fileset = await FilesetResolver.forVisionTasks(
+  fileset = await FilesetResolver.forVisionTasks(
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
   );
+}
 
+async function createLandmarker(){
   const options = (modelAssetPath) => ({
     baseOptions: { modelAssetPath },
     runningMode: "VIDEO",
@@ -1704,7 +1716,6 @@ async function createLandmarker(){
     minTrackingConfidence: Number(trackConf.value),
   });
 
-  // 1) Lokal probieren (mehrere Namen)
   for (const path of LOCAL_TASK_CANDIDATES) {
     try {
       setStatus(`Lade Pose Landmarker (lokal): ${path} …`);
@@ -1712,18 +1723,41 @@ async function createLandmarker(){
       setStatus(`Landmarker geladen (lokal): ${path}`);
       return;
     } catch (e) {
-      console.warn("Local model failed:", path, e);
+      console.warn("Local pose model failed:", path, e);
     }
   }
 
-  // 2) Fallback remote
   setStatus("Lade Pose Landmarker (remote) …");
   landmarker = await PoseLandmarker.createFromOptions(fileset, options(REMOTE_TASK_URL));
   setStatus("Landmarker geladen (remote).");
 }
 
-  setStatus("Lade Pose Landmarker (remote) …");
-  landmarker = await PoseLandmarker.createFromOptions(fileset, options(REMOTE_TASK_URL));
+async function createSelfieSegmenter(){
+  const options = (modelAssetPath) => ({
+    baseOptions: { modelAssetPath },
+    runningMode: "VIDEO",
+    // Für SelfieSeg bekommst du i.d.R. confidenceMasks[0]
+    outputType: "CONFIDENCE_MASK",
+  });
+
+  try {
+    setStatus(`Lade Selfie-Segmenter (lokal): ${LOCAL_SELFIESEG} …`);
+    segmenter = await ImageSegmenter.createFromOptions(fileset, options(LOCAL_SELFIESEG));
+    setStatus("Selfie-Segmenter geladen (lokal).");
+    return;
+  } catch (e) {
+    console.warn("Local selfie seg failed:", e);
+  }
+
+  try {
+    setStatus("Lade Selfie-Segmenter (remote) …");
+    segmenter = await ImageSegmenter.createFromOptions(fileset, options(REMOTE_SELFIESEG));
+    setStatus("Selfie-Segmenter geladen (remote).");
+  } catch (e) {
+    console.warn("Remote selfie seg failed:", e);
+    segmenter = null;
+    setStatus("Selfie-Segmenter nicht verfügbar (nur Pose-Maske möglich).");
+  }
 }
 
 function updateLandmarkerThresholds(){
@@ -1790,20 +1824,36 @@ function loop(){
     }
 
     const ts = performance.now();
-    const result = landmarker.detectForVideo(video, ts);
 
-    const hasMask = !!(result?.segmentationMasks?.length);
+    // 1) Pose (Landmarks)
+    const result = landmarker.detectForVideo(video, ts);
     const hasLandmarks = !!(result?.landmarks?.length && result.landmarks[0]?.length);
 
+    // 2) Segmentation bevorzugt SelfieSegmenter
     let maskInfo = { max: 0 };
-    if (hasMask) {
-      maskInfo = drawSilhouette(result.segmentationMasks[0]);
-      if (maskInfo.max <= 0.001) emptyMaskFrames++;
-      else emptyMaskFrames = 0;
+    let segMask = null;
+    let segSource = "none";
 
-      if (emptyMaskFrames > 45) {
-        toggleSilhouette.checked = false;
-        setStatus("Hinweis: Segmentierung liefert leere Werte → deaktiviert.");
+    if (toggleSilhouette.checked) {
+      if (segmenter) {
+        const segRes = segmenter.segmentForVideo(video, ts);
+        segMask = segRes?.confidenceMasks?.[0] || segRes?.categoryMask || null;
+        segSource = segMask ? "selfie" : "selfie_empty";
+      } else if (result?.segmentationMasks?.length) {
+        segMask = result.segmentationMasks[0];
+        segSource = segMask ? "pose" : "pose_empty";
+      }
+
+      if (segMask) {
+        maskInfo = drawSilhouette(segMask);
+        if (maskInfo.max <= 0.001) emptyMaskFrames++;
+        else emptyMaskFrames = 0;
+
+        // falls dauerhaft leer (z.B. iOS/Safari/Model fail) -> Segmentierung aus
+        if (emptyMaskFrames > 45) {
+          toggleSilhouette.checked = false;
+          setStatus("Hinweis: Segmentierung liefert leere Werte → deaktiviert.");
+        }
       }
     }
 
@@ -1830,12 +1880,10 @@ function loop(){
       if (isRecording) {
         recStats.frames++;
 
-        // Streamline strict
         const S = streamlineIndex(raw);
-        if (S >= 0.84) recStats.streamlineGoodFrames++; // strenger
+        if (S >= 0.84) recStats.streamlineGoodFrames++;
         if (!glideActive && S < 0.60) recStats.streamlineMissFrames++;
 
-        // Knee width averages + recovery
         if (legs.valid && legs.kneeRatio != null) {
           recStats.avgKneeRatioSum += legs.kneeRatio;
           recStats.avgKneeRatioN++;
@@ -1850,12 +1898,10 @@ function loop(){
           }
         }
 
-        // Arm pull phase gated
         const inPull = (!glideActive && isArmPullPhase(raw));
         if (inPull) {
           recStats.armPullFrames++;
 
-          // wide arms
           if (hands.handRatio != null) {
             const thr = (filmingPreset.value === "side45") ? 2.70 : HAND_RED_THR_BASE;
             const tooWideNow = hands.handRatio > thr;
@@ -1866,13 +1912,11 @@ function loop(){
             prevHandTooWide = false;
           }
 
-          // too deep arms (improved)
           if (armsTooDeep(raw)) recStats.armTooDeepFrames++;
         } else {
           prevHandTooWide = false;
         }
 
-        // late kick: armEnd -> knee extension
         if (kickExt && lastArmEndTs != null) {
           const dt = ts - lastArmEndTs;
           const maxDt = (filmingPreset.value === "stand") ? 1600 : 1400;
@@ -1884,7 +1928,6 @@ function loop(){
           }
         }
 
-        // scissor only back45
         if (filmingPreset.value === "back45" && legs.valid) {
           const d = legs.kneeDiff;
           if (d != null && d > 28) recStats.scissorLikelyFrames++;
@@ -1898,10 +1941,10 @@ function loop(){
       const Sdbg = streamlineIndex(raw).toFixed(2);
 
       drawOverlay(
-        `DEBUG: lm=${raw.length} mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} score=${(scoreEma??0).toFixed(2)} stream=${Sdbg} ${handDbg} ${gateDbg} armEnd=${armEnd?1:0} kickExt=${kickExt?1:0} rec=${isRecording?1:0}`
+        `DEBUG: lm=${raw.length} seg=${segSource} maskmax=${(maskInfo.max??0).toFixed(3)} score=${(scoreEma??0).toFixed(2)} stream=${Sdbg} ${handDbg} ${gateDbg} armEnd=${armEnd?1:0} kickExt=${kickExt?1:0} rec=${isRecording?1:0}`
       );
     } else {
-      drawOverlay(`DEBUG: lm=0 mask=${hasMask?1:0} maskmax=${(maskInfo.max??0).toFixed(3)} rec=${isRecording?1:0}`);
+      drawOverlay(`DEBUG: lm=0 seg=${segSource} maskmax=${(maskInfo.max??0).toFixed(3)} rec=${isRecording?1:0}`);
     }
 
     rafId = requestAnimationFrame(loop);
@@ -1924,7 +1967,10 @@ btnInit.addEventListener("click", async ()=>{
     setStatus("Initialisiere …");
 
     await startCamera();
+
+    await createTasks();
     await createLandmarker();
+    await createSelfieSegmenter();
 
     running=true;
     btnSwitch.disabled=false;
