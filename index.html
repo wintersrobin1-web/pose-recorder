@@ -521,7 +521,15 @@ const toggleHandAxis = document.getElementById("toggleHandAxis");
 const toggleTimer = document.getElementById("toggleTimer");
 const toggleHintBox = document.getElementById("toggleHintBox");
 const filmingPreset = document.getElementById("filmingPreset");
-
+// Kameraperspektive: verständliche Labels für Overlay/Timer
+function getPresetLabel() {
+  switch (filmingPreset.value) {
+    case "side45": return "Schräg seitlich (leicht von oben)";
+    case "back45": return "Schräg von hinten (leicht von oben)";
+    case "stand":  return "Frontal (Stand)";
+    default:       return filmingPreset.value;
+  }
+}
 const showInputVideo = document.getElementById("showInputVideo");
 
 const silOpacity = document.getElementById("silOpacity");
@@ -1347,7 +1355,7 @@ function drawOverlay(debugText=""){
   ctx.font = isPortrait ? "800 28px system-ui" : "800 24px system-ui";
   ctx.fillText(glideActive ? fmt(currentElapsed) : "0.000 s", x+12, y+(isPortrait?36:30));
 
-  ctx.fillText(`Timer – Gleitphase | Aufnahme: ${presetLabel}`, x+12, y+(isPortrait?56:48));
+ctx.fillText(`Timer – Gleitphase | Kameraperspektive: ${getPresetLabel()}`, x+12, y+(isPortrait?56:48));
 
   ctx.font = isPortrait ? "14px system-ui" : "13px system-ui";
   if (isPortrait) {
