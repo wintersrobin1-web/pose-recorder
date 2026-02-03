@@ -484,7 +484,11 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
 <p class="hint mono" id="status">Status: bereit</p>
 
 <script type="module">
-import { FilesetResolver, PoseLandmarker, ImageSegmenter } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+/**
+ * WICHTIG: Zurück zum "alten" Verhalten = NUR Pose-SegmentationMask (keine Selfie-Segmentierung).
+ * Zusätzlich: resetMaskEma ist garantiert definiert und Aufrufe sind safe.
+ */
+import { FilesetResolver, PoseLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
 // DOM
 const video = document.getElementById("video");
@@ -597,7 +601,6 @@ function setupHiDPICanvas(cssW, cssH) {
   canvas.width = Math.round(cssW * dpr);
   canvas.height = Math.round(cssH * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  // Skelett bleibt crisp (wir schalten für Mask-Scaling temporär smoothing an)
   ctx.imageSmoothingEnabled = false;
 }
 function applyLayoutFromOrientation() {
@@ -723,14 +726,66 @@ function drawSkeletonCssPoints(cssPoints) {
 
   ctx.restore();
 }
-// Segmentation (stabil: Polarity-Lock + soft edges)
-const maskSrcCanvas = document.createElement("canvas");
-const maskSrcCtx = maskSrcCanvas.getContext("2d", { willReadFrequently: true });
 
-// Polarity stabilisieren (verhindert "gelb/blau flip")
-let maskInvert = null;          // null = noch nicht entschieden, sonst true/false
-let maskInvertStreak = 0;       // Hysterese gegen Frame-Flips
-const INVERT_STREAK_N = 6;      // wie viele Frames bis Umschalten erlaubt ist
+/* =========================
+   SEGMENTATION (POSE MASK ONLY, STABLE + CRISP)
+   - NUR result.segmentationMasks[0] (wie "alter Code")
+   - hartes Threshold
+   - kein temporales EMA
+   - crisp scaling
+   - Auto-Invert stabil (Votes + Hysterese)
+   ========================= */
+
+const maskSrcCanvas = document.createElement("canvas");
+const maskSrcCtx = maskSrcCanvas.getContext("2d", { willReadFrequently: false });
+
+// --- stable invert state (prevents flipping)
+let maskInvert = null;          // final state: true => invert
+let invertVotes = 0;            // vote accumulator
+let invertVoteN = 0;            // number of votes in window
+let lastInvertEvalTs = 0;       // throttle voting cadence
+
+function readMaskToArr01(segMask, mw, mh) {
+  let dataF = null, dataU = null;
+  try { if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array(); } catch(_) {}
+  if (!dataF) { try { if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array(); } catch(_) {} }
+
+  if (dataF && dataF.length >= mw*mh) return { arr: dataF, isFloat: true };
+  if (dataU && dataU.length >= mw*mh) return { arr: dataU, isFloat: false };
+  return { arr: null, isFloat: false };
+}
+
+function _sampleMask01(arr, isFloat, mw, mh, xNorm, yNorm) {
+  const x = Math.max(0, Math.min(mw - 1, Math.round(xNorm * (mw - 1))));
+  const y = Math.max(0, Math.min(mh - 1, Math.round(yNorm * (mh - 1))));
+  const idx = y * mw + x;
+  const v = arr[idx];
+  return isFloat ? v : (v / 255);
+}
+
+function _wantInvertThisFrame(arr, isFloat, mw, mh, threshold, rawPoseOrNull) {
+  // Prefer pose points as "inside body" samples (more reliable)
+  if (rawPoseOrNull && rawPoseOrNull.length) {
+    const ids = [0, 11, 12, 23, 24]; // nose, shoulders, hips
+    let on = 0, off = 0, n = 0;
+
+    for (const id of ids) {
+      const p = rawPoseOrNull[id];
+      if (!p) continue;
+      if (typeof p.visibility === "number" && p.visibility < 0.25) continue;
+
+      const s = _sampleMask01(arr, isFloat, mw, mh, p.x, p.y);
+      n++;
+      if (s >= threshold) on++; else off++;
+    }
+
+    if (n >= 3) return off > on; // most "body points" are outside => invert
+  }
+
+  // Fallback: center pixel (weak heuristic)
+  const mid = _sampleMask01(arr, isFloat, mw, mh, 0.5, 0.5);
+  return (mid < threshold);
+}
 
 function drawMaskContainFromSource(srcCanvas, vw, vh) {
   const cw = CSS_W, ch = CSS_H;
@@ -740,154 +795,107 @@ function drawMaskContainFromSource(srcCanvas, vw, vh) {
   const offX = (cw - dispW) / 2;
   const offY = (ch - dispH) / 2;
 
-  // Für Masken ist leichte Glättung meist besser
   ctx.save();
-  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingEnabled = false; // CRISP scaling (no blur)
   ctx.drawImage(srcCanvas, offX, offY, dispW, dispH);
   ctx.restore();
 }
 
-function sampleMaskPolarity(data01, mw, mh) {
-  // data01: Float 0..1
-  // Heuristik: Person ist normalerweise im Zentrum.
-  // Wenn Zentrum "dunkler" als Ecken → Maske ist invertiert.
-  const idx = (x, y) => (y * mw + x);
-
-  const cx = Math.floor(mw * 0.50);
-  const cy = Math.floor(mh * 0.45); // leicht über Mitte (Kopf/torso)
-  const center = data01[idx(cx, cy)] ?? 0;
-
-  const corners = [
-    data01[idx(Math.floor(mw*0.05), Math.floor(mh*0.05))] ?? 0,
-    data01[idx(Math.floor(mw*0.95), Math.floor(mh*0.05))] ?? 0,
-    data01[idx(Math.floor(mw*0.05), Math.floor(mh*0.95))] ?? 0,
-    data01[idx(Math.floor(mw*0.95), Math.floor(mh*0.95))] ?? 0,
-  ];
-  const bg = (corners[0] + corners[1] + corners[2] + corners[3]) / 4;
-
-  // Wenn center < bg → sehr wahrscheinlich invertiert
-  return (center + 0.05) < bg;
-}
-
-function renderMaskToCanvas(segMask) {
-  if (!segMask) return { max: 0 };
+function renderMaskToCanvas(segMask, rawPoseOrNull) {
+  if (!segMask) return { max: 0, invert: maskInvert ?? false };
 
   const mw = segMask.width ?? 0;
   const mh = segMask.height ?? 0;
-  if (!mw || !mh) return { max: 0 };
+  if (!mw || !mh) return { max: 0, invert: maskInvert ?? false };
 
   if (maskSrcCanvas.width !== mw || maskSrcCanvas.height !== mh) {
     maskSrcCanvas.width = mw;
     maskSrcCanvas.height = mh;
-    // wenn Auflösung wechselt, Polarity neu lernen
-    maskInvert = null;
-    maskInvertStreak = 0;
   }
 
-  const threshold = Number(silThresh.value) / 100; // 0..1
-  const opacity = Number(silOpacity.value);        // 0..1
+  const threshold = Number(silThresh.value) / 100; // hard threshold
+  const alphaMax  = Number(silOpacity.value);
 
-  // Soft edge: Bereich um die Schwelle (macht es "genauer" statt hart abgeschnitten)
-  const feather = 0.08; // 0.05–0.12 sinnvoll
+  const { arr, isFloat } = readMaskToArr01(segMask, mw, mh);
+  if (!arr) return { max: 0, invert: maskInvert ?? false };
 
-  let dataF = null, dataU = null;
-  try { if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array(); } catch (_) {}
-  if (!dataF) { try { if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array(); } catch (_) {} }
+  // ---- stable auto-invert via votes + hysteresis
+  const now = performance.now();
+  if ((now - lastInvertEvalTs) > 90) { // ~10-11 Hz
+    lastInvertEvalTs = now;
 
-  const n = mw * mh;
-  if ((!dataF || dataF.length < n) && (!dataU || dataU.length < n)) return { max: 0 };
+    const wantInvert = _wantInvertThisFrame(arr, isFloat, mw, mh, threshold, rawPoseOrNull);
 
-  // Einheitlich als 0..1 Float interpretieren (wichtig gegen Flackern)
-  // Ohne extra Array-Allokation: wir lesen direkt und normalisieren.
-  let maxv = 0;
+    invertVotes += wantInvert ? 1 : -1;
+    invertVoteN++;
 
-  // Polarity-Entscheidung stabilisieren (Hysterese)
-  // Dafür brauchen wir einen kleinen "view" auf 0..1. Wir messen das per Accessor.
-  const get01 = (i) => {
-    if (dataF) {
-      const v = dataF[i];
-      return (v > 1.5) ? (v / 255) : v; // falls Float doch 0..255 ist
-    } else {
-      return dataU[i] / 255;
+    const WINDOW = 12; // ~1s
+    if (invertVoteN >= WINDOW) {
+      const avg = invertVotes / invertVoteN; // -1..+1
+
+      if (maskInvert === null) {
+        maskInvert = (avg > 0);
+      } else {
+        // hysteresis: only switch when very clear
+        if (avg > 0.35) maskInvert = true;
+        else if (avg < -0.35) maskInvert = false;
+      }
+
+      invertVotes = 0;
+      invertVoteN = 0;
     }
-  };
-
-  // Invert-Heuristik berechnen
-  const invGuess = sampleMaskPolarity({ // mini wrapper: index Zugriff
-    get length(){ return n; },
-    // syntaktischer Trick: wir nutzen Function statt Array, unten per idx() über get01
-  }, mw, mh);
-  // Der Trick oben taugt nicht, daher simpel neu:
-  // -> wir berechnen sampleMaskPolarity ohne Array: direkt per get01:
-  const invGuess2 = (function(){
-    const idx = (x,y)=>(y*mw+x);
-    const cx = Math.floor(mw*0.50);
-    const cy = Math.floor(mh*0.45);
-    const center = get01(idx(cx,cy));
-
-    const c = [
-      get01(idx(Math.floor(mw*0.05), Math.floor(mh*0.05))),
-      get01(idx(Math.floor(mw*0.95), Math.floor(mh*0.05))),
-      get01(idx(Math.floor(mw*0.05), Math.floor(mh*0.95))),
-      get01(idx(Math.floor(mw*0.95), Math.floor(mh*0.95))),
-    ];
-    const bg = (c[0]+c[1]+c[2]+c[3])/4;
-    return (center + 0.05) < bg;
-  })();
-
-  if (maskInvert === null) {
-    maskInvert = invGuess2;
-    maskInvertStreak = 0;
-  } else if (invGuess2 !== maskInvert) {
-    // nur umschalten wenn es mehrere Frames hintereinander wirklich anders ist
-    maskInvertStreak++;
-    if (maskInvertStreak >= INVERT_STREAK_N) {
-      maskInvert = invGuess2;
-      maskInvertStreak = 0;
-    }
-  } else {
-    maskInvertStreak = 0;
   }
+
+  const inv = !!maskInvert;
 
   const img = maskSrcCtx.createImageData(mw, mh);
   const d = img.data;
 
-  for (let i = 0; i < n; i++) {
-    let v = get01(i);
+  let maxv = 0;
+
+  for (let i = 0; i < mw * mh; i++) {
+    let v = arr[i];
+    v = isFloat ? v : (v / 255);
     if (v > maxv) maxv = v;
 
-    // Polarity fix
-    if (maskInvert) v = 1 - v;
-
-    // Soft threshold (feather)
-    // a01 = 0..1
-    let a01;
-    if (v <= threshold - feather) a01 = 0;
-    else if (v >= threshold + feather) a01 = 1;
-    else a01 = (v - (threshold - feather)) / (2 * feather);
-
-    const a = Math.round(255 * opacity * a01);
+    // binary mask (no feather, no hole-fill)
+    let m = (v >= threshold) ? 1 : 0;
+    if (inv) m = 1 - m;
 
     const o = i * 4;
-    d[o] = 255;     // Gelb
-    d[o + 1] = 215;
-    d[o + 2] = 0;
-    d[o + 3] = a;
+    // Yellow silhouette where m==1, transparent otherwise (blue bg shows through)
+    d[o]   = 255;
+    d[o+1] = 215;
+    d[o+2] = 0;
+    d[o+3] = Math.round(255 * alphaMax * m);
   }
 
   maskSrcCtx.putImageData(img, 0, 0);
-  return { max: maxv };
+  return { max: maxv, invert: inv };
 }
 
-function drawSilhouette(segMask) {
+function drawSilhouette(segMask, rawPoseOrNull) {
   if (!toggleSilhouette.checked || !segMask) return { max: 0 };
   const vw = video.videoWidth || 0;
   const vh = video.videoHeight || 0;
   if (!vw || !vh) return { max: 0 };
 
-  const info = renderMaskToCanvas(segMask);
-  if (info.max > 0.001) drawMaskContainFromSource(maskSrcCanvas, vw, vh);
+  const info = renderMaskToCanvas(segMask, rawPoseOrNull);
+  if (info.max > 0) drawMaskContainFromSource(maskSrcCanvas, vw, vh);
   return info;
+}
+
+// FIX: resetMaskEma ist garantiert definiert (und wird safe aufgerufen)
+function resetMaskEma() {
+  maskInvert = null;
+  invertVotes = 0;
+  invertVoteN = 0;
+  lastInvertEvalTs = 0;
+}
+
+// compatibility with existing call sites
+function drawSilhouetteFromMask(segMask, rawPoseOrNull) {
+  return drawSilhouette(segMask, rawPoseOrNull);
 }
 
 // Head center
@@ -1213,1022 +1221,7 @@ function isArmPullPhase(raw){
 }
 
 function armsTooDeep(raw){
-  const ls = raw[11], rs = raw[12];
-  const lw = raw[15], rw = raw[16];
-  const lh = raw[23], rh = raw[24];
-  if(!ls || !rs || !lw || !rw || !lh || !rh) return false;
-
-  const shoulderY = (ls.y + rs.y)/2;
-  const hipY = (lh.y + rh.y)/2;
-  const wristY = (lw.y + rw.y)/2;
-
-  const p = filmingPreset.value;
-  const dyShoulderThr = (p === "side45") ? 0.08 : (p === "stand" ? 0.10 : 0.09);
-  const nearHip = wristY > (hipY - 0.07);
-
-  return ( (wristY - shoulderY) > dyShoulderThr ) && nearHip;
-}
-
-// Timing Arm->Bein
-let lastArmEndTs = null;
-let prevArmOver = 0;
-let hadWideHands = false;
-let prevMinKnee = null;
-
-function resetTimingState(){
-  lastArmEndTs = null;
-  prevArmOver = 0;
-  hadWideHands = false;
-  prevMinKnee = null;
-}
-
-function detectArmEndEvent(raw, ts){
-  const a = armOverHeadRobust(raw);
-  const p = filmingPreset.value;
-  const thr = (p === "stand") ? 0.62 : 0.66;
-
-  const eventA = (prevArmOver < thr && a >= thr);
-  prevArmOver = a;
-
-  let eventB = false;
-  const lw = raw[15], rw = raw[16];
-  const ls = raw[11], rs = raw[12];
-
-  if (lw && rw && ls && rs) {
-    const shoulderW = Math.abs(ls.x - rs.x);
-    const handSpan  = Math.abs(lw.x - rw.x);
-    const ratio = shoulderW > 0.001 ? (handSpan / shoulderW) : null;
-
-    if (ratio != null) {
-      if (ratio > 1.45) hadWideHands = true;
-      if (hadWideHands && ratio < 1.05) {
-        eventB = true;
-        hadWideHands = false;
-      }
-    }
-  }
-
-  const event = eventA || eventB;
-  if(event) lastArmEndTs = ts;
-  return event;
-}
-
-function detectKickExtensionEvent(raw, ts){
-  const lh = raw[23], rh = raw[24], lk = raw[25], rk = raw[26], la = raw[27], ra = raw[28];
-  const aL = kneeAngle(lh, lk, la);
-  const aR = kneeAngle(rh, rk, ra);
-  if(aL == null && aR == null) return false;
-
-  const minA = Math.min(aL ?? 999, aR ?? 999);
-
-  if(prevMinKnee == null){ prevMinKnee = minA; return false; }
-
-  const p = filmingPreset.value;
-  const rise = (p === "side45") ? 14 : 16;
-  const event = (prevMinKnee < 160) && (minA - prevMinKnee >= rise) && (minA >= 165);
-
-  prevMinKnee = minA;
-  return event;
-}
-
-function resetTimerState(alsoSlots=false){
-  glideActive = false; glideStart = 0; currentElapsed = 0;
-  scoreEma = null; scoreStableSince = null;
-  stopScoreSince = null;
-  stopMoveSince  = null;
-  ignoreStopUntil = 0;
-  lastTorso = null;
-  if(alsoSlots) glideTimes.length = 0;
-}
-
-function updateTimer(raw, now, isRecording){
-  if(!toggleTimer.checked){ resetTimerState(false); return; }
-  if(!isRecording){ resetTimerState(false); return; }
-
-  const p = filmingPreset.value;
-
-  const startThr = (p === "side45") ? 0.72 : 0.75;
-  const stopThr  = (p === "side45") ? 0.55 : 0.58;
-
-  const startHoldMs = (p === "side45") ? 130 : 160;
-  const stopHoldMs  = (p === "side45") ? 220 : 230;
-
-  const hardMaxMs = (p === "stand") ? 5000 : 6500;
-  const alpha = (p === "side45") ? 0.62 : 0.60;
-
-  const sNow = computeGlideScore(raw);
-  if (scoreEma == null) scoreEma = sNow;
-  else scoreEma = alpha*scoreEma + (1-alpha)*sNow;
-
-  const lh = raw[23], rh = raw[24], lk = raw[25], rk = raw[26], la = raw[27], ra = raw[28];
-  const aL = kneeAngle(lh, lk, la);
-  const aR = kneeAngle(rh, rk, ra);
-
-  const kneesBend = ((aL != null && aL < 158) || (aR != null && aR < 158));
-  const armScore = armOverHeadRobust(raw);
-  const armsDropped = armScore < 0.48;
-  const movementStop = kneesBend || armsDropped;
-
-  // START
-  if(!glideActive){
-    currentElapsed = 0;
-
-    if(scoreEma >= startThr && glideTimes.length < 4){
-      if(scoreStableSince == null) scoreStableSince = now;
-
-      if(now - scoreStableSince >= startHoldMs){
-        glideActive = true;
-        glideStart = now;
-
-        stopScoreSince = null;
-        stopMoveSince  = null;
-        scoreStableSince = null;
-
-        ignoreStopUntil = now + ((p === "side45") ? 220 : 260);
-      }
-    } else {
-      scoreStableSince = null;
-    }
-    return;
-  }
-
-  // RUN
-  currentElapsed = now - glideStart;
-
-  if(currentElapsed >= hardMaxMs){
-    glideActive = false;
-    stopScoreSince = null;
-    stopMoveSince  = null;
-    if(glideTimes.length < 4) glideTimes.push(currentElapsed);
-    currentElapsed = 0;
-    return;
-  }
-
-  if(now < ignoreStopUntil) return;
-
-  // STOP 1: Bewegung
-  if(movementStop){
-    if(stopMoveSince == null) stopMoveSince = now;
-
-    if(now - stopMoveSince >= 90){
-      glideActive = false;
-      stopScoreSince = null;
-      stopMoveSince  = null;
-      if(glideTimes.length < 4) glideTimes.push(now - glideStart);
-      currentElapsed = 0;
-      return;
-    }
-  } else {
-    stopMoveSince = null;
-  }
-
-  // STOP 2: Score unter Schwelle
-  if(scoreEma <= stopThr){
-    if(stopScoreSince == null) stopScoreSince = now;
-
-    if(now - stopScoreSince >= stopHoldMs){
-      glideActive = false;
-      stopScoreSince = null;
-      stopMoveSince  = null;
-      if(glideTimes.length < 4) glideTimes.push(now - glideStart);
-      currentElapsed = 0;
-      return;
-    }
-  } else {
-    stopScoreSince = null;
-  }
-}
-
-// Hand-axis drawing + measurement (GATED: only when NOT glideActive)
-function drawHandAxis(raw, cssPoints) {
-  if (toggleTimer.checked && glideActive) return { handRatio: null, gated: true };
-  if (!toggleHandAxis.checked || !raw || !cssPoints) return { handRatio: null, gated: false };
-
-  const wL = cssPoints[15];
-  const wR = cssPoints[16];
-  const sL = cssPoints[11], sR = cssPoints[12];
-
-  const okVis = (p)=> (p && (typeof p.visibility !== "number" || p.visibility >= 0.20));
-  if (!wL || !wR || !sL || !sR || !okVis(wL) || !okVis(wR) || !okVis(sL) || !okVis(sR)) {
-    return { handRatio: null, gated: false };
-  }
-
-  const shoulderW = distXPx(sL, sR);
-  const handW = distXPx(wL, wR);
-  const handRatio = (shoulderW > 1) ? (handW / shoulderW) : null;
-
-  if (handRatio != null) {
-    ctx.save();
-    ctx.lineCap = "round";
-    ctx.lineWidth = 3;
-    ctx.setLineDash([7, 6]);
-    ctx.strokeStyle = colorForHandRatio(handRatio);
-    ctx.beginPath();
-    ctx.moveTo(wL._cx, wL._cy);
-    ctx.lineTo(wR._cx, wR._cy);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
-
-  return { handRatio, gated: false };
-}
-// ===== DEBUG =====
-if (typeof window.DEBUG_CANVAS === "undefined") window.DEBUG_CANVAS = false; // standardmäßig AUS
-
-// Overlay (Timer sichtbar) + Debug (standardmäßig versteckt)
-function drawOverlay(debugText = "") {
-  // Debug-Footer NUR wenn explizit aktiviert
-  if (window.DEBUG_CANVAS && debugText) {
-    drawDebugFooter(debugText);
-  }
-
-  // Timer-Overlay nur wenn aktiv
-  if (!toggleTimer.checked) return;
-
-  const isPortrait = CSS_H > CSS_W;
-  const x = 12, y = 12;
-  const w = isPortrait ? Math.min(420, CSS_W - 24) : Math.min(680, CSS_W - 24);
-  const h = isPortrait ? 140 : 90;
-  const r = 14;
-
-  ctx.save();
-  ctx.fillStyle = "rgba(0,0,0,0.40)";
-  ctx.strokeStyle = "rgba(255,255,255,0.55)";
-  ctx.lineWidth = 2;
-
-  const rr = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x, y + h, x, y, rr);
-  ctx.arcTo(x, y, x + w, y, rr);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.fillStyle = "white";
-  ctx.shadowBlur = 0;
-
-  // Hauptzeit
-  ctx.font = isPortrait ? "800 28px system-ui" : "800 24px system-ui";
-  ctx.fillText(
-    glideActive ? fmt(currentElapsed) : "0.000 s",
-    x + 12,
-    y + (isPortrait ? 36 : 30)
-  );
-
-  // Subtitle
-  ctx.font = "700 12px system-ui";
-  const presetLabel =
-    filmingPreset.value === "stand"
-      ? "Stand"
-      : filmingPreset.value === "side45"
-      ? "45° seitlich"
-      : "45° hinten";
-
-  ctx.fillText(
-    `Timer – Streck-/Gleitphase (experimentell) | Aufnahme: ${presetLabel}`,
-    x + 12,
-    y + (isPortrait ? 56 : 48)
-  );
-
-  // Slots
-  ctx.font = isPortrait ? "14px system-ui" : "13px system-ui";
-  if (isPortrait) {
-    const baseY = y + 80;
-    for (let i = 0; i < 4; i++) {
-      const t = glideTimes[i] != null ? fmt(glideTimes[i]) : "—";
-      ctx.fillText(`Slot ${i + 1}: ${t}`, x + 12, baseY + i * 16);
-    }
-  } else {
-    const lineY = y + 72;
-    let cx = x + 12;
-    for (let i = 0; i < 4; i++) {
-      const t = glideTimes[i] != null ? fmt(glideTimes[i]) : "—";
-      const txt = `S${i + 1}: ${t}`;
-      ctx.fillText(txt, cx, lineY);
-      cx += ctx.measureText(txt).width + 18;
-      if (cx > x + w - 80) break;
-    }
-  }
-
-  ctx.restore();
-}
-
-function drawDebugFooter(text) {
-  const pad = 8;
-  const h = 18;
-  const y = CSS_H - h - 10;
-  const w = Math.min(CSS_W - 24, 980);
-  const x = 12;
-
-  ctx.save();
-  ctx.fillStyle = "rgba(0,0,0,0.25)";
-  ctx.strokeStyle = "rgba(255,255,255,0.25)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  if (ctx.roundRect) ctx.roundRect(x, y, w, h, 8);
-  else {
-    ctx.moveTo(x + 8, y);
-    ctx.arcTo(x + w, y, x + w, y + h, 8);
-    ctx.arcTo(x + w, y + h, x, y + h, 8);
-    ctx.arcTo(x, y + h, x, y, 8);
-    ctx.arcTo(x, y, x + w, y, 8);
-    ctx.closePath();
-  }
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = "rgba(255,255,255,0.95)";
-  ctx.font = "11px system-ui";
-  ctx.fillText(text, x + pad, y + 13);
-  ctx.restore();
-}
-
-if (!CanvasRenderingContext2D.prototype.roundRect) {
-  CanvasRenderingContext2D.prototype.roundRect = function (x, y, w, h, r) {
-    const rr = Math.min(r, w / 2, h / 2);
-    this.beginPath();
-    this.moveTo(x + rr, y);
-    this.arcTo(x + w, y, x + w, y + h, rr);
-    this.arcTo(x + w, y + h, x, y + h, rr);
-    this.arcTo(x, y + h, x, y, rr);
-    this.arcTo(x, y, x + w, y, rr);
-    this.closePath();
-    return this;
-  };
-}
-
-// Recording + tips
-let recorder=null, recordedChunks=[], lastBlob=null;
-let isRecording = false;
-
-// ===== Stats
-let prevHandTooWide = false;
-const HAND_RED_THR_BASE = 2.50;
-
-const recStats = {
-  frames:0,
-  avgKneeRatioSum:0, avgKneeRatioN:0,
-
-  armPullFrames: 0,
-  handWideFrames: 0,
-  handWideEvents: 0,
-
-  armTooDeepFrames: 0,
-
-  streamlineGoodFrames: 0,
-  streamlineMissFrames: 0,
-
-  kneeRecoveryFrames: 0,
-  kneeWideRecoveryFrames: 0,
-
-  lateKickEvents: 0,
-  lateKickDtSum: 0,
-  lateKickN: 0,
-
-  scissorLikelyFrames: 0
-};
-
-function resetRecStats() {
-  for (const k of Object.keys(recStats)) recStats[k] = 0;
-  prevHandTooWide = false;
-  resetTimingState();
-}
-
-function clearTipsUI() {
-  tipsBox.style.display = "none";
-  hintList.innerHTML = "";
-  hintText.textContent = "";
-  hintMeta.textContent = "";
-}
-
-// ===== Tips (inkl. “zu lange Gleitphase”)
-function showTechTipsFromStats() {
-  clearTipsUI();
-  if (!toggleHintBox.checked) return;
-  if (recStats.frames < 25) return;
-
-  const preset = filmingPreset.value;
-  const issues = [];
-
-  // 0) Gleitphase zu lang (nur wenn Timer aktiv & Slots vorhanden)
-  if (toggleTimer.checked) {
-    const validSlots = glideTimes.filter(t => typeof t === "number" && isFinite(t));
-    if (validSlots.length > 0) {
-      const maxT = Math.max(...validSlots);
-      const thr = (preset === "stand") ? 3200 : 2800;
-      if (maxT > thr) {
-        issues.push({
-          score: Math.min(1, 0.36 + (maxT - thr) / 2500),
-          title: "Sehr lange Streck-/Gleitphase",
-          tip: "Du verharrst teils sehr lange gestreckt. Ziel: kurz stromlinienförmig bleiben – dann sauber in die nächste Aktion übergehen (Tempo nicht „tot gleiten“)."
-        });
-      }
-    }
-  }
-
-  // 1) Knie breit in Rückholphase (nur wenn Knie wirklich gebeugt)
-  const recDen = Math.max(1, recStats.kneeRecoveryFrames);
-  const kneeRecShare = recStats.kneeWideRecoveryFrames / recDen;
-  const kneeRecThr = (preset === "back45") ? 0.18 : 0.22;
-  if (recStats.kneeRecoveryFrames >= 20 && kneeRecShare >= kneeRecThr) {
-    issues.push({
-      score: Math.min(1, Math.max(0.35, kneeRecShare)),
-      title: "Knie ziehen häufig zu breit an",
-      tip: "Rückholen schmal (≈ schulterbreit). Breites Anziehen vergrößert Bremsfläche. Merksatz: Rückholen schmal – Kick kräftig."
-    });
-  }
-
-  // 2) Armzug breit (nur plausible Zugphase; side45 konservativer + mehr Events)
-  const armPullDen = Math.max(1, recStats.armPullFrames);
-  const handWideShare = recStats.handWideFrames / armPullDen;
-
-  const minEvents = (preset === "side45") ? 3 : 2;
-  const wideShareThr = (preset === "side45") ? 0.22 : 0.18;
-
-  if ((recStats.handWideEvents >= minEvents || handWideShare >= wideShareThr) && recStats.armPullFrames >= 18) {
-    issues.push({
-      score: Math.min(1, Math.max(0.40, handWideShare + recStats.handWideEvents*0.06)),
-      title: "Armzug sehr breit",
-      tip: "In der Zugphase mehrfach deutlich zu weit geöffnet. Merksatz: Arme drücken nach hinten – nicht nach außen."
-    });
-  }
-
-  // 3) Arm zu tief (nur in Pull-Phase via armTooDeepFrames)
-  const deepShare = recStats.armTooDeepFrames / Math.max(1, recStats.armPullFrames);
-  const deepThr = (preset === "side45") ? 0.14 : 0.18;
-  if (recStats.armPullFrames >= 18 && deepShare >= deepThr) {
-    issues.push({
-      score: Math.min(1, Math.max(0.38, deepShare)),
-      title: "Hände ziehen häufig zu tief",
-      tip: "Hände wandern in der Zugphase oft Richtung Hüfte/Füße. Ziel: Druck nach hinten (Vortrieb), nicht nach unten – dann zügig nach vorn in die Streckung."
-    });
-  }
-
-  // 4) Stromlinien-/Streckphase fehlt (Streamline-Index)
-  const streamShare = recStats.streamlineGoodFrames / Math.max(1, recStats.frames);
-  const streamMiss = recStats.streamlineMissFrames / Math.max(1, recStats.frames);
-  const streamNeedThr = (preset === "stand") ? 0.16 : 0.20;
-  if (streamShare < streamNeedThr && (streamMiss > 0.12 || streamShare < 0.12)) {
-    issues.push({
-      score: Math.min(1, Math.max(0.38, (streamNeedThr - streamShare) + streamMiss)),
-      title: "Keine klare Streck-/Stromlinienphase",
-      tip: "Nach dem Zug selten wirklich „lang“ (Arme geschlossen/über Kopf + Beine gestreckt). Merksatz: Wenn nichts arbeitet, muss alles schlank sein."
-    });
-  }
-
-  // 5) Beinschlag zu spät (Arm-Ende -> Kick)
-  if (recStats.lateKickN >= 2) {
-    const avgDt = recStats.lateKickDtSum / Math.max(1, recStats.lateKickN);
-    const dtThr = (preset === "side45") ? 420 : (preset === "stand" ? 500 : 460);
-
-    if (avgDt > dtThr || recStats.lateKickEvents >= 2) {
-      issues.push({
-        score: Math.min(1, 0.36 + (avgDt - dtThr)/700 + recStats.lateKickEvents*0.07),
-        title: "Beinschlag übernimmt häufig zu spät",
-        tip: "Zwischen Armschließen und Beinkick entsteht oft eine Pause. Merksatz: Wenn die Arme fertig sind, übernehmen die Beine."
-      });
-    }
-  }
-
-  // 6) Beinschere nur back45, vorsichtig formuliert
-  if (preset === "back45") {
-    const scShare = recStats.scissorLikelyFrames / Math.max(1, recStats.frames);
-    if (scShare >= 0.18) {
-      issues.push({
-        score: Math.min(1, Math.max(0.36, scShare)),
-        title: "Beinbewegung wirkt teils asymmetrisch („Beinschere“)",
-        tip: "Nur als Hinweis (Rückenansicht): Links/rechts möglichst gleich anziehen/strecken, symmetrische Fußführung."
-      });
-    }
-  }
-
-  issues.sort((a,b)=> b.score - a.score);
-  const top = issues.slice(0,3);
-  if (top.length === 0) return;
-
-  const avgKnee = (recStats.avgKneeRatioN > 0) ? (recStats.avgKneeRatioSum / recStats.avgKneeRatioN) : null;
-  const avgDt = (recStats.lateKickN > 0) ? (recStats.lateKickDtSum / recStats.lateKickN) : null;
-
-  hintMeta.textContent =
-    `${recStats.frames} Frames` +
-    (avgKnee ? ` • Ø Knie/Schulter ${avgKnee.toFixed(2)}×` : "") +
-    (recStats.armPullFrames ? ` • Zugphase ${recStats.armPullFrames}F` : "") +
-    (avgDt ? ` • Ø Arm→Bein ${(avgDt/1000).toFixed(2)}s` : "");
-
-  hintText.textContent = "Über mehrere Frames auffällig:";
-
-  for (const it of top) {
-    const li = document.createElement("li");
-    li.innerHTML = `<b>${it.title}</b> – ${it.tip}`;
-    hintList.appendChild(li);
-  }
-
-  tipsBox.style.display = "block";
-}
-
-function pickMimeType(){
-  const candidates=[
-    'video/mp4;codecs="avc1.42E01E"',
-    'video/mp4;codecs="avc1.4D401E"',
-    "video/mp4",
-    'video/webm;codecs="vp8"',
-    "video/webm"
-  ];
-  if(!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
-  for(const t of candidates){ try{ if(MediaRecorder.isTypeSupported(t)) return t; } catch(_){} }
-  return "";
-}
-
-function startRecordingCanvas(){
-  recordedChunks=[]; lastBlob=null; btnShare.disabled=true;
-  resetRecStats();
-  isRecording = true;
-
-  resetTimerState(true);
-  clearTipsUI();
-
-  const s = canvas.captureStream(15);
-  const mt = pickMimeType();
-  try{ recorder=new MediaRecorder(s, mt?{mimeType:mt}:undefined); }
-  catch(_){ recorder=new MediaRecorder(s); }
-
-  setStatus("Aufnahme läuft… (" + (recorder.mimeType || mt || "default") + ")");
-  recorder.ondataavailable=(e)=>{ if(e.data && e.data.size>0) recordedChunks.push(e.data); };
-  recorder.onstop=()=>{
-    isRecording = false;
-    const type = recorder.mimeType || mt || "video/webm";
-    lastBlob = new Blob(recordedChunks,{type});
-    btnShare.disabled = !lastBlob;
-    setStatus("Aufnahme fertig (" + (lastBlob.type.includes("mp4") ? "MP4" : "WebM") + ").");
-    showTechTipsFromStats();
-  };
-  recorder.start(200);
-}
-
-function stopRecordingCanvas(){ if(recorder && recorder.state!=="inactive") recorder.stop(); }
-
-async function shareOrDownload(){
-  if(!lastBlob) return;
-  const type=lastBlob.type||"";
-  const ext=type.includes("mp4")?"mp4":(type.includes("webm")?"webm":"bin");
-  const fileName=`bewegungsanalyse_${new Date().toISOString().replace(/[:.]/g,"-")}.${ext}`;
-  const file=new File([lastBlob],fileName,{type:lastBlob.type});
-
-  if(navigator.canShare && navigator.canShare({files:[file]})){
-    await navigator.share({files:[file], title:"Anonyme Bewegungsanalyse"});
-    setStatus("Geteilt/gespeichert ("+ext.toUpperCase()+").");
-    return;
-  }
-  const url=URL.createObjectURL(lastBlob);
-  const a=document.createElement("a");
-  a.href=url; a.download=fileName;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),2000);
-  setStatus("Download gestartet ("+ext.toUpperCase()+").");
-}
-
-// MediaPipe
-let fileset = null;
-let landmarker = null;
-let segmenter = null;
-let running = false;
-let rafId = null;
-
-const LOCAL_TASK_CANDIDATES = [
-  "models/pose_landmarker_full.task",
-  "models/pose_landmarker_heavy.task",
-  "models/pose_landmarker.task",
-  "models/pose_landmarker_lite.task"
-];
-
-const REMOTE_TASK_URL =
-  "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task";
-
-// Selfie segmentation local
-const LOCAL_SELFIE_TFLITE = "models/selfie_segmentation.tflite";
-// optional remote fallback (falls lokal fehlt)
-// (wenn du sicher eine andere URL willst: lokal ist ohnehin priorisiert)
-const REMOTE_SELFIE_TFLITE =
-  "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/1/selfie_segmenter.tflite";
-
-async function createVisionFileset(){
-  if (fileset) return fileset;
-  setStatus("Lade Tasks-WASM …");
-  fileset = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
-  );
-  return fileset;
-}
-
-async function createLandmarker(){
-  await createVisionFileset();
-
-  const options = (modelAssetPath) => ({
-    baseOptions: { modelAssetPath },
-    runningMode: "VIDEO",
-    numPoses: 1,
-    outputSegmentationMasks: true,
-    minPoseDetectionConfidence: Number(detConf.value),
-    minPosePresenceConfidence: Number(presConf.value),
-    minTrackingConfidence: Number(trackConf.value),
-  });
-
-  // 1) Lokal probieren
-  for (const path of LOCAL_TASK_CANDIDATES) {
-    try {
-      setStatus(`Lade Pose Landmarker (lokal): ${path} …`);
-      landmarker = await PoseLandmarker.createFromOptions(fileset, options(path));
-      setStatus(`Landmarker geladen (lokal): ${path}`);
-      return;
-    } catch (e) {
-      console.warn("Local pose model failed:", path, e);
-    }
-  }
-
-  // 2) Fallback remote
-  setStatus("Lade Pose Landmarker (remote) …");
-  landmarker = await PoseLandmarker.createFromOptions(fileset, options(REMOTE_TASK_URL));
-  setStatus("Landmarker geladen (remote).");
-}
-
-async function createSelfieSegmenter(){
-  await createVisionFileset();
-
-  const makeOpts = (modelAssetPath) => ({
-    baseOptions: { modelAssetPath },
-    runningMode: "VIDEO",
-    // categoryMask ist schnell & stabil; Schwelle/Feather regeln wir selbst
-    outputCategoryMask: true
-  });
-
-  // 1) Lokal
-  try{
-    setStatus(`Lade Selfie-Segmentierung (lokal): ${LOCAL_SELFIE_TFLITE} …`);
-    segmenter = await ImageSegmenter.createFromOptions(fileset, makeOpts(LOCAL_SELFIE_TFLITE));
-    setStatus("Selfie-Segmentierung geladen (lokal).");
-    return;
-  } catch(e){
-    console.warn("Local selfie segmenter failed:", e);
-  }
-
-  // 2) Remote fallback
-  try{
-    setStatus("Lade Selfie-Segmentierung (remote) …");
-    segmenter = await ImageSegmenter.createFromOptions(fileset, makeOpts(REMOTE_SELFIE_TFLITE));
-    setStatus("Selfie-Segmentierung geladen (remote).");
-  } catch(e){
-    console.warn("Remote selfie segmenter failed:", e);
-    segmenter = null; // bleibt optional
-    setStatus("Hinweis: Selfie-Segmentierung nicht verfügbar → nutze Pose-Maske.");
-  }
-}
-
-function updateLandmarkerThresholds(){
-  if(!landmarker) return;
-  landmarker.setOptions({
-    minPoseDetectionConfidence: Number(detConf.value),
-    minPosePresenceConfidence: Number(presConf.value),
-    minTrackingConfidence: Number(trackConf.value),
-  });
-  setStatus("Schwellwerte aktualisiert.");
-}
-detConf.addEventListener("change", updateLandmarkerThresholds);
-presConf.addEventListener("change", updateLandmarkerThresholds);
-trackConf.addEventListener("change", updateLandmarkerThresholds);
-
-// Camera
-let isBackCamera = true;
-let stream = null;
-
-async function startCamera(){
-  stopCamera();
-  stream = await navigator.mediaDevices.getUserMedia({
-    audio:false,
-    video:{
-      facingMode: isBackCamera ? "environment" : "user",
-      width:{ideal:1280},
-      height:{ideal:720}
-    }
-  });
-  video.srcObject = stream;
-
-  await new Promise((resolve)=>{
-    const done=()=>resolve();
-    if(video.readyState>=1) return done();
-    video.onloadedmetadata = done;
-  });
-  await video.play();
-
-  await new Promise((resolve)=>{
-    const check=()=> (video.videoWidth>0 && video.videoHeight>0) ? resolve() : requestAnimationFrame(check);
-    check();
-  });
-}
-
-function stopCamera(){
-  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
-  video.srcObject=null;
-}
-
-// Loop
-let emptyMaskFrames = 0;
-
-function loop(){
-  if(!running || !landmarker) return;
-
-  try{
-    ctx.fillStyle = BG;
-    ctx.fillRect(0, 0, CSS_W, CSS_H);
-
-    if(video.videoWidth===0 || video.videoHeight===0){
-      drawOverlay("DEBUG: video not ready");
-      rafId = requestAnimationFrame(loop);
-      return;
-    }
-
-    const ts = performance.now();
-
-    // 1) Pose
-    const result = landmarker.detectForVideo(video, ts);
-    const hasLandmarks = !!(result?.landmarks?.length && result.landmarks[0]?.length);
-
-    // 2) Segmentation: bevorzugt SelfieSegmenter, fallback PoseMask
-    let maskInfo = { max: 0 };
-    let usedMask = 0; // 0=none, 1=selfie, 2=pose
-
-    if (toggleSilhouette.checked) {
-      let segMask = null;
-
-      if (segmenter) {
-        const segRes = segmenter.segmentForVideo(video, ts);
-        // outputCategoryMask:true -> segRes.categoryMask
-        segMask = segRes?.categoryMask ?? null;
-        usedMask = segMask ? 1 : usedMask;
-      }
-
-      if (!segMask && result?.segmentationMasks?.length) {
-        segMask = result.segmentationMasks[0];
-        usedMask = segMask ? 2 : usedMask;
-      }
-
-      if (segMask) {
-        maskInfo = drawSilhouetteFromMask(segMask);
-
-        // wenn dauerhaft “leer”: Segmentierung ausschalten (wie vorher)
-        if (maskInfo.max <= 0.001) emptyMaskFrames++;
-        else emptyMaskFrames = 0;
-
-        if (emptyMaskFrames > 45) {
-          toggleSilhouette.checked = false;
-          setStatus("Hinweis: Segmentierung liefert leere Werte → deaktiviert.");
-        }
-      } else {
-        emptyMaskFrames = 0;
-      }
-    }
-
-    if (hasLandmarks) {
-      const raw = result.landmarks[0];
-      const vw = video.videoWidth, vh = video.videoHeight;
-      const cssPoints = emaCss(mapLandmarksContain(raw, vw, vh, CSS_W, CSS_H));
-
-      drawSkeletonCssPoints(cssPoints);
-
-      const neck = drawNeckAxis(raw, cssPoints, ts);
-      const legs = drawLegChecks(raw, cssPoints);
-
-      // Timer
-      updateTimer(raw, ts, isRecording);
-
-      // Hand axis
-      const hands = drawHandAxis(raw, cssPoints);
-
-      // Timing events
-      const armEnd = detectArmEndEvent(raw, ts);
-      const kickExt = detectKickExtensionEvent(raw, ts);
-
-      if (isRecording) {
-        recStats.frames++;
-
-        // Streamline strict
-        const S = streamlineIndex(raw);
-        if (S >= 0.84) recStats.streamlineGoodFrames++;
-        if (!glideActive && S < 0.60) recStats.streamlineMissFrames++;
-
-        // Knee width averages + recovery (nur wenn Knie gebeugt)
-        if (legs.valid && legs.kneeRatio != null) {
-          recStats.avgKneeRatioSum += legs.kneeRatio;
-          recStats.avgKneeRatioN++;
-        }
-        if (legs.valid) {
-          const [aL, aR] = legs.kneeAngles || [null,null];
-          const minA = Math.min(aL ?? 999, aR ?? 999);
-          const inRecovery = (minA < 160);
-          if (inRecovery) {
-            recStats.kneeRecoveryFrames++;
-            if (legs.kneeRatio != null && legs.kneeRatio > 1.55) recStats.kneeWideRecoveryFrames++;
-          }
-        }
-
-        // Arm pull phase gated (nicht in Streamline/Gleitphase)
-        const inPull = (!glideActive && isArmPullPhase(raw));
-        if (inPull) {
-          recStats.armPullFrames++;
-
-          // wide arms: side45 konservativer (2.70x) + Eventzählung
-          if (hands.handRatio != null) {
-            const thr = (filmingPreset.value === "side45") ? 2.70 : HAND_RED_THR_BASE;
-            const tooWideNow = hands.handRatio > thr;
-            if (tooWideNow && !prevHandTooWide) recStats.handWideEvents++;
-            prevHandTooWide = tooWideNow;
-            if (tooWideNow) recStats.handWideFrames++;
-          } else {
-            prevHandTooWide = false;
-          }
-
-          // too deep arms (nur Pull-Phase)
-          if (armsTooDeep(raw)) recStats.armTooDeepFrames++;
-        } else {
-          prevHandTooWide = false;
-        }
-
-        // late kick: armEnd -> knee extension
-        if (kickExt && lastArmEndTs != null) {
-          const dt = ts - lastArmEndTs;
-          const maxDt = (filmingPreset.value === "stand") ? 1600 : 1400;
-          if (dt > 80 && dt < maxDt) {
-            recStats.lateKickN++;
-            recStats.lateKickDtSum += dt;
-            const lateThr = (filmingPreset.value === "side45") ? 420 : (filmingPreset.value === "stand" ? 500 : 460);
-            if (dt > lateThr) recStats.lateKickEvents++;
-          }
-        }
-
-        // scissor only back45
-        if (filmingPreset.value === "back45" && legs.valid) {
-          const d = legs.kneeDiff;
-          if (d != null && d > 28) recStats.scissorLikelyFrames++;
-        }
-      }
-
-      const handDbg = (hands && hands.handRatio != null)
-        ? `hand/shoulderX=${hands.handRatio.toFixed(2)}`
-        : `hand/shoulderX=—`;
-      const gateDbg = (hands && hands.gated) ? "handGate=1" : "handGate=0";
-      const Sdbg = streamlineIndex(raw).toFixed(2);
-
-      drawOverlay(
-        `DEBUG: lm=${raw.length} mask=${usedMask} maskmax=${(maskInfo.max??0).toFixed(3)} score=${(scoreEma??0).toFixed(2)} stream=${Sdbg} ${handDbg} ${gateDbg} armEnd=${armEnd?1:0} kickExt=${kickExt?1:0} rec=${isRecording?1:0}`
-      );
-    } else {
-      drawOverlay(`DEBUG: lm=0 mask=${toggleSilhouette.checked? (segmenter?1:2):0} maskmax=${(maskInfo.max??0).toFixed(3)} rec=${isRecording?1:0}`);
-    }
-
-    rafId = requestAnimationFrame(loop);
-  } catch(e){
-    console.error(e);
-    setStatus("Loop-Fehler: " + (e?.message || String(e)));
-    ctx.fillStyle = BG;
-    ctx.fillRect(0, 0, CSS_W, CSS_H);
-    ctx.fillStyle = "rgba(0,0,0,0.85)";
-    ctx.font = "16px system-ui";
-    ctx.fillText("Loop-Fehler: " + (e?.message || String(e)), 20, 40);
-  }
-}
-
-// Buttons
-btnInit.addEventListener("click", async ()=>{
-  try{
-    btnInit.disabled=true;
-    applyLayoutFromOrientation();
-    setStatus("Initialisiere …");
-
-    await startCamera();
-    await createLandmarker();
-    await createSelfieSegmenter(); // optional, verbessert Maske
-
-    running=true;
-    btnSwitch.disabled=false;
-    btnRec.disabled=false;
-    btnReset.disabled=false;
-
-    clearTipsUI();
-    emptyMaskFrames = 0;
-    resetNeckState();
-    resetTimerState(true);
-    resetTimingState();
-    resetMaskEma();
-
-    setStatus("bereit.");
-    rafId = requestAnimationFrame(loop);
-  } catch(e){
-    console.error(e);
-    setStatus("Fehler: " + (e?.message || String(e)));
-    btnInit.disabled=false;
-  }
-});
-
-btnSwitch.addEventListener("click", async ()=>{
-  try{
-    btnSwitch.disabled=true;
-    running=false;
-    if(rafId) cancelAnimationFrame(rafId);
-
-    isBackCamera=!isBackCamera;
-    await startCamera();
-
-    smoothedCss = null;
-    emptyMaskFrames = 0;
-
-    clearTipsUI();
-    resetNeckState();
-    resetTimerState(true);
-    resetTimingState();
-    resetMaskEma();
-
-    running=true;
-    rafId = requestAnimationFrame(loop);
-
-    btnSwitch.disabled=false;
-    setStatus("Kamera gewechselt.");
-  } catch(e){
-    console.error(e);
-    setStatus("Kamerawechsel-Fehler: " + (e?.message || String(e)));
-    running=true;
-    rafId = requestAnimationFrame(loop);
-    btnSwitch.disabled=false;
-  }
-});
-
-btnRec.addEventListener("click", ()=>{
-  btnRec.disabled=true;
-  btnStop.disabled=false;
-  startRecordingCanvas();
-});
-
-btnStop.addEventListener("click", ()=>{
-  btnStop.disabled=true;
-  stopRecordingCanvas();
-  btnRec.disabled=false;
-});
-
-btnShare.addEventListener("click", ()=>shareOrDownload());
-
-btnReset.addEventListener("click", ()=>{
-  resetTimerState(true);
-  setStatus("Slots zurückgesetzt.");
-  clearTipsUI();
-  resetNeckState();
-  resetTimingState();
-});
-
-// Feedback
-function buildFeedbackMeta() {
-  const parts = [];
-  parts.push(`preset=${filmingPreset.value}`);
-  parts.push(`timer=${toggleTimer.checked?1:0}`);
-  parts.push(`skel=${toggleSkeleton.checked?1:0}`);
-  parts.push(`sil=${toggleSilhouette.checked?1:0}`);
-  parts.push(`det=${Number(detConf.value).toFixed(2)}`);
-  parts.push(`pres=${Number(presConf.value).toFixed(2)}`);
-  parts.push(`track=${Number(trackConf.value).toFixed(2)}`);
-  parts.push(`ua=${navigator.userAgent}`);
-  parts.push(`ui=${isPortraitUI()?"portrait":"landscape"}`);
-  return parts.join(" | ");
-}
-
-feedbackForm?.addEventListener("submit", async (ev) => {
-  ev.preventDefault();
-
-  fbMeta.value = buildFeedbackMeta();
-  fbStatus.className = "fbStatus";
-  fbStatus.style.display = "block";
-  fbStatus.textContent = "Sende …";
-
-  try {
-    const formData = new FormData(feedbackForm);
-    const resp = await fetch(feedbackForm.action, {
-      method: "POST",
-      body: formData,
-      headers: { "Accept": "application/json" }
-    });
-
-    if (resp.ok) {
-      fbStatus.className = "fbStatus ok";
-      fbStatus.textContent = "Danke! Feedback wurde gesendet.";
-      feedbackForm.reset();
-    } else {
-      fbStatus.className = "fbStatus err";
-      fbStatus.textContent = "Senden fehlgeschlagen. Bitte später erneut versuchen.";
-    }
-  } catch (e) {
-    fbStatus.className = "fbStatus err";
-    fbStatus.textContent = "Netzwerkfehler. Bitte später erneut versuchen.";
-  }
-});
+  const ls
 </script>
 </body>
 </html>
