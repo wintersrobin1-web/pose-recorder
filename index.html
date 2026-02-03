@@ -1748,21 +1748,42 @@ function isPullPhaseHeuristic(raw){
    HÄNDE ZU TIEF – EXTREM KONSERVATIV
    ========================= */
 function wristsTooDeep(raw){
+  const ls = raw[11], rs = raw[12];
   const lh = raw[23], rh = raw[24];
   const lw = raw[15], rw = raw[16];
-  if(!lh || !rh || (!lw && !rw)) return false;
 
-  const hipY = (lh.y + rh.y) / 2;
+  // braucht Schultern + Hüften + mind. ein Handgelenk
+  if (!ls || !rs || !lh || !rh || (!lw && !rw)) return false;
 
-  // EXTREM streng: nur wenn Handgelenk klar UNTER Hüfte ist
-  // y wächst nach unten → "unter Hüfte" = hipY + margin
-  const margin = 0.045; // 4.5 % Bildhöhe → sehr unempfindlich
+  // Körperachsenpunkte
+  const sh = { x:(ls.x+rs.x)/2, y:(ls.y+rs.y)/2 }; // Schultermitte
+  const hp = { x:(lh.x+rh.x)/2, y:(lh.y+rh.y)/2 }; // Hüftmitte
 
-  const leftDeep  = lw ? (lw.y >= hipY + margin) : false;
-  const rightDeep = rw ? (rw.y >= hipY + margin) : false;
+  // Körperachse (Schulter -> Hüfte), normiert
+  let ax = { x: hp.x - sh.x, y: hp.y - sh.y };
+  const L = Math.hypot(ax.x, ax.y);
+  if (L < 1e-6) return false;
+  ax = { x: ax.x / L, y: ax.y / L };
+
+  // Projektion eines Punkts auf die Körperachse (Skalar entlang der Achse)
+  const proj = (p) => ( (p.x - sh.x)*ax.x + (p.y - sh.y)*ax.y );
+
+  const hipT = proj(hp);
+
+  // SEHR streng: erst "zu tief", wenn Handgelenk entlang der Achse
+  // wirklich (nahe) Hüftniveau erreicht/überschreitet.
+  // Margin relativ zur Rumpflänge (L) statt absoluter y-Werte:
+  const margin = 0.10 * L; // 10% der Rumpflänge -> konservativ
+
+  const leftDeep  = lw ? (proj(lw) >= hipT - margin) : false;
+  const rightDeep = rw ? (proj(rw) >= hipT - margin) : false;
+
+  // Noch strenger: mindestens ein Wrist wirklich tief UND nicht nur ein Frame-Zucken:
+  // (Die Frame-Stabilität machst du bereits über "deepShare" & Mindestframes im Statistikteil.)
 
   return leftDeep || rightDeep;
 }
+
 
 /* =========================
    STROMLINIE – bewusst konservativ
