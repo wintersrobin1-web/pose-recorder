@@ -724,26 +724,44 @@ function drawSkeletonCssPoints(cssPoints) {
   ctx.restore();
 }
 
-/* =========================
-   SEGMENTATION (verbessert):
-   - bevorzugt SelfieSegmentation (models/selfie_segmentation.tflite)
-   - fallback: PoseLandmarker Mask
-   - weicher Threshold (feather)
-   - temporale Mask-EMA (reduziert Flackern / Ausfransen)
-   - bilinear scaling beim Zeichnen (bessere Kanten)
-   ========================= */
-
+// Segmentation (CRISP – no blur, no fill, correct polarity)
 const maskSrcCanvas = document.createElement("canvas");
 const maskSrcCtx = maskSrcCanvas.getContext("2d", { willReadFrequently: false });
 
-// temporale Mask-Glättung (auf Mask-Raster)
-let maskEmaBuf = null;
-let maskEmaW = 0, maskEmaH = 0;
+let lastMaskInvert = false;
+let lastInvertTs = 0;
 
-function resetMaskEma() {
-  maskEmaBuf = null;
-  maskEmaW = 0;
-  maskEmaH = 0;
+function readMaskToArr01(segMask, mw, mh) {
+  let dataF = null, dataU = null;
+  try { if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array(); } catch(_) {}
+  if (!dataF) { try { if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array(); } catch(_) {} }
+
+  if (dataF && dataF.length >= mw*mh) return { arr: dataF, isFloat: true };
+  if (dataU && dataU.length >= mw*mh) return { arr: dataU, isFloat: false };
+  return { arr: null, isFloat: false };
+}
+
+function sampleMask(arr, isFloat, mw, mh, xNorm, yNorm){
+  const x = Math.max(0, Math.min(mw-1, Math.round(xNorm * (mw-1))));
+  const y = Math.max(0, Math.min(mh-1, Math.round(yNorm * (mh-1))));
+  const idx = y*mw + x;
+  const v = arr[idx];
+  return isFloat ? v : (v / 255);
+}
+
+function decideInvertByPose(rawPose, arr, isFloat, mw, mh, threshold){
+  if (!rawPose) return lastMaskInvert;
+
+  const ids = [0,11,12,23,24];
+  let on = 0, off = 0;
+
+  for (const id of ids) {
+    const p = rawPose[id];
+    if (!p) continue;
+    const v = sampleMask(arr, isFloat, mw, mh, p.x, p.y);
+    if (v >= threshold) on++; else off++;
+  }
+  return off > on;
 }
 
 function drawMaskContainFromSource(srcCanvas, vw, vh) {
@@ -755,69 +773,14 @@ function drawMaskContainFromSource(srcCanvas, vw, vh) {
   const offY = (ch - dispH) / 2;
 
   ctx.save();
-  // für Masken: smoothing an (sonst blockig / “schlechter”)
-  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingEnabled = false; // KEIN Blur!
   ctx.drawImage(srcCanvas, offX, offY, dispW, dispH);
   ctx.restore();
-
-  // danach wieder crisp lassen
-  ctx.imageSmoothingEnabled = false;
 }
 
-function clamp01(x){ return Math.max(0, Math.min(1, x)); }
-function smoothstep(edge0, edge1, x) {
-  const t = clamp01((x - edge0) / (edge1 - edge0));
-  return t * t * (3 - 2 * t);
-}
-
-/**
- * Liest beliebige MediaPipe-Masken (confidence/category) in ein Float-Array 0..1.
- * - confidenceMask: Float32Array (0..1)
- * - categoryMask: Uint8Array (0 oder 255 bzw. 0..255)
- */
-function readMaskToFloat01(segMask, mw, mh) {
-  let dataF = null, dataU = null;
-  try { if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array(); } catch(_) {}
-  if (!dataF) { try { if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array(); } catch(_) {} }
-
-  if (dataF && dataF.length >= mw*mh) return { arr: dataF, isFloat: true };
-  if (dataU && dataU.length >= mw*mh) return { arr: dataU, isFloat: false };
-  return { arr: null, isFloat: false };
-}
-
-function applyMaskTemporalEma(maskArr, isFloat, mw, mh, emaA=0.70) {
-  // emaA: Anteil ALT (größer = träger/glatter)
-  if (!maskArr) return null;
-
-  if (!maskEmaBuf || maskEmaW !== mw || maskEmaH !== mh) {
-    maskEmaBuf = new Float32Array(mw*mh);
-    maskEmaW = mw; maskEmaH = mh;
-
-    // init
-    if (isFloat) {
-      maskEmaBuf.set(maskArr.subarray(0, mw*mh));
-    } else {
-      for (let i=0;i<mw*mh;i++) maskEmaBuf[i] = maskArr[i] / 255;
-    }
-    return maskEmaBuf;
-  }
-
-  if (isFloat) {
-    for (let i=0;i<mw*mh;i++){
-      const v = maskArr[i];
-      maskEmaBuf[i] = emaA*maskEmaBuf[i] + (1-emaA)*v;
-    }
-  } else {
-    for (let i=0;i<mw*mh;i++){
-      const v = maskArr[i] / 255;
-      maskEmaBuf[i] = emaA*maskEmaBuf[i] + (1-emaA)*v;
-    }
-  }
-  return maskEmaBuf;
-}
-
-function renderMaskToCanvas(segMask) {
+function renderMaskToCanvas(segMask, rawPose) {
   if (!segMask) return { max: 0 };
+
   const mw = segMask.width ?? 0;
   const mh = segMask.height ?? 0;
   if (!mw || !mh) return { max: 0 };
@@ -827,46 +790,51 @@ function renderMaskToCanvas(segMask) {
     maskSrcCanvas.height = mh;
   }
 
-  const threshold = Number(silThresh.value) / 100; // user threshold
+  const threshold = Number(silThresh.value) / 100;
   const alphaMax  = Number(silOpacity.value);
 
-  // weichere Kanten statt “hartes Ausfransen”
-  const FEATHER = 0.08; // 8% weiche Zone um die Schwelle
-
-  const { arr, isFloat } = readMaskToFloat01(segMask, mw, mh);
+  const { arr, isFloat } = readMaskToArr01(segMask, mw, mh);
   if (!arr) return { max: 0 };
 
-  // temporale Glättung
-  const ema = applyMaskTemporalEma(arr, isFloat, mw, mh, 0.72);
+  const now = performance.now();
+  const wantInvert = decideInvertByPose(rawPose, arr, isFloat, mw, mh, threshold);
+  if (now - lastInvertTs > 120) {
+    lastMaskInvert = wantInvert;
+    lastInvertTs = now;
+  }
 
   const img = maskSrcCtx.createImageData(mw, mh);
   const d = img.data;
+
   let maxv = 0;
 
   for (let i = 0; i < mw*mh; i++) {
-    const v = ema[i]; // 0..1
+    let v = arr[i];
+    v = isFloat ? v : (v / 255);
     if (v > maxv) maxv = v;
 
-    // weiche Schwelle: t- feather .. t+ feather
-    const m = smoothstep(threshold - FEATHER, threshold + FEATHER, v); // 0..1
-    // alpha proportional (statt binär)
-    const a = Math.round(255 * alphaMax * m);
+    let m = (v >= threshold) ? 1 : 0;
+    if (lastMaskInvert) m = 1 - m;
 
     const o = i*4;
-    d[o] = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a;
+    d[o]   = 255; // GELB = KÖRPER
+    d[o+1] = 215;
+    d[o+2] = 0;
+    d[o+3] = Math.round(255 * alphaMax * m);
   }
 
   maskSrcCtx.putImageData(img, 0, 0);
   return { max: maxv };
 }
 
-function drawSilhouetteFromMask(segMask) {
+function drawSilhouette(segMask, rawPose) {
   if (!toggleSilhouette.checked || !segMask) return { max: 0 };
+
   const vw = video.videoWidth || 0;
   const vh = video.videoHeight || 0;
   if (!vw || !vh) return { max: 0 };
 
-  const info = renderMaskToCanvas(segMask);
+  const info = renderMaskToCanvas(segMask, rawPose);
   if (info.max > 0) drawMaskContainFromSource(maskSrcCanvas, vw, vh);
   return info;
 }
