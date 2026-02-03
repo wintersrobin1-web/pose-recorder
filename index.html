@@ -723,64 +723,14 @@ function drawSkeletonCssPoints(cssPoints) {
 
   ctx.restore();
 }
-/* =========================
-   SEGMENTATION (STABLE + CRISP):
-   - hartes Threshold (keine Löcherfüllung)
-   - kein temporales EMA (keine Bewegungs-Schmiere)
-   - kein bilinear smoothing beim Skalieren
-   - Auto-Invert stabil (Votes + Hysterese) -> kein Farbswitch
-   ========================= */
-
+// Segmentation (stabil: Polarity-Lock + soft edges)
 const maskSrcCanvas = document.createElement("canvas");
-const maskSrcCtx = maskSrcCanvas.getContext("2d", { willReadFrequently: false });
+const maskSrcCtx = maskSrcCanvas.getContext("2d", { willReadFrequently: true });
 
-// --- stable invert state (prevents flipping)
-let maskInvert = null;          // final state: true => invert
-let invertVotes = 0;            // vote accumulator
-let invertVoteN = 0;            // number of votes in window
-let lastInvertEvalTs = 0;       // throttle voting cadence
-
-function readMaskToArr01(segMask, mw, mh) {
-  let dataF = null, dataU = null;
-  try { if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array(); } catch(_) {}
-  if (!dataF) { try { if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array(); } catch(_) {} }
-
-  if (dataF && dataF.length >= mw*mh) return { arr: dataF, isFloat: true };
-  if (dataU && dataU.length >= mw*mh) return { arr: dataU, isFloat: false };
-  return { arr: null, isFloat: false };
-}
-
-function _sampleMask01(arr, isFloat, mw, mh, xNorm, yNorm) {
-  const x = Math.max(0, Math.min(mw - 1, Math.round(xNorm * (mw - 1))));
-  const y = Math.max(0, Math.min(mh - 1, Math.round(yNorm * (mh - 1))));
-  const idx = y * mw + x;
-  const v = arr[idx];
-  return isFloat ? v : (v / 255);
-}
-
-function _wantInvertThisFrame(arr, isFloat, mw, mh, threshold, rawPoseOrNull) {
-  // Prefer pose points as "inside body" samples (more reliable)
-  if (rawPoseOrNull && rawPoseOrNull.length) {
-    const ids = [0, 11, 12, 23, 24]; // nose, shoulders, hips
-    let on = 0, off = 0, n = 0;
-
-    for (const id of ids) {
-      const p = rawPoseOrNull[id];
-      if (!p) continue;
-      if (typeof p.visibility === "number" && p.visibility < 0.25) continue;
-
-      const s = _sampleMask01(arr, isFloat, mw, mh, p.x, p.y);
-      n++;
-      if (s >= threshold) on++; else off++;
-    }
-
-    if (n >= 3) return off > on; // most "body points" are outside => invert
-  }
-
-  // Fallback: center pixel (weak heuristic)
-  const mid = _sampleMask01(arr, isFloat, mw, mh, 0.5, 0.5);
-  return (mid < threshold);
-}
+// Polarity stabilisieren (verhindert "gelb/blau flip")
+let maskInvert = null;          // null = noch nicht entschieden, sonst true/false
+let maskInvertStreak = 0;       // Hysterese gegen Frame-Flips
+const INVERT_STREAK_N = 6;      // wie viele Frames bis Umschalten erlaubt ist
 
 function drawMaskContainFromSource(srcCanvas, vw, vh) {
   const cw = CSS_W, ch = CSS_H;
@@ -790,107 +740,154 @@ function drawMaskContainFromSource(srcCanvas, vw, vh) {
   const offX = (cw - dispW) / 2;
   const offY = (ch - dispH) / 2;
 
+  // Für Masken ist leichte Glättung meist besser
   ctx.save();
-  ctx.imageSmoothingEnabled = false; // CRISP scaling (no blur)
+  ctx.imageSmoothingEnabled = true;
   ctx.drawImage(srcCanvas, offX, offY, dispW, dispH);
   ctx.restore();
 }
 
-function renderMaskToCanvas(segMask, rawPoseOrNull) {
-  if (!segMask) return { max: 0, invert: maskInvert ?? false };
+function sampleMaskPolarity(data01, mw, mh) {
+  // data01: Float 0..1
+  // Heuristik: Person ist normalerweise im Zentrum.
+  // Wenn Zentrum "dunkler" als Ecken → Maske ist invertiert.
+  const idx = (x, y) => (y * mw + x);
+
+  const cx = Math.floor(mw * 0.50);
+  const cy = Math.floor(mh * 0.45); // leicht über Mitte (Kopf/torso)
+  const center = data01[idx(cx, cy)] ?? 0;
+
+  const corners = [
+    data01[idx(Math.floor(mw*0.05), Math.floor(mh*0.05))] ?? 0,
+    data01[idx(Math.floor(mw*0.95), Math.floor(mh*0.05))] ?? 0,
+    data01[idx(Math.floor(mw*0.05), Math.floor(mh*0.95))] ?? 0,
+    data01[idx(Math.floor(mw*0.95), Math.floor(mh*0.95))] ?? 0,
+  ];
+  const bg = (corners[0] + corners[1] + corners[2] + corners[3]) / 4;
+
+  // Wenn center < bg → sehr wahrscheinlich invertiert
+  return (center + 0.05) < bg;
+}
+
+function renderMaskToCanvas(segMask) {
+  if (!segMask) return { max: 0 };
 
   const mw = segMask.width ?? 0;
   const mh = segMask.height ?? 0;
-  if (!mw || !mh) return { max: 0, invert: maskInvert ?? false };
+  if (!mw || !mh) return { max: 0 };
 
   if (maskSrcCanvas.width !== mw || maskSrcCanvas.height !== mh) {
     maskSrcCanvas.width = mw;
     maskSrcCanvas.height = mh;
+    // wenn Auflösung wechselt, Polarity neu lernen
+    maskInvert = null;
+    maskInvertStreak = 0;
   }
 
-  const threshold = Number(silThresh.value) / 100; // hard threshold
-  const alphaMax  = Number(silOpacity.value);
+  const threshold = Number(silThresh.value) / 100; // 0..1
+  const opacity = Number(silOpacity.value);        // 0..1
 
-  const { arr, isFloat } = readMaskToArr01(segMask, mw, mh);
-  if (!arr) return { max: 0, invert: maskInvert ?? false };
+  // Soft edge: Bereich um die Schwelle (macht es "genauer" statt hart abgeschnitten)
+  const feather = 0.08; // 0.05–0.12 sinnvoll
 
-  // ---- stable auto-invert via votes + hysteresis
-  const now = performance.now();
-  if ((now - lastInvertEvalTs) > 90) { // ~10-11 Hz
-    lastInvertEvalTs = now;
+  let dataF = null, dataU = null;
+  try { if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array(); } catch (_) {}
+  if (!dataF) { try { if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array(); } catch (_) {} }
 
-    const wantInvert = _wantInvertThisFrame(arr, isFloat, mw, mh, threshold, rawPoseOrNull);
+  const n = mw * mh;
+  if ((!dataF || dataF.length < n) && (!dataU || dataU.length < n)) return { max: 0 };
 
-    invertVotes += wantInvert ? 1 : -1;
-    invertVoteN++;
+  // Einheitlich als 0..1 Float interpretieren (wichtig gegen Flackern)
+  // Ohne extra Array-Allokation: wir lesen direkt und normalisieren.
+  let maxv = 0;
 
-    const WINDOW = 12; // ~1s
-    if (invertVoteN >= WINDOW) {
-      const avg = invertVotes / invertVoteN; // -1..+1
-
-      if (maskInvert === null) {
-        maskInvert = (avg > 0);
-      } else {
-        // hysteresis: only switch when very clear
-        if (avg > 0.35) maskInvert = true;
-        else if (avg < -0.35) maskInvert = false;
-      }
-
-      invertVotes = 0;
-      invertVoteN = 0;
+  // Polarity-Entscheidung stabilisieren (Hysterese)
+  // Dafür brauchen wir einen kleinen "view" auf 0..1. Wir messen das per Accessor.
+  const get01 = (i) => {
+    if (dataF) {
+      const v = dataF[i];
+      return (v > 1.5) ? (v / 255) : v; // falls Float doch 0..255 ist
+    } else {
+      return dataU[i] / 255;
     }
-  }
+  };
 
-  const inv = !!maskInvert;
+  // Invert-Heuristik berechnen
+  const invGuess = sampleMaskPolarity({ // mini wrapper: index Zugriff
+    get length(){ return n; },
+    // syntaktischer Trick: wir nutzen Function statt Array, unten per idx() über get01
+  }, mw, mh);
+  // Der Trick oben taugt nicht, daher simpel neu:
+  // -> wir berechnen sampleMaskPolarity ohne Array: direkt per get01:
+  const invGuess2 = (function(){
+    const idx = (x,y)=>(y*mw+x);
+    const cx = Math.floor(mw*0.50);
+    const cy = Math.floor(mh*0.45);
+    const center = get01(idx(cx,cy));
+
+    const c = [
+      get01(idx(Math.floor(mw*0.05), Math.floor(mh*0.05))),
+      get01(idx(Math.floor(mw*0.95), Math.floor(mh*0.05))),
+      get01(idx(Math.floor(mw*0.05), Math.floor(mh*0.95))),
+      get01(idx(Math.floor(mw*0.95), Math.floor(mh*0.95))),
+    ];
+    const bg = (c[0]+c[1]+c[2]+c[3])/4;
+    return (center + 0.05) < bg;
+  })();
+
+  if (maskInvert === null) {
+    maskInvert = invGuess2;
+    maskInvertStreak = 0;
+  } else if (invGuess2 !== maskInvert) {
+    // nur umschalten wenn es mehrere Frames hintereinander wirklich anders ist
+    maskInvertStreak++;
+    if (maskInvertStreak >= INVERT_STREAK_N) {
+      maskInvert = invGuess2;
+      maskInvertStreak = 0;
+    }
+  } else {
+    maskInvertStreak = 0;
+  }
 
   const img = maskSrcCtx.createImageData(mw, mh);
   const d = img.data;
 
-  let maxv = 0;
-
-  for (let i = 0; i < mw * mh; i++) {
-    let v = arr[i];
-    v = isFloat ? v : (v / 255);
+  for (let i = 0; i < n; i++) {
+    let v = get01(i);
     if (v > maxv) maxv = v;
 
-    // binary mask (no feather, no hole-fill)
-    let m = (v >= threshold) ? 1 : 0;
-    if (inv) m = 1 - m;
+    // Polarity fix
+    if (maskInvert) v = 1 - v;
+
+    // Soft threshold (feather)
+    // a01 = 0..1
+    let a01;
+    if (v <= threshold - feather) a01 = 0;
+    else if (v >= threshold + feather) a01 = 1;
+    else a01 = (v - (threshold - feather)) / (2 * feather);
+
+    const a = Math.round(255 * opacity * a01);
 
     const o = i * 4;
-    // Yellow silhouette where m==1, transparent otherwise (blue bg shows through)
-    d[o]   = 255;
-    d[o+1] = 215;
-    d[o+2] = 0;
-    d[o+3] = Math.round(255 * alphaMax * m);
+    d[o] = 255;     // Gelb
+    d[o + 1] = 215;
+    d[o + 2] = 0;
+    d[o + 3] = a;
   }
 
   maskSrcCtx.putImageData(img, 0, 0);
-  return { max: maxv, invert: inv };
+  return { max: maxv };
 }
 
-function drawSilhouette(segMask, rawPoseOrNull) {
+function drawSilhouette(segMask) {
   if (!toggleSilhouette.checked || !segMask) return { max: 0 };
   const vw = video.videoWidth || 0;
   const vh = video.videoHeight || 0;
   if (!vw || !vh) return { max: 0 };
 
-  const info = renderMaskToCanvas(segMask, rawPoseOrNull);
-  if (info.max > 0) drawMaskContainFromSource(maskSrcCanvas, vw, vh);
+  const info = renderMaskToCanvas(segMask);
+  if (info.max > 0.001) drawMaskContainFromSource(maskSrcCanvas, vw, vh);
   return info;
-}
-
-// called elsewhere on camera switch/reset
-function resetMaskEma() {
-  maskInvert = null;
-  invertVotes = 0;
-  invertVoteN = 0;
-  lastInvertEvalTs = 0;
-}
-
-// compatibility with existing call sites
-function drawSilhouetteFromMask(segMask, rawPoseOrNull) {
-  return drawSilhouette(segMask, rawPoseOrNull);
 }
 
 // Head center
