@@ -1497,11 +1497,11 @@ function getTopIssuesUnified(maxN = 3) {
   const armPullDen = Math.max(1, recStats.armPullFrames);
   const handWideShare = recStats.handWideFrames / armPullDen;
   if (recStats.handWideEvents >= 2 || handWideShare >= 0.18)
-    issues.push({score:Math.max(0.38, handWideShare), title:"Armzug sehr breit", tip:"Hände weniger weit nach außen öffnen, Ellbogen eher hoch führen."});
+    issues.push({score:Math.max(0.38, handWideShare), title:"Armzug sehr breit", tip:"Hände weniger weit nach außen öffnen."});
 
   const deepShare = recStats.armTooDeepFrames / armPullDen;
   if (deepShare >= 0.22 && recStats.armPullFrames >= 14)
-    issues.push({score:deepShare, title:"Hände ziehen zu tief", tip:"Nur wenn die Hände wirklich deutlich bis zur Hüfte nach hinten rutschen: Druck nach hinten – nicht nach unten."});
+    issues.push({score:deepShare, title:"Hände ziehen zu tief", tip:"Hände beim Armzug nur bis ca. auf Brusthöhe ziehen dann wieder in die Streckung."});
 
   const streamShare = recStats.streamlineGoodFrames / Math.max(1, recStats.frames);
   if (streamShare <= 0.12 && recStats.frames >= 40)
@@ -1902,37 +1902,77 @@ function loop(){
           prevHandTooWide = false;
           deepStreak = 0;
         }
+        // ===== Timing Hände-vor → Kick (lateKick) – ROBUSTER =====
+        // Ziel: nur "zu spät" zählen, wenn nach klarer Armstreckung
+        // der Kick wirklich erst deutlich später BEGINNT.
+        //
+        // Kick-BEGINN erkennen wir über: Kniewinkel fällt deutlich (Δ) UND ist wirklich gebeugt
+        // (statt nur "unter 158°" zu springen, was im Wasser ständig flackert).
 
-        // ===== Timing Hände-vor → Kick (lateKick) =====
+        // 0) Optional: prevKneeAngles initialisieren (falls noch nicht vorhanden)
+        // (Diese Variablen kannst du oben bei den anderen prev-Variablen lassen,
+        //  aber hier ist es safe, falls sie fehlen.)
+        if (typeof window.__prevKneeAL === "undefined") window.__prevKneeAL = null;
+        if (typeof window.__prevKneeAR === "undefined") window.__prevKneeAR = null;
+
+        // 1) Armzug-Ende merken
         if (prevIsPullPhase && !pullPhase) {
           lastArmEndTs = ts;
           lastHandsForwardTs = null;
         }
         prevIsPullPhase = pullPhase;
 
+        // 2) Hände wieder klar nach vorn/oben (echte Streckung) erkennen:
+        //    - Arme über Kopf (oh)
+        //    - Beine eher gestreckt (legsStraightScore) -> reduziert False-Positives
         if (lastArmEndTs != null && lastHandsForwardTs == null) {
           const oh = armOverHeadRobust(raw);
-          if (oh >= 0.62 && (ts - lastArmEndTs) <= 900) {
+          const legS = legsStraightScore(raw);
+          if (oh >= 0.62 && legS >= 0.55 && (ts - lastArmEndTs) <= 950) {
             lastHandsForwardTs = ts;
           }
         }
 
-        const kb = getKneesBent(raw);
-        if (!prevKneesBent && kb.bent) {
-          if (lastHandsForwardTs != null) {
+        // 3) Kick-BEGINN robust erkennen: Kniewinkel droppt merklich + wird wirklich klein
+        const kb = getKneesBent(raw); // liefert bent,aL,aR
+        const aL = kb.aL, aR = kb.aR;
+
+        const prevAL = window.__prevKneeAL;
+        const prevAR = window.__prevKneeAR;
+
+        const DROP_DEG = 8;    // Mindest-Drop von Frame zu Frame
+        const KICK_ANG = 155;  // Knie muss darunter fallen, sonst ist es nur Rauschen
+
+        const kickStartNow =
+          (aL != null && prevAL != null && (prevAL - aL) >= DROP_DEG && aL < KICK_ANG) ||
+          (aR != null && prevAR != null && (prevAR - aR) >= DROP_DEG && aR < KICK_ANG);
+
+        // prev angles updaten
+        window.__prevKneeAL = aL;
+        window.__prevKneeAR = aR;
+
+        // 4) Delay nur auswerten, wenn Hände-vorn-Moment existiert und Kick wirklich startet
+        if (lastHandsForwardTs != null) {
+          // Timeout: wenn innerhalb ~1.6s kein Kick erkannt -> reset (kein Spam)
+          if ((ts - lastHandsForwardTs) > 1600) {
+            lastHandsForwardTs = null;
+            lastArmEndTs = null;
+          } else if (kickStartNow) {
             const delay = ts - lastHandsForwardTs;
 
-            if (delay > 520 && delay < 1500) {
+            // "zu spät" erst ab deutlich größerer Verzögerung (konservativer als vorher)
+            if (delay > 700 && delay < 1500) {
               recStats.lateKickEvents++;
               recStats.lateKickDelaySumMs += delay;
               recStats.lateKickDelayN++;
             }
 
+            // Reset nach erkanntem Kick-Start (keine Mehrfachzählung)
             lastHandsForwardTs = null;
             lastArmEndTs = null;
           }
         }
-        prevKneesBent = kb.bent;
+
       }
 
       drawOverlay(
