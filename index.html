@@ -375,7 +375,7 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
       </p>
 
       <details>
-        <summary>🔹 Armzug zu breit</summary>
+        <summary> Armzug zu breit</summary>
         <p class="hint">
           <b>Indikator:</b> Hände öffnen sich in der Zugphase deutlich über Schulterbreite.<br>
           <b>Merksatz:</b> Arme drücken nach hinten – nicht nach außen.
@@ -850,6 +850,12 @@ function drawSilhouette(segMask, rawPoseOrNull) {
   const info = renderMaskToCanvas(segMask, rawPoseOrNull);
   if (info.max > 0) drawMaskContainFromSource(maskSrcCanvas, vw, vh);
   return info;
+}
+// Kompatibilität: alter Code ruft das noch auf (z.B. bei Kamerawechsel/Reset)
+function resetMaskEma() {
+  // Wir nutzen kein temporales EMA mehr – aber wir resetten Invert-Entscheidung sauber.
+  lastMaskInvert = false;
+  lastInvertTs = 0;
 }
 
 // Head center
