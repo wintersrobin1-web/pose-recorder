@@ -255,11 +255,16 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
       <label><input type="checkbox" id="toggleSkeleton" checked /> Skelett</label>
       <label><input type="checkbox" id="toggleSilhouette" checked /> Segmentierung</label>
 
-      <select id="filmingPreset" title="Aufnahmeposition">
-        <option value="stand" selected>Stand</option>
-        <option value="side45">45° seitlich</option>
-        <option value="back45">45° hinten</option>
-      </select>
+      <label style="border:none; padding:0; background:transparent;">
+  <span style="font-weight:800; color:#0b1220;">Kameraperspektive</span>
+</label>
+
+<select id="filmingPreset" title="Kameraperspektive">
+  <option value="side45" selected>Schräg seitlich (leicht von oben)</option>
+  <option value="back45">Schräg von hinten (leicht von oben)</option>
+  <option value="stand">Frontal (Stand)</option>
+</select>
+
     </div>
 
     <!-- Erweiterte Einstellungen NICHT open -->
@@ -1343,7 +1348,11 @@ function drawOverlay(debugText=""){
   ctx.fillText(glideActive ? fmt(currentElapsed) : "0.000 s", x+12, y+(isPortrait?36:30));
 
   ctx.font="700 12px system-ui";
-  const presetLabel = filmingPreset.value==="stand" ? "Stand" : (filmingPreset.value==="side45" ? "45° seitlich" : "45° hinten");
+    const presetLabel =
+      filmingPreset.value==="side45" ? "Schräg seitlich (leicht von oben)" :
+      filmingPreset.value==="back45" ? "Schräg von hinten (leicht von oben)" :
+      "Frontal (Stand)";
+
   ctx.fillText(`Timer – Gleitphase | Aufnahme: ${presetLabel}`, x+12, y+(isPortrait?56:48));
 
   ctx.font = isPortrait ? "14px system-ui" : "13px system-ui";
