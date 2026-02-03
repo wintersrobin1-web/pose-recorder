@@ -2151,7 +2151,10 @@ btnStop.addEventListener("click", ()=>{
   }, 3000);
 });
 
-btnShare.addEventListener("click", ()=>shareOrDownload());
+btnShare.addEventListener("click", (e) => {
+  e.preventDefault();
+  shareOrDownload();
+});
 
 btnReset.addEventListener("click", ()=>{
   resetTimerState(true);
