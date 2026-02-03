@@ -1067,20 +1067,36 @@ function armOverHeadRobust(raw) {
   const shoulderY = (ls.y + rs.y) / 2;
   const headY = (head?.y ?? (shoulderY - 0.10));
 
-  const elbowMargin = 0.04;
-  const wristMargin = 0.02;
+  // Visibility-gated (Occlusion-resistent)
+  const ok = (p, thr=0.25) => (p && (typeof p.visibility !== "number" || p.visibility >= thr));
 
-  const leftWristUp  = lw ? (lw.y < headY + wristMargin) : false;
-  const rightWristUp = rw ? (rw.y < headY + wristMargin) : false;
+  const lwOK = ok(lw), rwOK = ok(rw);
+  const leOK = ok(le), reOK = ok(re);
 
-  const leftElbowUp  = le ? (le.y < shoulderY - elbowMargin) : false;
-  const rightElbowUp = re ? (re.y < shoulderY - elbowMargin) : false;
+  // Perspektiv-spezifisch: side45 braucht oft tolerantere Y-Schwellen,
+  // weil Hand/Arm durch Winkel + Wasserreflexe "tiefer" detektiert werden kann.
+  const p = filmingPreset.value;
+  const wristUpMargin = (p === "side45") ? 0.040 : 0.020; // größer = toleranter
+  const elbowUpMargin = (p === "side45") ? 0.020 : 0.040; // kleiner = toleranter
 
-  const leftScore  = leftWristUp  ? 1.0 : (leftElbowUp  ? 0.7 : 0.0);
-  const rightScore = rightWristUp ? 1.0 : (rightElbowUp ? 0.7 : 0.0);
+  // "Arm vorn/oben" Kriterien:
+  // - Ideal: Wrist oberhalb HeadY (+Margin)
+  // - Fallback: Wrist deutlich über SchulterY (bei verdecktem Kopf)
+  // - Fallback: Elbow deutlich über SchulterY (wenn Wrist fehlt)
+  const leftWristUp  = lwOK ? (lw.y < headY + wristUpMargin || lw.y < shoulderY - 0.010) : false;
+  const rightWristUp = rwOK ? (rw.y < headY + wristUpMargin || rw.y < shoulderY - 0.010) : false;
 
+  const leftElbowUp  = leOK ? (le.y < shoulderY - elbowUpMargin) : false;
+  const rightElbowUp = reOK ? (re.y < shoulderY - elbowUpMargin) : false;
+
+  const leftScore  = leftWristUp  ? 1.0 : (leftElbowUp  ? 0.70 : 0.0);
+  const rightScore = rightWristUp ? 1.0 : (rightElbowUp ? 0.70 : 0.0);
+
+  // Wenn nur ein Arm verwertbar ist, nimm den (max), aber verhindere,
+  // dass "gar nichts" durch Occlusion künstlich 0 bleibt:
   return Math.max(leftScore, rightScore);
 }
+
 
 function legsStraightScore(raw) {
   const lh = raw[23], rh = raw[24], lk = raw[25], rk = raw[26], la = raw[27], ra = raw[28];
@@ -1154,10 +1170,10 @@ function updateTimer(raw, now, isRecording){
 
   const p = filmingPreset.value;
 
-  const startThr = (p === "side45") ? 0.72 : 0.75;
+  const startThr = (p === "side45") ? 0.69 : 0.75;
   const stopThr  = (p === "side45") ? 0.55 : 0.58;
 
-  const startHoldMs = (p === "side45") ? 130 : 160;
+  const startHoldMs = (p === "side45") ? 110 : 160;
   const stopHoldMs  = (p === "side45") ? 220 : 230;
 
   const hardMaxMs = (p === "stand") ? 5000 : 6500;
@@ -1517,11 +1533,16 @@ function getTopIssuesUnified(maxN = 3) {
   }
 
   const p = (n)=> n / Math.max(1, recStats.frames);
-  const thr = 0.22;
+  const thr = 0.16;
   const issues = [];
 
-  if (p(recStats.kneeWide) >= thr)
-    issues.push({score:p(recStats.kneeWide), title:"Knie ziehen zu breit an (Rückholphase)", tip:"Knie schmal (≈ schulterbreit) anziehen. Rückholen kompakt – Kick dann kräftig nach hinten."});
+    const kneeShare = p(recStats.kneeWide);
+  if (kneeShare >= 0.14)
+  issues.push({
+    score: kneeShare,
+    title:"Knie ziehen zu breit an (Rückholphase)",
+    tip:"Knie schmal (≈ schulterbreit) anziehen. Rückholen kompakt – Kick dann kräftig nach hinten."
+  });
 
   if (filmingPreset.value==="back45" && p(recStats.kneeAsym) >= thr)
     issues.push({score:p(recStats.kneeAsym), title:"Beinschere (Asymmetrie)", tip:"Beinbewegung links/rechts wirkte über mehrere Frames asymmetrisch."});
@@ -1865,11 +1886,17 @@ function loop(){
       if (isRecording && !isFinalizingStop) {
         recStats.frames++;
 
-        if (legs.valid && legs.kneeRatio != null) {
+                if (legs.valid && legs.kneeRatio != null) {
           recStats.avgKneeRatioSum += legs.kneeRatio;
           recStats.avgKneeRatioN++;
-          if (legs.kneeRatio > 1.55) recStats.kneeWide++;
+        
+          // Strenger/robuster: schon ab ~amber/upper-amber mitzählen,
+          // damit kurze "rote" Phasen nicht untergehen.
+          // (passt zu deiner Farblogik: green<=1.35, amber<=1.55, red>1.55)
+          const kneeWideThr = (filmingPreset.value === "side45") ? 1.48 : 1.50;
+          if (legs.kneeRatio > kneeWideThr) recStats.kneeWide++;
         }
+
 
         if (filmingPreset.value !== "side45" && legs.valid) {
           if (legs.kneeDiff != null && legs.kneeDiff > 25) recStats.kneeAsym++;
