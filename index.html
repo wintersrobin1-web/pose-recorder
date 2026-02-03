@@ -371,57 +371,54 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
       <summary>Technik-Checkliste (Brust)</summary>
 
       <p class="hint">
-        Die Hinweise beziehen sich auf typische, gut beobachtbare Technikmerkmale im Brustschwimmen.
-        Kleine Abweichungen sind normal – entscheidend ist, was sich über viele Frames wiederholt.
+        Hinweise sind experimentell. Am besten beurteilbar in <b>45° seitlich</b> oder <b>45° hinten</b>.
       </p>
 
       <details>
-        <summary>Armzug zu breit</summary>
+        <summary>🔹 Armzug zu breit</summary>
         <p class="hint">
-          <b>Merksatz:</b> Arme drücken nach hinten – nicht nach außen.<br>
-          <b>Hinweis:</b> Öffnen sich die Hände im Zug deutlich über Schulterbreite, steigt der Widerstand und der Vortrieb wird ineffektiv.
+          <b>Indikator:</b> Hände öffnen sich in der Zugphase deutlich über Schulterbreite.<br>
+          <b>Merksatz:</b> Arme drücken nach hinten – nicht nach außen.
         </p>
       </details>
 
       <details>
-        <summary>Hände ziehen zu tief</summary>
+        <summary>🔹 Hände ziehen zu tief</summary>
         <p class="hint">
-          <b>Merksatz:</b> Druck nach hinten – nicht nach unten.<br>
-          <b>Hinweis:</b> Wandern die Hände im Zug stark unter Schulter-/Brusthöhe in Richtung Hüfte/Füße, geht Vortrieb verloren.
+          <b>Indikator:</b> Hände wandern in der Zugphase deutlich unter Schulter-/Brusthöhe in Richtung Hüfte/Füße.<br>
+          <b>Merksatz:</b> Druck nach hinten – nicht nach unten.
         </p>
       </details>
 
       <details>
-        <summary>Streck- / Stromlinienphase fehlt</summary>
+        <summary>🔹 Streck-/Stromlinienphase fehlt</summary>
         <p class="hint">
-          <b>Merksatz:</b> Wenn nichts arbeitet, muss alles schlank sein.<br>
-          <b>Hinweis:</b> Nach Armzug und Beinschlag kurz „lang machen“:
-          Arme geschlossen/gestreckt, Beine gestreckt, Körper ruhig. („Gleiten“ = gestreckt.)
+          <b>Indikator:</b> Nach dem Armzug folgt selten eine klare, gestreckte Körperhaltung (Arme geschlossen/über Kopf, Beine gestreckt).<br>
+          <b>Merksatz:</b> Wenn nichts arbeitet, muss alles schlank sein.
         </p>
       </details>
 
       <details>
-        <summary>Beinschlag übernimmt zu spät</summary>
+        <summary>🔹 Beinschlag übernimmt zu spät</summary>
         <p class="hint">
-          <b>Merksatz:</b> Wenn die Arme fertig sind, übernehmen die Beine.<br>
-          <b>Hinweis:</b> Entsteht nach dem Armschließen eine deutliche Pause, fällt die Geschwindigkeit unnötig ab.
+          <b>Indikator:</b> Nach dem Armschließen entsteht häufig eine Pause, bevor der Beinschlag einsetzt.<br>
+          <b>Merksatz:</b> Wenn die Arme fertig sind, übernehmen die Beine.
         </p>
       </details>
 
       <details>
-        <summary>Knie ziehen zu breit an</summary>
+        <summary>🔹 Knie ziehen zu breit an (Rückholphase)</summary>
         <p class="hint">
-          <b>Merksatz:</b> Rückholen schmal – Kick kräftig.<br>
-          <b>Hinweis:</b> Werden die Knie in der Rückholphase deutlich über schulterbreit geöffnet,
-          vergrößert sich die Bremsfläche.
+          <b>Indikator:</b> Knieöffnung in der Rückholphase deutlich größer als Schulterbreite.<br>
+          <b>Merksatz:</b> Rückholen schmal – Kick kräftig.
         </p>
       </details>
 
       <details>
-        <summary>Beine arbeiten asymmetrisch („Schere“)</summary>
+        <summary>🔹 Beinschere (nur 45° hinten)</summary>
         <p class="hint">
-          <b>Hinweis:</b> Beugen und strecken die Beine deutlich unterschiedlich,
-          geht Vortrieb verloren und der Körper wird instabil.
+          <b>Indikator:</b> Deutlich asymmetrische Beinbewegung links/rechts über mehrere Frames.<br>
+          <b>Hinweis:</b> Nur bei Rückenansicht sinnvoll bewertbar.
         </p>
       </details>
     </details>
@@ -471,7 +468,7 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
       </div>
 
       <input type="hidden" name="app" value="MOTAXIS" />
-      <input type="hidden" name="version" value="2026-02-03-selfieSeg" />
+      <input type="hidden" name="version" value="2026-02-03a" />
       <input type="hidden" id="fbMeta" name="meta" value="" />
 
       <div class="btnRow" style="max-width: 420px;">
@@ -487,11 +484,7 @@ canvas{ width: 360px; height: auto; background: var(--bg); }
 <p class="hint mono" id="status">Status: bereit</p>
 
 <script type="module">
-import {
-  FilesetResolver,
-  PoseLandmarker,
-  ImageSegmenter
-} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+import { FilesetResolver, PoseLandmarker, ImageSegmenter } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
 // DOM
 const video = document.getElementById("video");
@@ -604,6 +597,7 @@ function setupHiDPICanvas(cssW, cssH) {
   canvas.width = Math.round(cssW * dpr);
   canvas.height = Math.round(cssH * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // Skelett bleibt crisp (wir schalten für Mask-Scaling temporär smoothing an)
   ctx.imageSmoothingEnabled = false;
 }
 function applyLayoutFromOrientation() {
@@ -730,15 +724,26 @@ function drawSkeletonCssPoints(cssPoints) {
   ctx.restore();
 }
 
-// =========================
-// Segmentation (SelfieSeg) – bessere Maske
-// =========================
+/* =========================
+   SEGMENTATION (verbessert):
+   - bevorzugt SelfieSegmentation (models/selfie_segmentation.tflite)
+   - fallback: PoseLandmarker Mask
+   - weicher Threshold (feather)
+   - temporale Mask-EMA (reduziert Flackern / Ausfransen)
+   - bilinear scaling beim Zeichnen (bessere Kanten)
+   ========================= */
+
 const maskSrcCanvas = document.createElement("canvas");
 const maskSrcCtx = maskSrcCanvas.getContext("2d", { willReadFrequently: false });
 
-function smoothstep(edge0, edge1, x) {
-  const t = Math.max(0, Math.min(1, (x - edge0) / Math.max(1e-6, (edge1 - edge0))));
-  return t*t*(3 - 2*t);
+// temporale Mask-Glättung (auf Mask-Raster)
+let maskEmaBuf = null;
+let maskEmaW = 0, maskEmaH = 0;
+
+function resetMaskEma() {
+  maskEmaBuf = null;
+  maskEmaW = 0;
+  maskEmaH = 0;
 }
 
 function drawMaskContainFromSource(srcCanvas, vw, vh) {
@@ -749,11 +754,66 @@ function drawMaskContainFromSource(srcCanvas, vw, vh) {
   const offX = (cw - dispW) / 2;
   const offY = (ch - dispH) / 2;
 
-  // Bilinear smoothing beim Hochskalieren -> weniger Treppchen
   ctx.save();
+  // für Masken: smoothing an (sonst blockig / “schlechter”)
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(srcCanvas, offX, offY, dispW, dispH);
   ctx.restore();
+
+  // danach wieder crisp lassen
+  ctx.imageSmoothingEnabled = false;
+}
+
+function clamp01(x){ return Math.max(0, Math.min(1, x)); }
+function smoothstep(edge0, edge1, x) {
+  const t = clamp01((x - edge0) / (edge1 - edge0));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * Liest beliebige MediaPipe-Masken (confidence/category) in ein Float-Array 0..1.
+ * - confidenceMask: Float32Array (0..1)
+ * - categoryMask: Uint8Array (0 oder 255 bzw. 0..255)
+ */
+function readMaskToFloat01(segMask, mw, mh) {
+  let dataF = null, dataU = null;
+  try { if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array(); } catch(_) {}
+  if (!dataF) { try { if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array(); } catch(_) {} }
+
+  if (dataF && dataF.length >= mw*mh) return { arr: dataF, isFloat: true };
+  if (dataU && dataU.length >= mw*mh) return { arr: dataU, isFloat: false };
+  return { arr: null, isFloat: false };
+}
+
+function applyMaskTemporalEma(maskArr, isFloat, mw, mh, emaA=0.70) {
+  // emaA: Anteil ALT (größer = träger/glatter)
+  if (!maskArr) return null;
+
+  if (!maskEmaBuf || maskEmaW !== mw || maskEmaH !== mh) {
+    maskEmaBuf = new Float32Array(mw*mh);
+    maskEmaW = mw; maskEmaH = mh;
+
+    // init
+    if (isFloat) {
+      maskEmaBuf.set(maskArr.subarray(0, mw*mh));
+    } else {
+      for (let i=0;i<mw*mh;i++) maskEmaBuf[i] = maskArr[i] / 255;
+    }
+    return maskEmaBuf;
+  }
+
+  if (isFloat) {
+    for (let i=0;i<mw*mh;i++){
+      const v = maskArr[i];
+      maskEmaBuf[i] = emaA*maskEmaBuf[i] + (1-emaA)*v;
+    }
+  } else {
+    for (let i=0;i<mw*mh;i++){
+      const v = maskArr[i] / 255;
+      maskEmaBuf[i] = emaA*maskEmaBuf[i] + (1-emaA)*v;
+    }
+  }
+  return maskEmaBuf;
 }
 
 function renderMaskToCanvas(segMask) {
@@ -767,50 +827,40 @@ function renderMaskToCanvas(segMask) {
     maskSrcCanvas.height = mh;
   }
 
-  const threshold = Number(silThresh.value) / 100;   // 0..1
-  const alphaBase = Number(silOpacity.value);        // 0..1
+  const threshold = Number(silThresh.value) / 100; // user threshold
+  const alphaMax  = Number(silOpacity.value);
 
-  // Feather: statt Hard Cut eine kleine Übergangszone
-  const feather = 0.14; // 0.10–0.20 ist meistens gut
+  // weichere Kanten statt “hartes Ausfransen”
+  const FEATHER = 0.08; // 8% weiche Zone um die Schwelle
 
-  let dataF = null, dataU = null;
-  try { if (typeof segMask.getAsFloat32Array === "function") dataF = segMask.getAsFloat32Array(); } catch(_) {}
-  if (!dataF) { try { if (typeof segMask.getAsUint8Array === "function") dataU = segMask.getAsUint8Array(); } catch(_) {} }
+  const { arr, isFloat } = readMaskToFloat01(segMask, mw, mh);
+  if (!arr) return { max: 0 };
+
+  // temporale Glättung
+  const ema = applyMaskTemporalEma(arr, isFloat, mw, mh, 0.72);
 
   const img = maskSrcCtx.createImageData(mw, mh);
   const d = img.data;
   let maxv = 0;
 
-  if (dataF && dataF.length >= mw*mh) {
-    for (let i = 0; i < mw*mh; i++) {
-      const v = dataF[i]; // 0..1 confidence
-      if (v > maxv) maxv = v;
+  for (let i = 0; i < mw*mh; i++) {
+    const v = ema[i]; // 0..1
+    if (v > maxv) maxv = v;
 
-      // Soft Alpha: ab threshold hoch, dann in feather-zone ansteigend
-      const w = smoothstep(threshold, Math.min(1, threshold + feather), v);
-      const a = Math.round(255 * alphaBase * w);
+    // weiche Schwelle: t- feather .. t+ feather
+    const m = smoothstep(threshold - FEATHER, threshold + FEATHER, v); // 0..1
+    // alpha proportional (statt binär)
+    const a = Math.round(255 * alphaMax * m);
 
-      const o = i*4;
-      d[o] = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a;
-    }
-  } else if (dataU && dataU.length >= mw*mh) {
-    for (let i = 0; i < mw*mh; i++) {
-      const v = dataU[i] / 255; // categoryMask oder uint8 confidence
-      if (v > maxv) maxv = v;
-
-      const w = smoothstep(threshold, Math.min(1, threshold + feather), v);
-      const a = Math.round(255 * alphaBase * w);
-
-      const o = i*4;
-      d[o] = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a;
-    }
+    const o = i*4;
+    d[o] = 255; d[o+1] = 215; d[o+2] = 0; d[o+3] = a;
   }
 
   maskSrcCtx.putImageData(img, 0, 0);
   return { max: maxv };
 }
 
-function drawSilhouette(segMask) {
+function drawSilhouetteFromMask(segMask) {
   if (!toggleSilhouette.checked || !segMask) return { max: 0 };
   const vw = video.videoWidth || 0;
   const vh = video.videoHeight || 0;
@@ -948,7 +998,6 @@ function drawNeckAxis(rawNorm, cssPoints, nowTs) {
     neckSince = 0;
   }
 
-  // Draw axis ALWAYS
   const cssLs = cssPoints[11], cssRs = cssPoints[12];
   const cssShoulder = (cssLs && cssRs) ? { _cx:(cssLs._cx+cssRs._cx)/2, _cy:(cssLs._cy+cssRs._cy)/2 } : null;
   const cssHead = headCenterCss(cssPoints);
@@ -1018,7 +1067,7 @@ function drawLegChecks(raw, cssPoints) {
   return { kneeRatio, kneeDiff: diff, kneeAngles: [aL, aR], valid: true };
 }
 
-// Hand axis (only OUTSIDE stretch/glide timer active)
+// Hand axis
 function colorForHandRatio(r) {
   if (r <= 2.10) return "rgba(0,170,0,0.95)";
   if (r <= 2.50) return "rgba(255,140,0,0.95)";
@@ -1037,7 +1086,6 @@ let lastTorso = null;
 const glideTimes = [];
 const fmt = (ms)=> (ms/1000).toFixed(3) + " s";
 
-// robust: Arm über Kopf / Streamline (ein Arm reicht)
 function armOverHeadRobust(raw) {
   const ls = raw[11], rs = raw[12];
   const le = raw[13], re = raw[14];
@@ -1117,15 +1165,15 @@ function computeGlideScore(raw) {
   return (0.38*arms + 0.32*legs + 0.18*longB + 0.12*still);
 }
 
-// ===== Streamline index STRICTER (für Tipp-Logik)
+// Streamline index STRICTER (für Tipp-Logik)
 function streamlineIndex(raw){
-  const arms = armOverHeadRobust(raw);
-  const legs = legsStraightScore(raw);
-  const body = bodyLongScore(raw);
+  const arms = armOverHeadRobust(raw); // 0..1
+  const legs = legsStraightScore(raw); // 0..1
+  const body = bodyLongScore(raw); // 0..1
   return (0.50*arms + 0.38*legs + 0.12*body);
 }
 
-// ===== Armzugphase / "zu tief" (verbessert)
+// Armzugphase / "zu tief"
 function isArmPullPhase(raw){
   const ls = raw[11], rs = raw[12];
   const lw = raw[15], rw = raw[16];
@@ -1157,23 +1205,22 @@ function armsTooDeep(raw){
 
   const p = filmingPreset.value;
   const dyShoulderThr = (p === "side45") ? 0.08 : (p === "stand" ? 0.10 : 0.09);
-
   const nearHip = wristY > (hipY - 0.07);
 
   return ( (wristY - shoulderY) > dyShoulderThr ) && nearHip;
 }
 
-// ===== Timing Arm->Bein (Beinschlag zu spät) – robuster
+// Timing Arm->Bein
 let lastArmEndTs = null;
 let prevArmOver = 0;
-let prevMinKnee = null;
 let hadWideHands = false;
+let prevMinKnee = null;
 
 function resetTimingState(){
   lastArmEndTs = null;
   prevArmOver = 0;
-  prevMinKnee = null;
   hadWideHands = false;
+  prevMinKnee = null;
 }
 
 function detectArmEndEvent(raw, ts){
@@ -1187,6 +1234,7 @@ function detectArmEndEvent(raw, ts){
   let eventB = false;
   const lw = raw[15], rw = raw[16];
   const ls = raw[11], rs = raw[12];
+
   if (lw && rw && ls && rs) {
     const shoulderW = Math.abs(ls.x - rs.x);
     const handSpan  = Math.abs(lw.x - rw.x);
@@ -1262,6 +1310,7 @@ function updateTimer(raw, now, isRecording){
   const armsDropped = armScore < 0.48;
   const movementStop = kneesBend || armsDropped;
 
+  // START
   if(!glideActive){
     currentElapsed = 0;
 
@@ -1284,6 +1333,7 @@ function updateTimer(raw, now, isRecording){
     return;
   }
 
+  // RUN
   currentElapsed = now - glideStart;
 
   if(currentElapsed >= hardMaxMs){
@@ -1297,6 +1347,7 @@ function updateTimer(raw, now, isRecording){
 
   if(now < ignoreStopUntil) return;
 
+  // STOP 1: Bewegung
   if(movementStop){
     if(stopMoveSince == null) stopMoveSince = now;
 
@@ -1312,6 +1363,7 @@ function updateTimer(raw, now, isRecording){
     stopMoveSince = null;
   }
 
+  // STOP 2: Score unter Schwelle
   if(scoreEma <= stopThr){
     if(stopScoreSince == null) stopScoreSince = now;
 
@@ -1508,7 +1560,7 @@ function clearTipsUI() {
   hintMeta.textContent = "";
 }
 
-// ===== Tips (ohne Gleitzeit kurz/lang)
+// ===== Tips (inkl. “zu lange Gleitphase”)
 function showTechTipsFromStats() {
   clearTipsUI();
   if (!toggleHintBox.checked) return;
@@ -1517,6 +1569,23 @@ function showTechTipsFromStats() {
   const preset = filmingPreset.value;
   const issues = [];
 
+  // 0) Gleitphase zu lang (nur wenn Timer aktiv & Slots vorhanden)
+  if (toggleTimer.checked) {
+    const validSlots = glideTimes.filter(t => typeof t === "number" && isFinite(t));
+    if (validSlots.length > 0) {
+      const maxT = Math.max(...validSlots);
+      const thr = (preset === "stand") ? 3200 : 2800;
+      if (maxT > thr) {
+        issues.push({
+          score: Math.min(1, 0.36 + (maxT - thr) / 2500),
+          title: "Sehr lange Streck-/Gleitphase",
+          tip: "Du verharrst teils sehr lange gestreckt. Ziel: kurz stromlinienförmig bleiben – dann sauber in die nächste Aktion übergehen (Tempo nicht „tot gleiten“)."
+        });
+      }
+    }
+  }
+
+  // 1) Knie breit in Rückholphase (nur wenn Knie wirklich gebeugt)
   const recDen = Math.max(1, recStats.kneeRecoveryFrames);
   const kneeRecShare = recStats.kneeWideRecoveryFrames / recDen;
   const kneeRecThr = (preset === "back45") ? 0.18 : 0.22;
@@ -1528,8 +1597,10 @@ function showTechTipsFromStats() {
     });
   }
 
+  // 2) Armzug breit (nur plausible Zugphase; side45 konservativer + mehr Events)
   const armPullDen = Math.max(1, recStats.armPullFrames);
   const handWideShare = recStats.handWideFrames / armPullDen;
+
   const minEvents = (preset === "side45") ? 3 : 2;
   const wideShareThr = (preset === "side45") ? 0.22 : 0.18;
 
@@ -1541,28 +1612,30 @@ function showTechTipsFromStats() {
     });
   }
 
+  // 3) Arm zu tief (nur in Pull-Phase via armTooDeepFrames)
   const deepShare = recStats.armTooDeepFrames / Math.max(1, recStats.armPullFrames);
   const deepThr = (preset === "side45") ? 0.14 : 0.18;
   if (recStats.armPullFrames >= 18 && deepShare >= deepThr) {
     issues.push({
       score: Math.min(1, Math.max(0.38, deepShare)),
       title: "Hände ziehen häufig zu tief",
-      tip: "Hände wandern oft Richtung Hüfte/Füße. Ziel: Druck nach hinten (Vortrieb), nicht nach unten. Danach zügig nach vorn in die Streckung."
+      tip: "Hände wandern in der Zugphase oft Richtung Hüfte/Füße. Ziel: Druck nach hinten (Vortrieb), nicht nach unten – dann zügig nach vorn in die Streckung."
     });
   }
 
+  // 4) Stromlinien-/Streckphase fehlt (Streamline-Index)
   const streamShare = recStats.streamlineGoodFrames / Math.max(1, recStats.frames);
   const streamMiss = recStats.streamlineMissFrames / Math.max(1, recStats.frames);
-
   const streamNeedThr = (preset === "stand") ? 0.16 : 0.20;
   if (streamShare < streamNeedThr && (streamMiss > 0.12 || streamShare < 0.12)) {
     issues.push({
       score: Math.min(1, Math.max(0.38, (streamNeedThr - streamShare) + streamMiss)),
       title: "Keine klare Streck-/Stromlinienphase",
-      tip: "Nach dem Zug selten wirklich „lang“ (Arme schließen/über Kopf + Beine gestreckt). Merksatz: Wenn nichts arbeitet, muss alles schlank sein – „Gleiten“ = gestreckt."
+      tip: "Nach dem Zug selten wirklich „lang“ (Arme geschlossen/über Kopf + Beine gestreckt). Merksatz: Wenn nichts arbeitet, muss alles schlank sein."
     });
   }
 
+  // 5) Beinschlag zu spät (Arm-Ende -> Kick)
   if (recStats.lateKickN >= 2) {
     const avgDt = recStats.lateKickDtSum / Math.max(1, recStats.lateKickN);
     const dtThr = (preset === "side45") ? 420 : (preset === "stand" ? 500 : 460);
@@ -1571,18 +1644,19 @@ function showTechTipsFromStats() {
       issues.push({
         score: Math.min(1, 0.36 + (avgDt - dtThr)/700 + recStats.lateKickEvents*0.07),
         title: "Beinschlag übernimmt häufig zu spät",
-        tip: "Zwischen Arm-Ende und Beinkick entsteht oft eine Pause. Merksatz: Wenn die Arme fertig sind, übernehmen die Beine."
+        tip: "Zwischen Armschließen und Beinkick entsteht oft eine Pause. Merksatz: Wenn die Arme fertig sind, übernehmen die Beine."
       });
     }
   }
 
+  // 6) Beinschere nur back45, vorsichtig formuliert
   if (preset === "back45") {
     const scShare = recStats.scissorLikelyFrames / Math.max(1, recStats.frames);
     if (scShare >= 0.18) {
       issues.push({
         score: Math.min(1, Math.max(0.36, scShare)),
-        title: "Beinbewegung wirkt häufig asymmetrisch („Beinschere“)",
-        tip: "Links/rechts möglichst gleich anziehen/strecken. Achte auf symmetrische Fußführung."
+        title: "Beinbewegung wirkt teils asymmetrisch („Beinschere“)",
+        tip: "Nur als Hinweis (Rückenansicht): Links/rechts möglichst gleich anziehen/strecken, symmetrische Fußführung."
       });
     }
   }
@@ -1672,15 +1746,13 @@ async function shareOrDownload(){
   setStatus("Download gestartet ("+ext.toUpperCase()+").");
 }
 
-// =========================
-// MediaPipe Tasks
-// =========================
+// MediaPipe
+let fileset = null;
 let landmarker = null;
 let segmenter = null;
 let running = false;
 let rafId = null;
 
-// bevorzugt lokale Models
 const LOCAL_TASK_CANDIDATES = [
   "models/pose_landmarker_full.task",
   "models/pose_landmarker_heavy.task",
@@ -1691,21 +1763,25 @@ const LOCAL_TASK_CANDIDATES = [
 const REMOTE_TASK_URL =
   "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task";
 
-// SelfieSeg lokal/remote
-const LOCAL_SELFIESEG = "models/selfie_segmentation.tflite";
-const REMOTE_SELFIESEG =
+// Selfie segmentation local
+const LOCAL_SELFIE_TFLITE = "models/selfie_segmentation.tflite";
+// optional remote fallback (falls lokal fehlt)
+// (wenn du sicher eine andere URL willst: lokal ist ohnehin priorisiert)
+const REMOTE_SELFIE_TFLITE =
   "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/1/selfie_segmenter.tflite";
 
-let fileset = null;
-
-async function createTasks(){
+async function createVisionFileset(){
+  if (fileset) return fileset;
   setStatus("Lade Tasks-WASM …");
   fileset = await FilesetResolver.forVisionTasks(
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
   );
+  return fileset;
 }
 
 async function createLandmarker(){
+  await createVisionFileset();
+
   const options = (modelAssetPath) => ({
     baseOptions: { modelAssetPath },
     runningMode: "VIDEO",
@@ -1716,6 +1792,7 @@ async function createLandmarker(){
     minTrackingConfidence: Number(trackConf.value),
   });
 
+  // 1) Lokal probieren
   for (const path of LOCAL_TASK_CANDIDATES) {
     try {
       setStatus(`Lade Pose Landmarker (lokal): ${path} …`);
@@ -1727,36 +1804,41 @@ async function createLandmarker(){
     }
   }
 
+  // 2) Fallback remote
   setStatus("Lade Pose Landmarker (remote) …");
   landmarker = await PoseLandmarker.createFromOptions(fileset, options(REMOTE_TASK_URL));
   setStatus("Landmarker geladen (remote).");
 }
 
 async function createSelfieSegmenter(){
-  const options = (modelAssetPath) => ({
+  await createVisionFileset();
+
+  const makeOpts = (modelAssetPath) => ({
     baseOptions: { modelAssetPath },
     runningMode: "VIDEO",
-    // Für SelfieSeg bekommst du i.d.R. confidenceMasks[0]
-    outputType: "CONFIDENCE_MASK",
+    // categoryMask ist schnell & stabil; Schwelle/Feather regeln wir selbst
+    outputCategoryMask: true
   });
 
-  try {
-    setStatus(`Lade Selfie-Segmenter (lokal): ${LOCAL_SELFIESEG} …`);
-    segmenter = await ImageSegmenter.createFromOptions(fileset, options(LOCAL_SELFIESEG));
-    setStatus("Selfie-Segmenter geladen (lokal).");
+  // 1) Lokal
+  try{
+    setStatus(`Lade Selfie-Segmentierung (lokal): ${LOCAL_SELFIE_TFLITE} …`);
+    segmenter = await ImageSegmenter.createFromOptions(fileset, makeOpts(LOCAL_SELFIE_TFLITE));
+    setStatus("Selfie-Segmentierung geladen (lokal).");
     return;
-  } catch (e) {
-    console.warn("Local selfie seg failed:", e);
+  } catch(e){
+    console.warn("Local selfie segmenter failed:", e);
   }
 
-  try {
-    setStatus("Lade Selfie-Segmenter (remote) …");
-    segmenter = await ImageSegmenter.createFromOptions(fileset, options(REMOTE_SELFIESEG));
-    setStatus("Selfie-Segmenter geladen (remote).");
-  } catch (e) {
-    console.warn("Remote selfie seg failed:", e);
-    segmenter = null;
-    setStatus("Selfie-Segmenter nicht verfügbar (nur Pose-Maske möglich).");
+  // 2) Remote fallback
+  try{
+    setStatus("Lade Selfie-Segmentierung (remote) …");
+    segmenter = await ImageSegmenter.createFromOptions(fileset, makeOpts(REMOTE_SELFIE_TFLITE));
+    setStatus("Selfie-Segmentierung geladen (remote).");
+  } catch(e){
+    console.warn("Remote selfie segmenter failed:", e);
+    segmenter = null; // bleibt optional
+    setStatus("Hinweis: Selfie-Segmentierung nicht verfügbar → nutze Pose-Maske.");
   }
 }
 
@@ -1825,35 +1907,42 @@ function loop(){
 
     const ts = performance.now();
 
-    // 1) Pose (Landmarks)
+    // 1) Pose
     const result = landmarker.detectForVideo(video, ts);
     const hasLandmarks = !!(result?.landmarks?.length && result.landmarks[0]?.length);
 
-    // 2) Segmentation bevorzugt SelfieSegmenter
+    // 2) Segmentation: bevorzugt SelfieSegmenter, fallback PoseMask
     let maskInfo = { max: 0 };
-    let segMask = null;
-    let segSource = "none";
+    let usedMask = 0; // 0=none, 1=selfie, 2=pose
 
     if (toggleSilhouette.checked) {
+      let segMask = null;
+
       if (segmenter) {
         const segRes = segmenter.segmentForVideo(video, ts);
-        segMask = segRes?.confidenceMasks?.[0] || segRes?.categoryMask || null;
-        segSource = segMask ? "selfie" : "selfie_empty";
-      } else if (result?.segmentationMasks?.length) {
+        // outputCategoryMask:true -> segRes.categoryMask
+        segMask = segRes?.categoryMask ?? null;
+        usedMask = segMask ? 1 : usedMask;
+      }
+
+      if (!segMask && result?.segmentationMasks?.length) {
         segMask = result.segmentationMasks[0];
-        segSource = segMask ? "pose" : "pose_empty";
+        usedMask = segMask ? 2 : usedMask;
       }
 
       if (segMask) {
-        maskInfo = drawSilhouette(segMask);
+        maskInfo = drawSilhouetteFromMask(segMask);
+
+        // wenn dauerhaft “leer”: Segmentierung ausschalten (wie vorher)
         if (maskInfo.max <= 0.001) emptyMaskFrames++;
         else emptyMaskFrames = 0;
 
-        // falls dauerhaft leer (z.B. iOS/Safari/Model fail) -> Segmentierung aus
         if (emptyMaskFrames > 45) {
           toggleSilhouette.checked = false;
           setStatus("Hinweis: Segmentierung liefert leere Werte → deaktiviert.");
         }
+      } else {
+        emptyMaskFrames = 0;
       }
     }
 
@@ -1880,10 +1969,12 @@ function loop(){
       if (isRecording) {
         recStats.frames++;
 
+        // Streamline strict
         const S = streamlineIndex(raw);
         if (S >= 0.84) recStats.streamlineGoodFrames++;
         if (!glideActive && S < 0.60) recStats.streamlineMissFrames++;
 
+        // Knee width averages + recovery (nur wenn Knie gebeugt)
         if (legs.valid && legs.kneeRatio != null) {
           recStats.avgKneeRatioSum += legs.kneeRatio;
           recStats.avgKneeRatioN++;
@@ -1898,10 +1989,12 @@ function loop(){
           }
         }
 
+        // Arm pull phase gated (nicht in Streamline/Gleitphase)
         const inPull = (!glideActive && isArmPullPhase(raw));
         if (inPull) {
           recStats.armPullFrames++;
 
+          // wide arms: side45 konservativer (2.70x) + Eventzählung
           if (hands.handRatio != null) {
             const thr = (filmingPreset.value === "side45") ? 2.70 : HAND_RED_THR_BASE;
             const tooWideNow = hands.handRatio > thr;
@@ -1912,11 +2005,13 @@ function loop(){
             prevHandTooWide = false;
           }
 
+          // too deep arms (nur Pull-Phase)
           if (armsTooDeep(raw)) recStats.armTooDeepFrames++;
         } else {
           prevHandTooWide = false;
         }
 
+        // late kick: armEnd -> knee extension
         if (kickExt && lastArmEndTs != null) {
           const dt = ts - lastArmEndTs;
           const maxDt = (filmingPreset.value === "stand") ? 1600 : 1400;
@@ -1928,6 +2023,7 @@ function loop(){
           }
         }
 
+        // scissor only back45
         if (filmingPreset.value === "back45" && legs.valid) {
           const d = legs.kneeDiff;
           if (d != null && d > 28) recStats.scissorLikelyFrames++;
@@ -1941,10 +2037,10 @@ function loop(){
       const Sdbg = streamlineIndex(raw).toFixed(2);
 
       drawOverlay(
-        `DEBUG: lm=${raw.length} seg=${segSource} maskmax=${(maskInfo.max??0).toFixed(3)} score=${(scoreEma??0).toFixed(2)} stream=${Sdbg} ${handDbg} ${gateDbg} armEnd=${armEnd?1:0} kickExt=${kickExt?1:0} rec=${isRecording?1:0}`
+        `DEBUG: lm=${raw.length} mask=${usedMask} maskmax=${(maskInfo.max??0).toFixed(3)} score=${(scoreEma??0).toFixed(2)} stream=${Sdbg} ${handDbg} ${gateDbg} armEnd=${armEnd?1:0} kickExt=${kickExt?1:0} rec=${isRecording?1:0}`
       );
     } else {
-      drawOverlay(`DEBUG: lm=0 seg=${segSource} maskmax=${(maskInfo.max??0).toFixed(3)} rec=${isRecording?1:0}`);
+      drawOverlay(`DEBUG: lm=0 mask=${toggleSilhouette.checked? (segmenter?1:2):0} maskmax=${(maskInfo.max??0).toFixed(3)} rec=${isRecording?1:0}`);
     }
 
     rafId = requestAnimationFrame(loop);
@@ -1967,10 +2063,8 @@ btnInit.addEventListener("click", async ()=>{
     setStatus("Initialisiere …");
 
     await startCamera();
-
-    await createTasks();
     await createLandmarker();
-    await createSelfieSegmenter();
+    await createSelfieSegmenter(); // optional, verbessert Maske
 
     running=true;
     btnSwitch.disabled=false;
@@ -1982,6 +2076,7 @@ btnInit.addEventListener("click", async ()=>{
     resetNeckState();
     resetTimerState(true);
     resetTimingState();
+    resetMaskEma();
 
     setStatus("bereit.");
     rafId = requestAnimationFrame(loop);
@@ -2008,6 +2103,7 @@ btnSwitch.addEventListener("click", async ()=>{
     resetNeckState();
     resetTimerState(true);
     resetTimingState();
+    resetMaskEma();
 
     running=true;
     rafId = requestAnimationFrame(loop);
